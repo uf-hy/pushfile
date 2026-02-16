@@ -302,7 +302,7 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{
               \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-              \"text\": \"PR #${PR_NUM} 操作：\",
+              \"text\": \"[pushfile] PR #${PR_NUM}\\n${PR_TITLE}\\n审核通过（${TOTAL_ROUNDS} 轮），选择操作：\",
               \"reply_markup\": {
                 \"inline_keyboard\": [[
                   {\"text\": \"✅ 合并\", \"callback_data\": \"pf_merge_${PR_NUM}\"},
@@ -333,7 +333,7 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{
               \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-              \"text\": \"PR #${PR_NUM} 操作：\",
+              \"text\": \"[pushfile] PR #${PR_NUM}\\n${PR_TITLE}\\n${ROUND}轮未通过，选择操作：\",
               \"reply_markup\": {
                 \"inline_keyboard\": [
                   [
