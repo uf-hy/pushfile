@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{ title }}</title>
-<link rel="stylesheet" href="../static/album/style.css">
+<link rel="stylesheet" href="{{ base }}/static/album/style.css">
 </head>
 <body>
 <div class="page">
@@ -54,7 +54,8 @@
 window.albumFiles = {{ files_json|safe }};
 window.albumToken = '{{ token }}';
 window.albumDomain = '{{ domain }}';
+window.__BASE__ = '{{ base }}';
 </script>
-<script src="../static/album/app.js"></script>
+<script src="{{ base }}/static/album/app.js"></script>
 </body>
 </html>
