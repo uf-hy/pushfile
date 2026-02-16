@@ -6,11 +6,23 @@ from starlette.requests import Request
 from app.auth import safe_token
 from app.storage import list_images, get_token_title, record_visit, resolve_slug, list_images_by_path
 from app.config import FRONTEND_DIR, SITE_DOMAIN, MAX_MB, BASE_PATH
+from app.security import SlidingWindowRateLimiter
 
 router = APIRouter(tags=["pages"])
 templates = Jinja2Templates(directory=str(FRONTEND_DIR))
 
 _common = {"domain": SITE_DOMAIN, "max_mb": MAX_MB, "base": BASE_PATH}
+
+_d_404_limiter = SlidingWindowRateLimiter(limit=30, window_s=60.0)
+
+
+def _client_ip(request: Request) -> str:
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    if request.client:
+        return request.client.host
+    return ""
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -75,4 +87,12 @@ def album(request: Request, token: str):
 @router.get("/d/{token}", response_class=HTMLResponse)
 def album_short(request: Request, token: str):
     """Short URL for album — no Caddy rewrite needed."""
-    return _render_album(request, token)
+    try:
+        return _render_album(request, token)
+    except HTTPException as e:
+        if e.status_code != 404:
+            raise
+        ip = _client_ip(request)
+        if not _d_404_limiter.allow(ip):
+            raise HTTPException(status_code=429, detail="too many requests")
+        raise
