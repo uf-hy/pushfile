@@ -1,8 +1,6 @@
 import json
 import os
 import ipaddress
-import time
-from threading import Lock
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -10,36 +8,20 @@ from starlette.requests import Request
 from app.auth import safe_token
 from app.storage import list_images, get_token_title, record_visit, resolve_slug, list_images_by_path
 from app.config import FRONTEND_DIR, SITE_DOMAIN, MAX_MB, BASE_PATH
+from app.security import SlidingWindowRateLimiter
 
 router = APIRouter(tags=["pages"])
 templates = Jinja2Templates(directory=str(FRONTEND_DIR))
 
 _common = {"domain": SITE_DOMAIN, "max_mb": MAX_MB, "base": BASE_PATH}
 
-_D_404_LIMIT = 30
-_D_404_WINDOW_S = 60.0
-_d_404_state: dict[str, tuple[float, int]] = {}
-_d_404_lock = Lock()
+# Rate limiter for 404 on /d/{token} — reuses SlidingWindowRateLimiter (has max_keys + cleanup)
+_d_404_limiter = SlidingWindowRateLimiter(limit=30, window_s=60.0)
 
-
-def _d_404_allow(key: str, now: float | None = None) -> bool:
-    key = key or "unknown"
-    if now is None:
-        now = time.time()
-    with _d_404_lock:
-        window_start, count = _d_404_state.get(key, (now, 0))
-        if (now - window_start) >= _D_404_WINDOW_S:
-            window_start, count = now, 0
-        if count >= _D_404_LIMIT:
-            return False
-        _d_404_state[key] = (window_start, count + 1)
-        return True
-
+# Trusted proxy handling: default to NO trust (empty).
+# Set TRUSTED_PROXY_NETS env var to enable XFF parsing, e.g. "127.0.0.1/32,10.0.0.0/8".
 _TRUSTED_PROXY_NETS: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
-_trusted_proxy_env = os.environ.get(
-    "TRUSTED_PROXY_NETS",
-    "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7,fe80::/10",
-)
+_trusted_proxy_env = os.environ.get("TRUSTED_PROXY_NETS", "")
 for _net in _trusted_proxy_env.split(","):
     _net = _net.strip()
     if not _net:
@@ -70,6 +52,8 @@ def _parse_ip(value: str) -> str | None:
 
 def _client_ip(request: Request) -> str:
     peer = request.client.host if request.client else ""
+    if not _TRUSTED_PROXY_NETS:
+        return peer or "unknown"
     peer_ip = _parse_ip(peer)
     if peer_ip and _is_trusted_proxy(peer_ip):
         xff = request.headers.get("x-forwarded-for") or ""
@@ -160,6 +144,6 @@ def album_short(request: Request, token: str):
         if e.status_code != 404:
             raise
         ip = _client_ip(request)
-        if not _d_404_allow(ip):
+        if not _d_404_limiter.allow(ip):
             raise HTTPException(status_code=429, detail="too many requests")
         raise
