@@ -118,8 +118,7 @@ jobs:
       - name: Run AI fix
         if: steps.results.outputs.failed == 'true'
         env:
-          OPENAI_API_KEY: ${{ secrets.CODEX_API_KEY }}
-          OPENAI_BASE_URL: ${{ secrets.CODEX_API_BASE }}
+          CUSTOM_OPENAI_KEY: ${{ secrets.CODEX_API_KEY }}
         run: |
           PR_LABELS="${{ join(github.event.pull_request.labels.*.name, ',') }}"
           if [[ ! "$PR_LABELS" =~ agent- ]]; then exit 1; fi
@@ -127,8 +126,12 @@ jobs:
           npm install -g @openai/codex
           ERRORS=$(cat /tmp/all_errors.txt | head -100)
 
-          codex exec --full-auto \
-            -m gpt-5.2 \
+          codex \
+            -c 'model_providers.custom_openai.name="Custom OpenAI"' \
+            -c 'model_providers.custom_openai.base_url="${{ secrets.CODEX_API_BASE }}"' \
+            -c 'model_providers.custom_openai.env_key="CUSTOM_OPENAI_KEY"' \
+            -c 'model_provider="custom_openai"' \
+            exec --full-auto -m gpt-5.2 \
             "以下测试/lint 失败了，请修复代码：\n\n${ERRORS}"
 
           git config user.name "github-actions[bot]"

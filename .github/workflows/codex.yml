@@ -25,18 +25,18 @@ jobs:
 
       - name: Run Codex
         env:
-          OPENAI_API_KEY: ${{ secrets.CODEX_API_KEY }}
-          OPENAI_BASE_URL: ${{ secrets.CODEX_API_BASE }}
-          CODEX_DISABLE_RESPONSES_API: "1"
+          # Codex v0.101 对自定义中转站需要配置自定义 model_provider，否则不会把 key 带到请求里
+          CUSTOM_OPENAI_KEY: ${{ secrets.CODEX_API_KEY }}
         run: |
-          if codex exec --help >/dev/null 2>&1; then
-            codex exec --full-auto -m gpt-5.2 "根据以下需求修改代码：
+          codex \
+            -c 'model_providers.custom_openai.name="Custom OpenAI"' \
+            -c 'model_providers.custom_openai.base_url="${{ secrets.CODEX_API_BASE }}"' \
+            -c 'model_providers.custom_openai.env_key="CUSTOM_OPENAI_KEY"' \
+            -c 'model_provider="custom_openai"' \
+            exec --full-auto -m gpt-5.2 \
+            "根据以下需求修改代码：
             标题：${{ github.event.issue.title }}
             内容：${{ github.event.issue.body }}"
-          else
-            echo "codex exec not supported in this version, skipping codex run"
-            exit 1
-          fi
 
       - name: Create PR
         id: pr

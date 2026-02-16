@@ -31,8 +31,7 @@ jobs:
 
       - name: Fetch and Compare PRs
         env:
-          OPENAI_API_KEY: ${{ secrets.CODEX_API_KEY }}
-          OPENAI_BASE_URL: ${{ secrets.CODEX_API_BASE }}
+          CUSTOM_OPENAI_KEY: ${{ secrets.CODEX_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ISSUE_NUM="${{ inputs.issue_number }}"
@@ -45,8 +44,12 @@ jobs:
 
           DIFFS=$(cat /tmp/compare_input.txt | head -500)
 
-          codex exec --full-auto \
-            -m gpt-5.2 \
+          codex \
+            -c 'model_providers.custom_openai.name="Custom OpenAI"' \
+            -c 'model_providers.custom_openai.base_url="${{ secrets.CODEX_API_BASE }}"' \
+            -c 'model_providers.custom_openai.env_key="CUSTOM_OPENAI_KEY"' \
+            -c 'model_provider="custom_openai"' \
+            exec --full-auto -m gpt-5.2 \
             "你是代码审核专家。以下是 AI Agent 对 Issue #${ISSUE_NUM} 的代码修改。
 
           如果两个 PR 都存在，请对比分析：
