@@ -1,5 +1,5 @@
-# PR 预览部署 — 每个 PR 自动起一个 Docker 预览环境
-# 通过 SSH 连接到你的服务器部署
+# PR 预览部署 — 在闲置服务器(de)上起 Docker 预览
+# 使用受限 SSH Key，只能执行部署脚本，无法登录 shell
 name: Preview Deploy
 
 on:
@@ -14,40 +14,15 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.action != 'closed'
     steps:
-      - uses: actions/checkout@v4
-
       - name: Deploy Preview
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SERVER_HOST }}
-          username: root
+          username: ${{ secrets.SERVER_SSH_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_SSH_PORT }}
           script: |
-            PR_NUM=${{ github.event.pull_request.number }}
-            PREVIEW_PORT=$((35000 + PR_NUM))
-            CONTAINER_NAME="pushfile-preview-${PR_NUM}"
-            PREVIEW_DIR="/tmp/pushfile-preview-${PR_NUM}"
-            
-            # 清理旧的
-            docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
-            rm -rf "$PREVIEW_DIR"
-            
-            # 拉取 PR 代码
-            git clone --depth 1 -b "${{ github.head_ref }}" \
-              "https://github.com/uf-hy/pushfile.git" "$PREVIEW_DIR"
-            
-            # 构建并启动
-            cd "$PREVIEW_DIR"
-            docker build -t "pushfile-preview:pr-${PR_NUM}" .
-            docker run -d \
-              --name "$CONTAINER_NAME" \
-              -p "${PREVIEW_PORT}:8000" \
-              -e UPLOAD_SECRET=preview-test-key \
-              -e UPLOAD_BASE=/tmp/preview-uploads \
-              -e SITE_DOMAIN=preview-${PR_NUM}.photo.xaihub.de \
-              "pushfile-preview:pr-${PR_NUM}"
-            
-            echo "Preview deployed on port ${PREVIEW_PORT}"
+            deploy ${{ github.event.pull_request.number }} ${{ github.head_ref }}
 
       - name: Comment Preview URL
         uses: actions/github-script@v7
@@ -60,7 +35,7 @@ jobs:
               repo: context.repo.repo,
               issue_number: prNum,
               body: `🚀 **预览环境已部署**\n\n` +
-                `- 管理后台: http://${{ secrets.SERVER_HOST }}:${port}/\n` +
+                `- 预览地址: http://${{ secrets.SERVER_HOST }}:${port}/\n` +
                 `- 预览密码: \`preview-test-key\`\n\n` +
                 `每次推送代码会自动更新预览。PR 关闭后自动销毁。`
             });
@@ -73,11 +48,8 @@ jobs:
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SERVER_HOST }}
-          username: root
+          username: ${{ secrets.SERVER_SSH_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_SSH_PORT }}
           script: |
-            PR_NUM=${{ github.event.pull_request.number }}
-            docker rm -f "pushfile-preview-${PR_NUM}" 2>/dev/null || true
-            docker rmi "pushfile-preview:pr-${PR_NUM}" 2>/dev/null || true
-            rm -rf "/tmp/pushfile-preview-${PR_NUM}"
-            echo "Preview for PR #${PR_NUM} cleaned up"
+            cleanup ${{ github.event.pull_request.number }}
