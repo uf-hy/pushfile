@@ -276,6 +276,7 @@ jobs:
             core.setOutput('pr_num', String(prNum));
             core.setOutput('pr_title', prTitle);
             core.setOutput('passed', passed ? 'true' : 'false');
+            core.setOutput('total_rounds', String(round));
 
       # === Telegram Notification ===
 
@@ -285,13 +286,14 @@ jobs:
           PR_NUM="${{ steps.comment.outputs.pr_num }}"
           PR_TITLE="${{ steps.comment.outputs.pr_title }}"
           PR_URL="https://github.com/uf-hy/pushfile/pull/${PR_NUM}"
+          TOTAL_ROUNDS="${{ steps.comment.outputs.total_rounds }}"
 
           # 1) Notification bot: text message
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_NOTIFY_TOKEN }}/sendMessage" \
             -H "Content-Type: application/json" \
             -d "{
               \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-              \"text\": \"✅ PR #${PR_NUM} 审核通过\\n${PR_TITLE}\\n\\n等待确认合并\",
+              \"text\": \"✅ PR #${PR_NUM} 审核通过（经过 ${TOTAL_ROUNDS} 轮审核）\\n${PR_TITLE}\\n\\n等待确认合并\",
               \"disable_notification\": false
             }"
 
