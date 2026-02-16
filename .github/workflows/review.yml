@@ -1,6 +1,7 @@
 # PR 自动审核 — 对所有 PR 进行代码审查
 # AI Agent PR: 审核不通过自动修复（最多 3 轮）
 # 人工 PR: 只审核不修复
+# 通知: 通过/到上限 → Telegram 通知 + 操作按钮
 name: PR Review
 
 on:
@@ -15,7 +16,7 @@ permissions:
 jobs:
   review:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 90
     if: "!contains(github.event.pull_request.title, 'promote')"
     steps:
       - uses: actions/checkout@v4
@@ -149,7 +150,7 @@ jobs:
 
           cat /tmp/review_result.md 2>/dev/null || echo "审核执行完成但未生成报告" > /tmp/review_result.md
 
-      - name: Post Review Comment
+      - name: Post Review Comment & Decide
         if: always()
         id: comment
         uses: actions/github-script@v7
@@ -166,46 +167,124 @@ jobs:
             const issueNum = '${{ steps.source.outputs.issue_num }}';
             const round = parseInt('${{ steps.rounds.outputs.count }}') + 1;
             const maxRounds = 3;
-            const isAgent = source !== 'manual';
+            const prNum = ${{ github.event.pull_request.number }};
+            const prTitle = '${{ github.event.pull_request.title }}'.replace(/'/g, '');
 
-            // Determine if review passed
             const passed = review.includes('✅') && !review.includes('⚠️') && !review.includes('❌');
             const needsFix = review.includes('需要修改') || review.includes('不建议合并') || review.includes('⚠️') || review.includes('❌');
+
+            const labels = context.payload.pull_request.labels.map(l => l.name);
+            const hasAutoFixLabel = labels.includes('auto-fix');
+            const canAutoFix = hasAutoFixLabel && round < maxRounds;
 
             let header = `## 🔍 PR 代码审核（第 ${round}/${maxRounds} 轮）\n\n`;
             header += `**来源：** ${sourceDesc}\n`;
             if (issueNum) header += `**关联 Issue：** #${issueNum}\n`;
             header += `**分支：** \`${{ github.event.pull_request.head.ref }}\`\n`;
 
-            // Auto-fix ONLY when PR has 'auto-fix' label (owner controls)
-            // Codex PRs get this label automatically; others need manual labeling
-            const labels = context.payload.pull_request.labels.map(l => l.name);
-            const hasAutoFixLabel = labels.includes('auto-fix');
-            const canAutoFix = hasAutoFixLabel && round < maxRounds;
+            // Decide notification type: passed / silent-autofix / max-reached / no-label
+            let notifyType = 'none';
 
-            if (canAutoFix && needsFix) {
+            if (passed) {
+              header += `\n✅ **审核通过！等待人工确认合并。**\n`;
+              notifyType = 'passed';
+            } else if (canAutoFix && needsFix) {
               header += `\n🔄 **审核未通过，将自动触发 Codex 修复（第 ${round+1} 轮）…**\n`;
+              notifyType = 'none'; // silent during auto-fix
             } else if (hasAutoFixLabel && needsFix && round >= maxRounds) {
               header += `\n⏹️ **已达最大审核轮次（${maxRounds}），不再自动修复。请人工检查。**\n`;
+              notifyType = 'max_reached';
             } else if (needsFix && !hasAutoFixLabel) {
               header += `\n💡 **审核未通过。添加 \`auto-fix\` label 可触发自动修复（最多 ${maxRounds} 轮）。**\n`;
+              notifyType = 'no_label';
             }
 
             header += `\n---\n\n`;
-            // Hidden marker for round tracking
             header += `<!-- codex-review-round -->\n`;
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: ${{ github.event.pull_request.number }},
+              issue_number: prNum,
               body: header + review,
             });
 
-            // Auto-fix only if PR has 'auto-fix' label (owner controls)
             const shouldFix = hasAutoFixLabel && needsFix && round < maxRounds;
             core.setOutput('should_fix', shouldFix ? 'true' : 'false');
             core.setOutput('round', String(round));
+            core.setOutput('notify_type', notifyType);
+            core.setOutput('pr_num', String(prNum));
+            core.setOutput('pr_title', prTitle);
+            core.setOutput('passed', passed ? 'true' : 'false');
+
+      # === Telegram Notification ===
+
+      - name: Notify — review passed
+        if: steps.comment.outputs.notify_type == 'passed'
+        run: |
+          PR_NUM="${{ steps.comment.outputs.pr_num }}"
+          PR_TITLE="${{ steps.comment.outputs.pr_title }}"
+          PR_URL="https://github.com/uf-hy/pushfile/pull/${PR_NUM}"
+
+          # 1) Notification bot: text message
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_NOTIFY_TOKEN }}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
+              \"text\": \"✅ PR #${PR_NUM} 审核通过\\n${PR_TITLE}\\n\\n等待确认合并\",
+              \"disable_notification\": false
+            }"
+
+          # 2) fufu bot: action buttons
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
+              \"text\": \"PR #${PR_NUM} 操作：\",
+              \"reply_markup\": {
+                \"inline_keyboard\": [[
+                  {\"text\": \"✅ 合并\", \"callback_data\": \"pf_merge_${PR_NUM}\"},
+                  {\"text\": \"👀 查看\", \"url\": \"${PR_URL}\"}
+                ]]
+              }
+            }"
+
+      - name: Notify — max rounds reached
+        if: steps.comment.outputs.notify_type == 'max_reached'
+        run: |
+          PR_NUM="${{ steps.comment.outputs.pr_num }}"
+          PR_TITLE="${{ steps.comment.outputs.pr_title }}"
+          PR_URL="https://github.com/uf-hy/pushfile/pull/${PR_NUM}"
+          ROUND="${{ steps.comment.outputs.round }}"
+
+          # 1) Notification bot: text message
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_NOTIFY_TOKEN }}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
+              \"text\": \"❌ PR #${PR_NUM} ${ROUND}轮修复仍未通过\\n${PR_TITLE}\\n\\n需要人工介入\",
+              \"disable_notification\": false
+            }"
+
+          # 2) fufu bot: action buttons
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
+              \"text\": \"PR #${PR_NUM} 操作：\",
+              \"reply_markup\": {
+                \"inline_keyboard\": [
+                  [
+                    {\"text\": \"🔄 再试 (high)\", \"callback_data\": \"pf_retry_h_${PR_NUM}\"},
+                    {\"text\": \"🧠 xhigh 再试\", \"callback_data\": \"pf_retry_xh_${PR_NUM}\"}
+                  ],
+                  [
+                    {\"text\": \"❌ 关闭 PR\", \"callback_data\": \"pf_close_${PR_NUM}\"},
+                    {\"text\": \"👀 查看\", \"url\": \"${PR_URL}\"}
+                  ]
+                ]
+              }
+            }"
 
       # === Auto-fix: only for AI agent PRs, max 3 rounds ===
 

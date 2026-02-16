@@ -19,7 +19,7 @@ env:
 jobs:
   codex:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 90
     if: >-
       !contains(github.event.issue.labels.*.name, 'skip-codex') &&
       (

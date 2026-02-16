@@ -1,0 +1,90 @@
+# 手动重试 — 由 Telegram 按钮回调触发
+# fufu 收到回调后调 GitHub API 触发此 workflow
+name: Codex Retry
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to retry'
+        required: true
+      reasoning:
+        description: 'Reasoning effort (high/xhigh)'
+        required: true
+        default: 'high'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Get PR info
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          PR_NUM="${{ github.event.inputs.pr_number }}"
+          PR_JSON=$(gh pr view "$PR_NUM" --repo uf-hy/pushfile --json headRefName,title,body,number)
+          BRANCH=$(echo "$PR_JSON" | jq -r '.headRefName')
+          TITLE=$(echo "$PR_JSON" | jq -r '.title')
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          echo "title=$TITLE" >> $GITHUB_OUTPUT
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.branch }}
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Get latest review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUM="${{ github.event.inputs.pr_number }}"
+          gh api "repos/uf-hy/pushfile/issues/${PR_NUM}/comments" \
+            --jq '[.[] | select(.body | contains("codex-review-round"))] | last | .body' \
+            > /tmp/last_review.txt 2>/dev/null || echo "no previous review" > /tmp/last_review.txt
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
+      - name: Run Codex fix (reasoning=${{ github.event.inputs.reasoning }})
+        env:
+          CUSTOM_OPENAI_KEY: ${{ secrets.CODEX_API_KEY }}
+        run: |
+          REASONING="${{ github.event.inputs.reasoning }}"
+          REVIEW=$(cat /tmp/last_review.txt)
+
+          cat > /tmp/fix_prompt.txt <<'FIXEOF'
+          你是代码修复专家。根据以下代码审核意见修改代码。
+          只修复审核中明确指出的问题，不要做额外的重构或改动。
+          修改完成后确保代码能正常运行。
+          FIXEOF
+          echo "" >> /tmp/fix_prompt.txt
+          echo "审核意见：" >> /tmp/fix_prompt.txt
+          echo "$REVIEW" >> /tmp/fix_prompt.txt
+
+          codex \
+            -c 'model_providers.custom_openai.name="Custom OpenAI"' \
+            -c "model_providers.custom_openai.base_url=\"${{ secrets.CODEX_API_BASE }}\"" \
+            -c 'model_providers.custom_openai.env_key="CUSTOM_OPENAI_KEY"' \
+            -c 'model_provider="custom_openai"' \
+            -c "reasoning_effort=\"${REASONING}\"" \
+            exec --full-auto -m gpt-5.2 \
+            "$(cat /tmp/fix_prompt.txt)"
+
+      - name: Push fixes
+        run: |
+          git config user.name "codex-bot"
+          git config user.email "codex-bot@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          REASONING="${{ github.event.inputs.reasoning }}"
+          git commit -m "fix: manual retry (${REASONING}) based on review feedback"
+          git push origin ${{ steps.pr.outputs.branch }}
