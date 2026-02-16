@@ -1,4 +1,3 @@
-const BASE = window.__BASE__ || '';
 const files = window.albumFiles || [];
 const token = window.albumToken || '';
 const domain = window.albumDomain || '';
