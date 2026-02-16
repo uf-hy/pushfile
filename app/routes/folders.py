@@ -16,6 +16,11 @@ class DeleteFolderPayload(BaseModel):
     path: str
 
 
+class MoveFolderPayload(BaseModel):
+    path: str
+    dest: str = ""
+
+
 @router.get("/tree")
 def api_folder_tree(key: str):
     auth_query_key(key)
@@ -66,3 +71,50 @@ def api_folder_delete(
         raise HTTPException(status_code=400, detail="not a folder")
     shutil.rmtree(d)
     return {"ok": True, "path": path}
+
+
+@router.post("/move")
+def api_folder_move(
+    payload: MoveFolderPayload,
+    x_upload_key: str | None = Header(default=None),
+):
+    auth_header_key(x_upload_key)
+
+    src_path = safe_path(payload.path)
+    src_dir = resolve_dir(src_path)
+    if not src_dir.exists():
+        raise HTTPException(status_code=404, detail="folder not found")
+    if not src_dir.is_dir():
+        raise HTTPException(status_code=400, detail="not a folder")
+
+    dest_raw = (payload.dest or "").strip().strip("/")
+    if dest_raw:
+        dest_path = safe_path(dest_raw)
+        dest_dir = resolve_dir(dest_path)
+    else:
+        dest_path = ""
+        dest_dir = BASE_DIR
+
+    if not dest_dir.exists():
+        raise HTTPException(status_code=404, detail="dest folder not found")
+    if not dest_dir.is_dir():
+        raise HTTPException(status_code=400, detail="dest is not a folder")
+
+    if dest_dir == src_dir or dest_dir.is_relative_to(src_dir):
+        raise HTTPException(status_code=400, detail="cannot move folder into itself")
+
+    new_path = f"{dest_path}/{src_dir.name}" if dest_path else src_dir.name
+    target_dir = resolve_dir(new_path)
+
+    if src_dir == target_dir:
+        return {"ok": True, "path": src_path, "dest": dest_path, "new_path": src_path}
+
+    if target_dir.exists():
+        raise HTTPException(status_code=409, detail="target already exists")
+
+    try:
+        shutil.move(str(src_dir), str(target_dir))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"move failed: {e}") from e
+
+    return {"ok": True, "path": src_path, "dest": dest_path, "new_path": new_path}
