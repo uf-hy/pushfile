@@ -26,8 +26,6 @@ jobs:
         id: source
         run: |
           BRANCH="${{ github.event.pull_request.head.ref }}"
-          LABELS='${{ toJSON(github.event.pull_request.labels.*.name) }}'
-          AUTHOR="${{ github.event.pull_request.user.login }}"
 
           if echo "$BRANCH" | grep -qE '^codex/issue-'; then
             echo "source=codex-agent" >> $GITHUB_OUTPUT
@@ -44,16 +42,22 @@ jobs:
           fi
 
       - name: Get PR diff
-        id: diff
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr_diff.txt 2>/dev/null || echo "Failed to get diff" > /tmp/pr_diff.txt
-          # Truncate to avoid token limits
           head -c 30000 /tmp/pr_diff.txt > /tmp/pr_diff_truncated.txt
 
+      - name: Write PR metadata to files
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const pr = context.payload.pull_request;
+            fs.writeFileSync('/tmp/pr_title.txt', pr.title || '');
+            fs.writeFileSync('/tmp/pr_body.txt', (pr.body || '').slice(0, 2000));
+
       - name: Get linked issue context
-        id: issue
         if: steps.source.outputs.issue_num != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -69,21 +73,18 @@ jobs:
           CUSTOM_OPENAI_KEY: ${{ secrets.CODEX_API_KEY }}
         run: |
           SOURCE="${{ steps.source.outputs.source }}"
-          SOURCE_DESC="${{ steps.source.outputs.desc }}"
-          ISSUE_NUM="${{ steps.source.outputs.issue_num }}"
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          PR_BODY=$(echo '${{ github.event.pull_request.body }}' | head -c 2000)
+          PR_TITLE=$(cat /tmp/pr_title.txt)
+          PR_BODY=$(cat /tmp/pr_body.txt)
           DIFF=$(cat /tmp/pr_diff_truncated.txt)
           ISSUE_CTX=""
           if [ -f /tmp/issue_context.txt ]; then
             ISSUE_CTX=$(cat /tmp/issue_context.txt)
           fi
 
+          # Build prompt in a file to avoid shell injection
           if [ "$SOURCE" = "manual" ]; then
-            REVIEW_PROMPT="你是代码审核专家。这是一个 **人工提交** 的 PR，请以协作者的角度审核。
-
-          PR 标题：${PR_TITLE}
-          PR 描述：${PR_BODY}
+            cat > /tmp/review_prompt.txt <<'PROMPT_END'
+          你是代码审核专家。这是一个 **人工提交** 的 PR，请以协作者的角度审核。
 
           审核要点：
           1. **代码质量** — 可读性、规范性、是否遵循项目风格
@@ -91,9 +92,11 @@ jobs:
           3. **安全性** — 有无路径遍历、注入等风险
           4. **建议** — 有什么可以改进的地方
 
-          语气：简洁专业，像一个靠谱的同事在 review。不需要过度夸奖。"
+          语气：简洁专业，像一个靠谱的同事在 review。不需要过度夸奖。
+          PROMPT_END
           else
-            REVIEW_PROMPT="你是代码审核专家。这是一个 **AI Agent (${SOURCE}) 自动生成** 的 PR，由 Issue #${ISSUE_NUM} 触发。
+            cat > /tmp/review_prompt.txt <<PROMPT_END
+          你是代码审核专家。这是一个 **AI Agent (${SOURCE}) 自动生成** 的 PR，由 Issue 触发。
 
           对 AI 生成的代码要更严格审核，重点关注：
           1. **需求匹配** — 是否真正解决了 Issue 描述的问题（而非表面修复）
@@ -101,23 +104,34 @@ jobs:
           3. **安全性** — AI 可能引入不安全的模式（如未验证输入、硬编码等）
           4. **副作用** — 是否影响了其他功能
           5. **是否值得合并** — 明确给出 ✅ 推荐合并 / ⚠️ 需要修改 / ❌ 不建议合并
-
-          原始 Issue 内容：
-          ${ISSUE_CTX}
-
-          PR 标题：${PR_TITLE}"
+          PROMPT_END
           fi
+
+          # Append metadata from files (safe, no shell expansion)
+          {
+            echo ""
+            echo "PR 标题：$PR_TITLE"
+            echo ""
+            echo "PR 描述：$PR_BODY"
+            echo ""
+            if [ -n "$ISSUE_CTX" ]; then
+              echo "原始 Issue 内容："
+              echo "$ISSUE_CTX"
+              echo ""
+            fi
+            echo "代码变更（diff）："
+            echo "$DIFF"
+          } >> /tmp/review_prompt.txt
+
+          FULL_PROMPT=$(cat /tmp/review_prompt.txt)
 
           codex \
             -c 'model_providers.custom_openai.name="Custom OpenAI"' \
-            -c 'model_providers.custom_openai.base_url="${{ secrets.CODEX_API_BASE }}"' \
+            -c "model_providers.custom_openai.base_url=\"${{ secrets.CODEX_API_BASE }}\"" \
             -c 'model_providers.custom_openai.env_key="CUSTOM_OPENAI_KEY"' \
             -c 'model_provider="custom_openai"' \
             exec --full-auto -m gpt-5.2 \
-            "${REVIEW_PROMPT}
-
-          代码变更（diff）：
-          ${DIFF}
+            "$(cat /tmp/review_prompt.txt)
 
           把审核结果写入 /tmp/review_result.md，格式清晰，用中文。"
 
