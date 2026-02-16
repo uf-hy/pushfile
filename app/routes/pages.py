@@ -34,7 +34,7 @@ def _render_album(request: Request, token: str):
     if real_path:
         files = list_images_by_path(real_path)
         display_name = real_path.split("/")[-1]
-        record_visit(token)
+        record_visit(real_path)
         return templates.TemplateResponse(
             "album/index.html",
             {

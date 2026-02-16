@@ -2,7 +2,7 @@ import hashlib
 import time
 import zipfile
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from fastapi import APIRouter, File, UploadFile, HTTPException, Header
 from fastapi.responses import JSONResponse
 from app.auth import safe_token, safe_path, auth_header_key, token_dir, resolve_dir, sniff_image_type
@@ -35,17 +35,22 @@ async def api_zip_import(
             for info in zf.infolist():
                 if info.is_dir():
                     continue
-                name = info.filename
+                name = info.filename.replace("\\", "/")
                 if name.startswith("__MACOSX") or "/." in name or name.startswith("."):
+                    continue
+                p = PurePosixPath(name)
+                if p.is_absolute():
                     continue
                 ext = Path(name).suffix.lower()
                 if ext not in ALLOWED_SUFFIX:
                     continue
-                rel_dir = str(Path(name).parent)
-                if rel_dir == ".":
+                rel_dir = p.parent
+                if ".." in rel_dir.parts:
                     continue
-                target_dir = (BASE_DIR / rel_dir).resolve()
-                if not str(target_dir).startswith(str(BASE_DIR)):
+                if str(rel_dir) == ".":
+                    continue
+                target_dir = BASE_DIR.joinpath(*rel_dir.parts).resolve()
+                if not target_dir.is_relative_to(BASE_DIR):
                     continue
                 target_dir.mkdir(parents=True, exist_ok=True)
                 target_file = target_dir / Path(name).name
