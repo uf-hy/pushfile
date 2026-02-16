@@ -7,6 +7,7 @@ function isIOS() {
   return /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
+// UA 检测仅用于 UX 提示/降级，不作为安全判断或权限控制依据。
 function detectInAppBrowser(ua = navigator.userAgent) {
   const isXhs = /XiaoHongShu|discover\//i.test(ua);
   const isWechat = /MicroMessenger/i.test(ua);
@@ -21,15 +22,30 @@ function detectInAppBrowser(ua = navigator.userAgent) {
 const __inappEnv = detectInAppBrowser();
 const __androidInApp = __inappEnv.isAndroid && __inappEnv.inApp;
 
+let __inappCopyTimer = 0;
+function showInappCopyStatus(msg) {
+  const el = document.getElementById('inappCopyStatus');
+  if (!el) return;
+  el.textContent = msg || '';
+  requestAnimationFrame(updateInappBarHeight);
+  if (__inappCopyTimer) clearTimeout(__inappCopyTimer);
+  if (msg) __inappCopyTimer = setTimeout(() => (el.textContent = ''), 1500);
+}
+
 async function copyLink() {
   const text = window.location.href;
+  let ok = false;
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       await navigator.clipboard.writeText(text);
-      return true;
+      ok = true;
     }
   } catch (err) {
     console.warn(err);
+  }
+  if (ok) {
+    showInappCopyStatus('已复制');
+    return true;
   }
   try {
     const el = document.createElement('textarea');
@@ -41,21 +57,35 @@ async function copyLink() {
     document.body.appendChild(el);
     el.select();
     el.setSelectionRange(0, el.value.length);
-    const ok = document.execCommand('copy');
+    ok = document.execCommand('copy');
     el.remove();
+    showInappCopyStatus(ok ? '已复制' : '复制失败');
     return ok;
   } catch (err) {
     console.warn(err);
+    showInappCopyStatus('复制失败');
     return false;
   }
+}
+
+function updateInappBarHeight() {
+  const bar = document.getElementById('inappBar');
+  if (!bar || bar.style.display === 'none') return;
+  document.documentElement.style.setProperty('--inapp-bar-h', bar.offsetHeight + 'px');
+}
+
+function getInappBarClosedKey() {
+  return 'pf_inapp_bar_closed:' + (token || '');
 }
 
 function closeInappBar() {
   const bar = document.getElementById('inappBar');
   if (bar) bar.style.display = 'none';
   document.body.classList.remove('has-inapp-bar');
+  document.documentElement.style.removeProperty('--inapp-bar-h');
+  window.removeEventListener('resize', updateInappBarHeight);
   try {
-    localStorage.setItem('pf_inapp_bar_closed', '1');
+    sessionStorage.setItem(getInappBarClosedKey(), '1');
   } catch (err) {
     // ignore
   }
@@ -168,11 +198,13 @@ if (isIOS()) {
 
 if (__androidInApp) {
   try {
-    if (localStorage.getItem('pf_inapp_bar_closed') !== '1') {
+    if (sessionStorage.getItem(getInappBarClosedKey()) !== '1') {
       const bar = document.getElementById('inappBar');
       if (bar) {
         bar.style.display = 'flex';
         document.body.classList.add('has-inapp-bar');
+        requestAnimationFrame(updateInappBarHeight);
+        window.addEventListener('resize', updateInappBarHeight);
       }
     }
   } catch (err) {
@@ -180,6 +212,8 @@ if (__androidInApp) {
     if (bar) {
       bar.style.display = 'flex';
       document.body.classList.add('has-inapp-bar');
+      requestAnimationFrame(updateInappBarHeight);
+      window.addEventListener('resize', updateInappBarHeight);
     }
   }
 
