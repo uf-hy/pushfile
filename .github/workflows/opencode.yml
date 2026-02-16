@@ -15,6 +15,7 @@ permissions:
 jobs:
   opencode:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: "!contains(github.event.issue.labels.*.name, 'skip-opencode')"
     steps:
       - uses: actions/checkout@v4
@@ -29,10 +30,12 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           OPENAI_API_BASE: ${{ secrets.OPENCODE_API_BASE }}
         run: |
-          opencode --prompt "根据以下需求修改代码：
+          opencode run \
+            --model openai/gpt-5.2 \
+            --variant high \
+            "根据以下需求修改代码：
           标题：${{ github.event.issue.title }}
-          内容：${{ github.event.issue.body }}" \
-            -m openai/gpt-5.2
+          内容：${{ github.event.issue.body }}"
 
       - name: Create PR
         id: pr

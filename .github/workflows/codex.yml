@@ -15,6 +15,7 @@ permissions:
 jobs:
   codex:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: "!contains(github.event.issue.labels.*.name, 'skip-codex')"
     steps:
       - uses: actions/checkout@v4
@@ -27,11 +28,14 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.CODEX_API_KEY }}
           OPENAI_BASE_URL: ${{ secrets.CODEX_API_BASE }}
         run: |
-          codex exec --full-auto \
-            -m gpt-5.2 \
-            "根据以下需求修改代码：
-          标题：${{ github.event.issue.title }}
-          内容：${{ github.event.issue.body }}"
+          if codex exec --help >/dev/null 2>&1; then
+            codex exec --full-auto -m gpt-5.2 "根据以下需求修改代码：
+            标题：${{ github.event.issue.title }}
+            内容：${{ github.event.issue.body }}"
+          else
+            echo "codex exec not supported in this version, skipping codex run"
+            exit 1
+          fi
 
       - name: Create PR
         id: pr
