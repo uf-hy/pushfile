@@ -51,6 +51,7 @@
   </div>
 </div>
 <script>
+window.__BASE__ = '{{ base }}';
 window.albumFiles = {{ files_json|safe }};
 window.albumToken = '{{ token }}';
 window.albumDomain = '{{ domain }}';

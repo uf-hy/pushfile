@@ -1,3 +1,4 @@
+const BASE = window.__BASE__ || '';
 const files = window.albumFiles || [];
 const token = window.albumToken || '';
 const domain = window.albumDomain || '';
@@ -28,7 +29,7 @@ function navLb(d, e) {
 }
 
 function updLb() {
-  document.getElementById('lbImg').src = '../d/' + token + '/' + files[lbIdx];
+  document.getElementById('lbImg').src = '.." + (window.__BASE__||'') + "/d/' + token + '/' + files[lbIdx];
   document.getElementById('lbInfo').textContent = (lbIdx + 1) + ' / ' + files.length + '  ·  ' + files[lbIdx];
 }
 
@@ -73,7 +74,7 @@ async function downloadAll(e) {
       showOv();
       for (let i = 0; i < files.length; i++) {
         setP(i, files.length, files[i]);
-        const r = await fetch('../d/' + token + '/' + files[i]);
+        const r = await fetch('.." + (window.__BASE__||'') + "/d/' + token + '/' + files[i]);
         if (!r.ok) continue;
         const fh = await dir.getFileHandle(files[i], {create: true});
         const ws = await fh.createWritable();
