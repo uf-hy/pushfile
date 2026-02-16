@@ -1,10 +1,10 @@
 # Codex — Issue 触发自动改代码
-# 模型：gpt-5.2 | 思考：high
+# 白名单用户提 Issue 自动触发；其他人需要 owner 打 'codex' label
 name: Codex Agent
 
 on:
   issues:
-    types: [opened]
+    types: [opened, labeled]
 
 permissions:
   contents: write
@@ -12,11 +12,21 @@ permissions:
   issues: write
   actions: write
 
+# 白名单：这些用户提 Issue 直接触发 Codex
+env:
+  TRUSTED_USERS: '["uf-hy"]'
+
 jobs:
   codex:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: "!contains(github.event.issue.labels.*.name, 'skip-codex')"
+    if: >-
+      !contains(github.event.issue.labels.*.name, 'skip-codex') &&
+      (
+        (github.event.action == 'opened' && contains(fromJSON('["uf-hy"]'), github.event.issue.user.login))
+        ||
+        (github.event.action == 'labeled' && github.event.label.name == 'codex')
+      )
     steps:
       - uses: actions/checkout@v4
 
