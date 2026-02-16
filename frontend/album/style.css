@@ -14,8 +14,8 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .btn-outline{background:transparent;color:var(--accent);border:1px solid var(--accent)}
 .btn-outline:hover{background:rgba(0,113,227,.08)}
 .inapp-tip{flex-basis:100%;text-align:center;margin-top:10px;font-size:13px;color:var(--sub);line-height:1.4}
-.inapp-bar{position:fixed;top:0;left:0;right:0;z-index:300;display:flex;align-items:center;gap:10px;padding:10px 12px;background:#fff3cd;color:#7a4b00;border-bottom:1px solid rgba(122,75,0,.25)}
-.inapp-bar span{flex:1;font-size:13px;line-height:1.4}
+.inapp-bar{position:fixed;top:0;left:0;right:0;z-index:300;display:flex;align-items:center;gap:10px;padding:10px 12px;background:#fff3cd;color:#7a4b00;border-bottom:1px solid rgba(122,75,0,.25);flex-wrap:wrap}
+.inapp-bar span{flex:1;font-size:13px;line-height:1.4;min-width:0;overflow-wrap:anywhere}
 .inapp-bar .inapp-status{flex:0 0 auto;font-size:12px;line-height:1.2;white-space:nowrap}
 .inapp-bar button{appearance:none;border:1px solid rgba(122,75,0,.35);background:rgba(255,255,255,.65);color:#7a4b00;border-radius:10px;padding:8px 10px;font-size:13px;line-height:1;cursor:pointer;white-space:nowrap}
 .inapp-bar button:active{transform:translateY(1px)}
