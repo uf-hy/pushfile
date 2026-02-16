@@ -9,6 +9,8 @@ EnvironmentFile=/root/code/photo/.env
 Environment=UPLOAD_BASE=/var/www/photo.xaihub.de/downloads
 Environment=SITE_DOMAIN=photo.xaihub.de
 Environment=BASE_PATH=/preview
+# /d/{token} 404 rate limiting uses client IP; configure trusted reverse proxy networks if needed.
+# See .env.example for TRUSTED_PROXY_NETS usage and examples.
 ExecStart=/root/.local/bin/uv run uvicorn app.main:app --host 127.0.0.1 --port 34109 --reload
 Restart=on-failure
 RestartSec=3
