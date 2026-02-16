@@ -3,20 +3,67 @@ const $=id=>document.getElementById(id);
 const DOMAIN=window.__DOMAIN__||'photo.xaihub.de';
 const BASE=window.__BASE__||'';
 const MAX_MB=window.__MAX_MB__||25;
+const ADMIN_KEY_COOKIE='pf_admin_key';
+const ADMIN_KEY_MAX_AGE=518400; // 144 hours
 
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2000)}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
 async function api(path,opts){const r=await fetch(BASE+'/'+path,opts||{});const j=await r.json().catch(()=>({detail:'error'}));if(!r.ok)throw new Error(j.detail||'fail');return j}
 
-async function connect(){
-  S=$('secret').value.trim();
-  if(!S)return toast('请输入密码');
+function getCookie(name){
+  const all=document.cookie||'';
+  if(!all)return '';
+  const parts=all.split(/;\s*/);
+  for(const p of parts){
+    const i=p.indexOf('=');
+    const k=i>=0?p.slice(0,i):p;
+    if(k===name){
+      const v=i>=0?p.slice(i+1):'';
+      try{return decodeURIComponent(v)}catch(_){return v}
+    }
+  }
+  return '';
+}
+
+function setAdminKeyCookie(key){
+  document.cookie=ADMIN_KEY_COOKIE+'='+encodeURIComponent(key)+'; path=/admin; max-age='+ADMIN_KEY_MAX_AGE+'; SameSite=Strict';
+}
+
+function clearAdminKeyCookie(){
+  document.cookie=ADMIN_KEY_COOKIE+'=; path=/admin; max-age=0; SameSite=Strict';
+}
+
+async function connect(key,opts){
+  const isAuto=!!(opts&&opts.auto);
+  const toastSuccess=!(opts&&opts.toastSuccess===false);
+  const toastFailure=!(opts&&opts.toastFailure===false);
+  const rememberEl=$('remember');
+  const inputEl=$('secret');
+
+  S=((key!=null?String(key):(inputEl?inputEl.value:''))||'').trim();
+  if(!S){if(toastFailure)toast('请输入密码');return false}
   try{
     await api('api/tokens?key='+encodeURIComponent(S));
     $('connBadge').textContent='✅ 已连接';$('connBadge').style.color='var(--green)';
     $('loginSection').style.display='none';$('mainSection').style.display='';
-    await loadTree();toast('连接成功');
-  }catch(e){toast('密码错误');S=''}
+    if(rememberEl&&rememberEl.checked)setAdminKeyCookie(S);else clearAdminKeyCookie();
+    await loadTree();
+    if(toastSuccess)toast('连接成功');
+    return true;
+  }catch(e){}
+  if(isAuto){
+    clearAdminKeyCookie();
+    S='';
+    if(rememberEl)rememberEl.checked=false;
+    if(inputEl)inputEl.value='';
+    $('connBadge').textContent='未连接';$('connBadge').style.color='var(--sub)';
+    $('loginSection').style.display='';$('mainSection').style.display='none';
+    if(toastFailure)toast('自动连接失败，请重新输入密码');
+    return false;
+  }
+  if(toastFailure)toast('密码错误');
+  S='';
+  return false;
 }
 
 async function loadTree(){
@@ -465,6 +512,8 @@ async function doMove(overlay,names){
 async function createToken(){
   S=S||$('secret').value.trim();const tk=$('newTokenInput').value.trim();if(!S||!tk)return toast('请填写密码和名称');
   try{await api('api/tokens',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Key':S},body:JSON.stringify({token:tk})});
+    const rememberEl=$('remember');
+    if(rememberEl&&rememberEl.checked)setAdminKeyCookie(S);else clearAdminKeyCookie();
     $('newTokenInput').value='';
     if($('mainSection').style.display==='none'){$('loginSection').style.display='none';$('mainSection').style.display='';$('connBadge').textContent='✅';$('connBadge').style.color='var(--green)'}
     await loadTree();toast('已创建 '+tk)}catch(e){toast('创建失败：'+e.message)}
@@ -473,3 +522,14 @@ async function createToken(){
 $('secret').addEventListener('keydown',e=>{if(e.key==='Enter')connect()});
 const zz=$('zipZone');
 if(zz){zz.addEventListener('dragover',e=>{e.preventDefault();zz.classList.add('dragover')});zz.addEventListener('dragleave',()=>zz.classList.remove('dragover'));zz.addEventListener('drop',e=>{e.preventDefault();zz.classList.remove('dragover');handleZipImport(e.dataTransfer.files)})}
+
+function initAutoConnect(){
+  const saved=getCookie(ADMIN_KEY_COOKIE);
+  if(!saved)return;
+  const input=$('secret');if(input)input.value=saved;
+  const remember=$('remember');if(remember)remember.checked=true;
+  $('connBadge').textContent='⏳ 连接中';$('connBadge').style.color='var(--sub)';
+  connect(saved,{auto:true,toastSuccess:false,toastFailure:true});
+}
+
+initAutoConnect();
