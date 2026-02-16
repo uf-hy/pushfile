@@ -65,4 +65,6 @@ jobs:
             由 Codex CLI (gpt-5.2, thinking: high) 自动生成
             对应 Issue #${{ github.event.issue.number }}
           commit-message: "feat: codex auto-fix #${{ github.event.issue.number }}"
+          committer: Codex <codex@users.noreply.github.com>
+          author: Codex <codex@users.noreply.github.com>
           labels: agent-codex,auto-fix

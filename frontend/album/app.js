@@ -8,6 +8,91 @@ function isIOS() {
   return /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
+// UA 检测仅用于 UX 提示/降级，不作为安全判断或权限控制依据。
+function detectInAppBrowser(ua = navigator.userAgent) {
+  const isXhs = /XiaoHongShu|discover\//i.test(ua);
+  const isWechat = /MicroMessenger/i.test(ua);
+  const isWeibo = /Weibo/i.test(ua);
+  // Issue #31 要求：/QQ\//i 命中即视为 QQ in-app。
+  const isQQ = /QQ\//i.test(ua);
+  const isDingTalk = /DingTalk/i.test(ua);
+  const isAndroid = /Android/i.test(ua);
+  const inApp = isXhs || isWechat || isWeibo || isQQ || isDingTalk;
+  return {isXhs, isWechat, isWeibo, isQQ, isDingTalk, isAndroid, inApp};
+}
+
+const __inappEnv = detectInAppBrowser();
+const __androidInApp = __inappEnv.isAndroid && __inappEnv.inApp;
+
+let __inappCopyTimer = 0;
+function showInappCopyStatus(msg) {
+  const el = document.getElementById('inappCopyStatus');
+  if (!el) return;
+  el.textContent = msg || '';
+  requestAnimationFrame(updateInappBarHeight);
+  if (__inappCopyTimer) clearTimeout(__inappCopyTimer);
+  if (msg) __inappCopyTimer = setTimeout(() => (el.textContent = ''), 1500);
+}
+
+async function copyLink() {
+  const text = window.location.href;
+  let ok = false;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    }
+  } catch (err) {
+    console.warn(err);
+  }
+  if (ok) {
+    showInappCopyStatus('已复制');
+    return true;
+  }
+  try {
+    const el = document.createElement('textarea');
+    el.value = text;
+    el.setAttribute('readonly', 'readonly');
+    el.style.position = 'fixed';
+    el.style.opacity = '0';
+    el.style.left = '-9999px';
+    document.body.appendChild(el);
+    el.select();
+    el.setSelectionRange(0, el.value.length);
+    ok = document.execCommand('copy');
+    el.remove();
+    showInappCopyStatus(ok ? '已复制' : '复制失败');
+    return ok;
+  } catch (err) {
+    console.warn(err);
+    showInappCopyStatus('复制失败');
+    return false;
+  }
+}
+
+function updateInappBarHeight() {
+  const bar = document.getElementById('inappBar');
+  if (!bar || bar.style.display === 'none') return;
+  document.documentElement.style.setProperty('--inapp-bar-h', bar.offsetHeight + 'px');
+}
+
+function getInappBarClosedKey() {
+  return 'pf_inapp_bar_closed:' + (token || '');
+}
+
+function closeInappBar() {
+  const bar = document.getElementById('inappBar');
+  if (bar) bar.style.display = 'none';
+  document.body.classList.remove('has-inapp-bar');
+  document.documentElement.style.removeProperty('--inapp-bar-h');
+  window.removeEventListener('resize', updateInappBarHeight);
+  try {
+    sessionStorage.setItem(getInappBarClosedKey(), '1');
+  } catch (err) {
+    // ignore
+  }
+}
+
 function openLb(i) {
   lbIdx = i;
   const lb = document.getElementById('lb');
@@ -68,6 +153,7 @@ function trigger(url, name) {
 async function downloadAll(e) {
   e.preventDefault();
   if (!files.length) return;
+  if (__androidInApp) return;
   try {
     if (window.showDirectoryPicker) {
       const dir = await window.showDirectoryPicker();
@@ -110,4 +196,47 @@ async function downloadAll(e) {
 if (isIOS()) {
   document.getElementById('iosTip').style.display = 'block';
   document.getElementById('dlAllBtn').style.display = 'none';
+}
+
+if (__androidInApp) {
+  try {
+    if (sessionStorage.getItem(getInappBarClosedKey()) !== '1') {
+      const bar = document.getElementById('inappBar');
+      if (bar) {
+        bar.style.display = 'flex';
+        document.body.classList.add('has-inapp-bar');
+        requestAnimationFrame(updateInappBarHeight);
+        window.addEventListener('resize', updateInappBarHeight);
+      }
+    }
+  } catch (err) {
+    const bar = document.getElementById('inappBar');
+    if (bar) {
+      bar.style.display = 'flex';
+      document.body.classList.add('has-inapp-bar');
+      requestAnimationFrame(updateInappBarHeight);
+      window.addEventListener('resize', updateInappBarHeight);
+    }
+  }
+
+  const dlAllBtn = document.getElementById('dlAllBtn');
+  if (dlAllBtn) {
+    dlAllBtn.disabled = true;
+    dlAllBtn.title = '请在浏览器中打开后使用批量下载';
+    const tip = document.createElement('div');
+    tip.className = 'inapp-tip';
+    tip.textContent = '请在浏览器中打开后使用批量下载';
+    dlAllBtn.parentNode && dlAllBtn.parentNode.appendChild(tip);
+  }
+
+  document.querySelectorAll('a.card-dl').forEach(a => {
+    a.addEventListener('click', ev => {
+      // Android in-app 下，单张下载统一降级为 location 跳转，以绕开 WebView 对下载行为的兼容问题。
+      const href = a.getAttribute('href') || a.href;
+      if (!href) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      window.location.href = href;
+    });
+  });
 }

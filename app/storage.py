@@ -10,6 +10,7 @@ from app.auth import TOKEN_RE, token_dir, safe_name, resolve_dir
 
 ALLOWED_SUFFIX = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 MANIFEST = ".manifest.json"
+FOLDER_ORDER_FILE = ".folder_order.json"
 ARCHIVE_DIRNAME = "_archived"
 STATS_FILE = BASE_DIR / "_stats.json"
 SLUGS_FILE = BASE_DIR / "_slugs.json"
@@ -133,14 +134,104 @@ def _count_images(d: Path) -> int:
     return sum(1 for x in d.iterdir() if x.is_file() and x.suffix.lower() in ALLOWED_SUFFIX) if d.exists() else 0
 
 
+def _list_visible_child_dirs(d: Path) -> list[Path]:
+    if not d.exists():
+        return []
+    out = []
+    for p in d.iterdir():
+        if not p.is_dir() or p.name.startswith(("_", ".")) or p.is_symlink():
+            continue
+        out.append(p)
+    return out
+
+
+def load_subfolder_order(d: Path) -> list[str]:
+    p = d / FOLDER_ORDER_FILE
+    if not p.exists():
+        return []
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(data, list):
+            return []
+        return [x for x in data if isinstance(x, str) and x]
+    except Exception:
+        return []
+
+
+def save_subfolder_order(d: Path, order: list[str]):
+    p = d / FOLDER_ORDER_FILE
+    p.write_text(json.dumps(order, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def ordered_child_dirs(d: Path) -> list[Path]:
+    children = _list_visible_child_dirs(d)
+    by_name = {p.name: p for p in children}
+    order = load_subfolder_order(d)
+    out: list[Path] = []
+    used = set()
+    for name in order:
+        p = by_name.get(name)
+        if p and name not in used:
+            out.append(p)
+            used.add(name)
+    rest = [p for p in children if p.name not in used]
+    out.extend(sorted(rest, key=lambda p: p.name))
+    return out
+
+
+def reorder_subfolder(parent_dir: Path, folder_name: str, before_name: str | None = None):
+    before_name = (before_name or "").strip() or None
+    children = _list_visible_child_dirs(parent_dir)
+    existing_names = sorted({p.name for p in children})
+    existing_set = set(existing_names)
+    if folder_name not in existing_set:
+        existing_set.add(folder_name)
+        existing_names.append(folder_name)
+        existing_names = sorted(set(existing_names))
+
+    prev = load_subfolder_order(parent_dir)
+    base: list[str] = []
+    seen = set()
+    for name in prev:
+        if name in existing_set and name != folder_name and name not in seen:
+            base.append(name)
+            seen.add(name)
+    for name in existing_names:
+        if name in existing_set and name != folder_name and name not in seen:
+            base.append(name)
+            seen.add(name)
+
+    idx = len(base)
+    if before_name and before_name in base and before_name != folder_name:
+        idx = base.index(before_name)
+    base.insert(idx, folder_name)
+    save_subfolder_order(parent_dir, base)
+
+
+def remove_subfolder_from_order(parent_dir: Path, folder_name: str):
+    children = _list_visible_child_dirs(parent_dir)
+    existing_names = sorted({p.name for p in children})
+    existing_set = set(existing_names)
+    prev = load_subfolder_order(parent_dir)
+    base: list[str] = []
+    seen = set()
+    for name in prev:
+        if name in existing_set and name != folder_name and name not in seen:
+            base.append(name)
+            seen.add(name)
+    for name in existing_names:
+        if name != folder_name and name not in seen:
+            base.append(name)
+            seen.add(name)
+    save_subfolder_order(parent_dir, base)
+
+
 def build_tree(root: Path | None = None, rel: str = "") -> list:
     root = root or BASE_DIR
     if not root.exists():
         return []
     items = []
-    for p in sorted(root.iterdir()):
-        if not p.is_dir() or p.name.startswith(("_", ".")) or p.is_symlink():
-            continue
+    for p in ordered_child_dirs(root):
         child_rel = f"{rel}/{p.name}" if rel else p.name
         children = build_tree(p, child_rel)
         has_images = _count_images(p) > 0
@@ -266,5 +357,4 @@ def resolve_slug(slug: str) -> str | None:
 
 def get_all_slugs() -> dict:
     return _load_slugs()
-
 

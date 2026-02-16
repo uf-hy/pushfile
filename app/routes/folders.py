@@ -2,7 +2,12 @@ import shutil
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from app.auth import safe_path, resolve_dir, auth_header_key, auth_query_key
-from app.storage import build_tree, list_images_by_path
+from app.storage import (
+    build_tree,
+    list_images_by_path,
+    reorder_subfolder,
+    remove_subfolder_from_order,
+)
 from app.config import BASE_DIR
 
 router = APIRouter(prefix="/api/folders", tags=["folders"])
@@ -17,8 +22,9 @@ class DeleteFolderPayload(BaseModel):
 
 
 class MoveFolderPayload(BaseModel):
-    src: str
-    dst: str
+    path: str
+    dest: str = ""
+    before: str | None = None
 
 
 @router.get("/tree")
@@ -78,34 +84,61 @@ def api_folder_move(
     payload: MoveFolderPayload,
     x_upload_key: str | None = Header(default=None),
 ):
-    """Move/rename a folder within BASE_DIR.
-
-    Blocks moving a folder into itself or into its own subdirectory.
-    """
     auth_header_key(x_upload_key)
-    src_path = safe_path(payload.src)
-    dst_path = safe_path(payload.dst)
 
-    src = resolve_dir(src_path).resolve()
-    dst = resolve_dir(dst_path).resolve()
+    src_path = safe_path(payload.path)
+    src_dir = resolve_dir(src_path)
+    if not src_dir.exists():
+        raise HTTPException(status_code=404, detail="folder not found")
+    if not src_dir.is_dir():
+        raise HTTPException(status_code=400, detail="not a folder")
 
-    if not src.exists():
-        raise HTTPException(status_code=404, detail="source folder not found")
-    if not src.is_dir():
-        raise HTTPException(status_code=400, detail="source is not a folder")
+    dest_raw = (payload.dest or "").strip().strip("/")
+    if dest_raw:
+        dest_path = safe_path(dest_raw)
+        dest_dir = resolve_dir(dest_path)
+    else:
+        dest_path = ""
+        dest_dir = BASE_DIR
 
-    if dst == src or dst.is_relative_to(src):
+    before_raw = (payload.before or "").strip().strip("/")
+    before_path = safe_path(before_raw) if before_raw else ""
+    if before_path == src_path:
+        before_path = ""
+
+    if not dest_dir.exists():
+        raise HTTPException(status_code=404, detail="dest folder not found")
+    if not dest_dir.is_dir():
+        raise HTTPException(status_code=400, detail="dest is not a folder")
+
+    if dest_dir == src_dir or dest_dir.is_relative_to(src_dir):
         raise HTTPException(status_code=400, detail="cannot move folder into itself")
 
-    if dst.exists():
-        raise HTTPException(status_code=409, detail="destination exists")
+    if before_path:
+        before_parent = "/".join(before_path.split("/")[:-1])
+        if before_parent != dest_path:
+            raise HTTPException(status_code=400, detail="invalid before")
+        before_dir = resolve_dir(before_path)
+        if not before_dir.exists() or not before_dir.is_dir():
+            raise HTTPException(status_code=404, detail="before folder not found")
 
-    if not src.is_relative_to(BASE_DIR) or not dst.is_relative_to(BASE_DIR):
-        raise HTTPException(status_code=400, detail="invalid path")
+    new_path = f"{dest_path}/{src_dir.name}" if dest_path else src_dir.name
+    target_dir = resolve_dir(new_path)
 
-    dst.parent.mkdir(parents=True, exist_ok=True)
+    if src_dir == target_dir:
+        if before_path:
+            reorder_subfolder(dest_dir, src_dir.name, before_name=before_dir.name)
+        return {"ok": True, "path": src_path, "dest": dest_path, "new_path": src_path}
+
+    if target_dir.exists():
+        raise HTTPException(status_code=409, detail="target already exists")
+
     try:
-        src.rename(dst)
-    except OSError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return {"ok": True, "src": src_path, "dst": dst_path}
+        old_parent_dir = src_dir.parent
+        shutil.move(str(src_dir), str(target_dir))
+        remove_subfolder_from_order(old_parent_dir, src_dir.name)
+        reorder_subfolder(dest_dir, target_dir.name, before_name=(before_dir.name if before_path else None))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"move failed: {e}") from e
+
+    return {"ok": True, "path": src_path, "dest": dest_path, "new_path": new_path}
