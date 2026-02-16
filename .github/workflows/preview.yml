@@ -29,13 +29,12 @@ jobs:
         with:
           script: |
             const prNum = context.payload.pull_request.number;
-            const port = 35000 + prNum;
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: prNum,
               body: `🚀 **预览环境已部署**\n\n` +
-                `- 预览地址: http://${{ secrets.SERVER_HOST }}:${port}/\n` +
+                `- 预览地址: https://de.fufu.uno/preview/${prNum}/\n` +
                 `- 预览密码: \`preview-test-key\`\n\n` +
                 `每次推送代码会自动更新预览。PR 关闭后自动销毁。`
             });
