@@ -18,10 +18,10 @@ _common = {"domain": SITE_DOMAIN, "max_mb": MAX_MB, "base": BASE_PATH}
 # Rate limiter for 404 on /d/{token} — reuses SlidingWindowRateLimiter (has max_keys + cleanup)
 _d_404_limiter = SlidingWindowRateLimiter(limit=30, window_s=60.0)
 
-# Trusted proxy handling: default to NO trust (empty).
-# Set TRUSTED_PROXY_NETS env var to enable XFF parsing, e.g. "127.0.0.1/32,10.0.0.0/8".
+# Trusted proxy handling: default to loopback only (covers Nginx/Caddy on same machine).
+# Override via TRUSTED_PROXY_NETS env var, e.g. "127.0.0.1/32,::1/128,172.17.0.0/16".
 _TRUSTED_PROXY_NETS: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
-_trusted_proxy_env = os.environ.get("TRUSTED_PROXY_NETS", "")
+_trusted_proxy_env = os.environ.get("TRUSTED_PROXY_NETS", "127.0.0.1/32,::1/128")
 for _net in _trusted_proxy_env.split(","):
     _net = _net.strip()
     if not _net:
