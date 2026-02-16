@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ title }}</title>
+<link rel="stylesheet" href="{{ base }}/static/album/style.css">
+</head>
+<body>
+<div class="page">
+  <div class="hero">
+    <h1>{{ title }}</h1>
+    <p>{{ count }} 张照片</p>
+    <div class="actions" id="actions">
+      <button class="btn btn-primary" id="dlAllBtn" onclick="downloadAll(event)">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 2v9m0 0l-3-3m3 3l3-3M2 13h12"/></svg>
+        下载全部
+      </button>
+    </div>
+    <div class="ios-tip" id="iosTip">
+      <b>iOS 用户提示：</b>Safari 不支持批量下载。请点击图片查看大图，然后长按选择「添加到照片」逐张保存。
+    </div>
+  </div>
+  <div class="gallery" id="gallery">
+    {% for file in files %}
+    <div class="card" onclick="openLb({{ loop.index0 }})">
+      <div class="card-img"><img src="/d/{{ token }}/{{ file }}" alt="{{ file }}" loading="lazy"></div>
+      <div class="card-footer"><span class="card-name">{{ file }}</span><a class="card-dl" href="/f/{{ token }}/{{ file }}" onclick="event.stopPropagation()">下载</a></div>
+    </div>
+    {% endfor %}
+  </div>
+  {% if not files %}
+  <div class="empty">这个相册还没有照片</div>
+  {% endif %}
+</div>
+<!-- lightbox -->
+<div class="lb" id="lb" onclick="closeLb(event)">
+  <button class="lb-close" onclick="closeLb()">&times;</button>
+  <button class="lb-nav lb-prev" onclick="navLb(-1,event)">&lsaquo;</button>
+  <button class="lb-nav lb-next" onclick="navLb(1,event)">&rsaquo;</button>
+  <img id="lbImg" src="">
+  <div class="lb-info" id="lbInfo"></div>
+</div>
+<!-- progress -->
+<div class="overlay" id="ov">
+  <div class="modal">
+    <h3 id="ovTitle">正在下载</h3>
+    <p id="ovDesc">准备中…</p>
+    <div class="pbar"><div class="pbar-fill" id="ovFill"></div></div>
+    <div class="pbar-meta"><span id="ovLeft">0/0</span><span id="ovRight">0%</span></div>
+  </div>
+</div>
+<script>
+window.albumFiles = {{ files_json|safe }};
+window.albumToken = '{{ token }}';
+window.albumDomain = '{{ domain }}';
+</script>
+<script src="{{ base }}/static/album/app.js"></script>
+</body>
+</html>

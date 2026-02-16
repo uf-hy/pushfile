@@ -1,0 +1,17 @@
+[Unit]
+Description=Photo B - photo.xaihub.de preview
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/code/photo
+EnvironmentFile=/root/code/photo/.env
+Environment=UPLOAD_BASE=/var/www/photo.xaihub.de/downloads
+Environment=SITE_DOMAIN=photo.xaihub.de
+Environment=BASE_PATH=/preview
+ExecStart=/root/.local/bin/uv run uvicorn app.main:app --host 127.0.0.1 --port 34109 --reload
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
