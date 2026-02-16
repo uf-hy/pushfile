@@ -1,0 +1,39 @@
+# 手动回滚 — 恢复到指定版本
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: '目标镜像标签（留空则回滚到上一个正常版本）'
+        required: false
+        default: ''
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rollback
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_SERVER_HOST }}
+          username: ${{ secrets.PROD_SERVER_USER }}
+          key: ${{ secrets.PROD_SERVER_SSH_KEY }}
+          port: ${{ secrets.PROD_SERVER_SSH_PORT }}
+          script: |
+            rollback ${{ github.event.inputs.image_tag }}
+
+      - name: Report result
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = '${{ github.event.inputs.image_tag }}' || 'last-good';
+            const status = '${{ job.status }}' === 'success' ? '✅' : '❌';
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `${status} 回滚到 ${tag}`,
+              body: `回滚操作 ${status === '✅' ? '成功' : '失败'}\n\n目标: ${tag}\nWorkflow: ${context.runId}`,
+              labels: ['rollback'],
+            });

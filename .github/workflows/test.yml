@@ -1,0 +1,143 @@
+# 自动测试门禁
+# PR 创建/更新时运行 lint + test + docker build
+# AI Agent 的 PR 测试失败时自动重试修复（最多 3 次）
+name: Test
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install fastapi uvicorn python-multipart jinja2 aiofiles ruff pytest httpx
+
+      - name: Lint with ruff
+        id: lint
+        run: ruff check . 2>&1 | tee /tmp/lint_output.txt
+        continue-on-error: true
+
+      - name: Run tests
+        id: pytest
+        run: |
+          if find . -name "test_*.py" -o -name "*_test.py" | grep -q .; then
+            pytest -v 2>&1 | tee /tmp/test_output.txt
+          else
+            echo "No test files found, skipping pytest"
+            echo "No test files found" > /tmp/test_output.txt
+          fi
+        continue-on-error: true
+
+      - name: Verify Docker build
+        id: docker
+        run: docker build -t test-build . 2>&1 | tee /tmp/docker_output.txt
+        continue-on-error: true
+
+      - name: Check results
+        id: results
+        run: |
+          FAILED=false
+          if [ "${{ steps.lint.outcome }}" = "failure" ]; then FAILED=true; fi
+          if [ "${{ steps.pytest.outcome }}" = "failure" ]; then FAILED=true; fi
+          if [ "${{ steps.docker.outcome }}" = "failure" ]; then FAILED=true; fi
+          echo "failed=$FAILED" >> $GITHUB_OUTPUT
+
+          # Combine error logs
+          echo "=== LINT ===" > /tmp/all_errors.txt
+          cat /tmp/lint_output.txt >> /tmp/all_errors.txt
+          echo -e "\n=== TESTS ===" >> /tmp/all_errors.txt
+          cat /tmp/test_output.txt >> /tmp/all_errors.txt
+          echo -e "\n=== DOCKER ===" >> /tmp/all_errors.txt
+          cat /tmp/docker_output.txt >> /tmp/all_errors.txt
+
+      - name: Auto-fix (AI Agent PRs only)
+        if: steps.results.outputs.failed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const labels = pr.labels.map(l => l.name);
+            const isAgent = labels.includes('agent-codex') || labels.includes('agent-opencode');
+
+            if (!isAgent) {
+              core.info('Not an AI agent PR, skipping auto-fix');
+              return;
+            }
+
+            // Count fix attempts by counting commits with "fix:" prefix
+            const commits = await github.rest.pulls.listCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+            });
+            const fixAttempts = commits.data.filter(c =>
+              c.commit.message.startsWith('fix: auto-fix')
+            ).length;
+
+            if (fixAttempts >= 3) {
+              // Give up, mark as needs-human
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                labels: ['needs-human'],
+              });
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: '❌ **自动修复失败（已重试 3 次）**\n\n需要人工介入。',
+              });
+              core.setFailed('Auto-fix exhausted after 3 attempts');
+              return;
+            }
+
+            // Comment about retry
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              body: `🔄 **测试失败，自动修复中...（第 ${fixAttempts + 1}/3 次）**`,
+            });
+
+      - name: Run AI fix
+        if: steps.results.outputs.failed == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.CODEX_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.CODEX_API_BASE }}
+        run: |
+          PR_LABELS="${{ join(github.event.pull_request.labels.*.name, ',') }}"
+          if [[ ! "$PR_LABELS" =~ agent- ]]; then exit 1; fi
+
+          npm install -g @openai/codex
+          ERRORS=$(cat /tmp/all_errors.txt | head -100)
+
+          codex --approval-mode full-auto \
+            --model gpt-5.2 \
+            --reasoning-effort high \
+            -q "以下测试/lint 失败了，请修复代码：\n\n${ERRORS}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: auto-fix test failures (attempt)" || true
+          git push || true
+
+      - name: Final check
+        if: steps.results.outputs.failed == 'true'
+        run: exit 1

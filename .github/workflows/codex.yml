@@ -10,11 +10,11 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  actions: write
 
 jobs:
   codex:
     runs-on: ubuntu-latest
-    # 只在 issue 没有 skip-codex 标签时运行
     if: "!contains(github.event.issue.labels.*.name, 'skip-codex')"
     steps:
       - uses: actions/checkout@v4
@@ -32,7 +32,9 @@ jobs:
             --reasoning-effort high \
             -q "根据以下需求修改代码：\n标题：${{ github.event.issue.title }}\n内容：${{ github.event.issue.body }}"
 
-      - uses: peter-evans/create-pull-request@v6
+      - name: Create PR
+        id: pr
+        uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: codex/issue-${{ github.event.issue.number }}
@@ -42,3 +44,63 @@ jobs:
             对应 Issue #${{ github.event.issue.number }}
           commit-message: "feat: codex auto-fix #${{ github.event.issue.number }}"
           labels: agent-codex
+
+      - name: Trigger Compare if other PR exists
+        if: steps.pr.outputs.pull-request-number
+        uses: actions/github-script@v7
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          script: |
+            const issueNum = ${{ github.event.issue.number }};
+            // Check if OpenCode PR exists
+            const pulls = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              head: `${context.repo.owner}:opencode/issue-${issueNum}`,
+            });
+            if (pulls.data.length > 0) {
+              // Both PRs exist, trigger compare
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'compare.yml',
+                ref: 'main',
+                inputs: { issue_number: String(issueNum) },
+              });
+              core.info(`Triggered compare for issue #${issueNum}`);
+            } else {
+              core.info('OpenCode PR not found yet, skipping compare');
+            }
+
+  # 超时兜底：30 分钟后如果 Compare 还没触发，单独审核
+  timeout-compare:
+    runs-on: ubuntu-latest
+    needs: codex
+    steps:
+      - name: Wait 30 minutes
+        run: sleep 1800
+
+      - name: Check and trigger compare
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNum = ${{ github.event.issue.number }};
+            // Check if compare already ran (look for review comment)
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNum,
+            });
+            const hasReview = comments.data.some(c => c.body.includes('AI 对比审核报告'));
+            if (!hasReview) {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'compare.yml',
+                ref: 'main',
+                inputs: { issue_number: String(issueNum) },
+              });
+              core.info(`Timeout: triggered compare for issue #${issueNum}`);
+            }

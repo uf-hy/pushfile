@@ -1,18 +1,47 @@
-# 生产部署 — production 分支更新时，手动在本机 pull
-# 不自动部署到生产服务器，安全第一
-name: Production Ready
+# 生产部署 — Docker 镜像拉取 + 健康检查 + 自动回滚
+name: Production Deploy
 
 on:
   push:
     branches: [production]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: '镜像标签（默认 production）'
+        required: false
+        default: 'production'
+
+permissions:
+  contents: write
+  issues: write
+
+env:
+  IMAGE: ghcr.io/uf-hy/pushfile
+  CONTAINER: pushfile-prod
 
 jobs:
-  notify:
+  deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Notify
+      - name: Deploy to Production
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_SERVER_HOST }}
+          username: ${{ secrets.PROD_SERVER_USER }}
+          key: ${{ secrets.PROD_SERVER_SSH_KEY }}
+          port: ${{ secrets.PROD_SERVER_SSH_PORT }}
+          script: |
+            deploy ${{ github.event.inputs.image_tag || 'production' }}
+
+      - name: Notify on failure
+        if: failure()
         uses: actions/github-script@v7
         with:
           script: |
-            // 只是通知，不自动部署
-            console.log('Production branch updated. Deploy manually on server.');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 生产部署失败',
+              body: `部署失败！\n\nCommit: ${context.sha}\nWorkflow: ${context.runId}\n\n请检查日志并手动处理。`,
+              labels: ['deploy-failed'],
+            });
