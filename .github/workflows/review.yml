@@ -1,5 +1,6 @@
 # PR 自动审核 — 对所有 PR 进行代码审查
-# 自动识别来源：手动推送 / Codex Agent / OpenCode Agent
+# AI Agent PR: 审核不通过自动修复（最多 3 轮）
+# 人工 PR: 只审核不修复
 name: PR Review
 
 on:
@@ -9,13 +10,12 @@ on:
 
 permissions:
   pull-requests: write
-  contents: read
+  contents: write
 
 jobs:
   review:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # 跳过 bot 创建的 promote PR（production sync）
+    timeout-minutes: 15
     if: "!contains(github.event.pull_request.title, 'promote')"
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +26,6 @@ jobs:
         id: source
         run: |
           BRANCH="${{ github.event.pull_request.head.ref }}"
-
           if echo "$BRANCH" | grep -qE '^codex/issue-'; then
             echo "source=codex-agent" >> $GITHUB_OUTPUT
             echo "issue_num=$(echo $BRANCH | sed 's/codex\/issue-//')" >> $GITHUB_OUTPUT
@@ -40,6 +39,22 @@ jobs:
             echo "issue_num=" >> $GITHUB_OUTPUT
             echo "desc=👤 人工提交的 PR" >> $GITHUB_OUTPUT
           fi
+
+      - name: Count review rounds
+        id: rounds
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+            });
+            const rounds = comments.data.filter(c =>
+              c.body.includes('<!-- codex-review-round -->')
+            ).length;
+            core.setOutput('count', String(rounds));
+            console.log(`Review rounds so far: ${rounds}`);
 
       - name: Get PR diff
         env:
@@ -73,6 +88,7 @@ jobs:
           CUSTOM_OPENAI_KEY: ${{ secrets.CODEX_API_KEY }}
         run: |
           SOURCE="${{ steps.source.outputs.source }}"
+          ROUND="${{ steps.rounds.outputs.count }}"
           PR_TITLE=$(cat /tmp/pr_title.txt)
           PR_BODY=$(cat /tmp/pr_body.txt)
           DIFF=$(cat /tmp/pr_diff_truncated.txt)
@@ -81,7 +97,6 @@ jobs:
             ISSUE_CTX=$(cat /tmp/issue_context.txt)
           fi
 
-          # Build prompt in a file to avoid shell injection
           if [ "$SOURCE" = "manual" ]; then
             cat > /tmp/review_prompt.txt <<'PROMPT_END'
           你是代码审核专家。这是一个 **人工提交** 的 PR，请以协作者的角度审核。
@@ -92,22 +107,21 @@ jobs:
           3. **安全性** — 有无路径遍历、注入等风险
           4. **建议** — 有什么可以改进的地方
 
-          语气：简洁专业，像一个靠谱的同事在 review。不需要过度夸奖。
+          最后必须给出明确结论：✅ 推荐合并 / ⚠️ 需要修改 / ❌ 不建议合并
           PROMPT_END
           else
             cat > /tmp/review_prompt.txt <<PROMPT_END
-          你是代码审核专家。这是一个 **AI Agent (${SOURCE}) 自动生成** 的 PR，由 Issue 触发。
+          你是代码审核专家。这是一个 **AI Agent (${SOURCE}) 自动生成** 的 PR（第 $((ROUND+1)) 轮审核）。
 
           对 AI 生成的代码要更严格审核，重点关注：
-          1. **需求匹配** — 是否真正解决了 Issue 描述的问题（而非表面修复）
+          1. **需求匹配** — 是否真正解决了 Issue 描述的问题
           2. **代码质量** — AI 容易生成冗余代码、过度抽象、或遗漏边界情况
-          3. **安全性** — AI 可能引入不安全的模式（如未验证输入、硬编码等）
+          3. **安全性** — AI 可能引入不安全的模式
           4. **副作用** — 是否影响了其他功能
           5. **是否值得合并** — 明确给出 ✅ 推荐合并 / ⚠️ 需要修改 / ❌ 不建议合并
           PROMPT_END
           fi
 
-          # Append metadata from files (safe, no shell expansion)
           {
             echo ""
             echo "PR 标题：$PR_TITLE"
@@ -123,8 +137,6 @@ jobs:
             echo "$DIFF"
           } >> /tmp/review_prompt.txt
 
-          FULL_PROMPT=$(cat /tmp/review_prompt.txt)
-
           codex \
             -c 'model_providers.custom_openai.name="Custom OpenAI"' \
             -c "model_providers.custom_openai.base_url=\"${{ secrets.CODEX_API_BASE }}\"" \
@@ -139,6 +151,7 @@ jobs:
 
       - name: Post Review Comment
         if: always()
+        id: comment
         uses: actions/github-script@v7
         with:
           script: |
@@ -151,13 +164,28 @@ jobs:
             const source = '${{ steps.source.outputs.source }}';
             const sourceDesc = '${{ steps.source.outputs.desc }}';
             const issueNum = '${{ steps.source.outputs.issue_num }}';
+            const round = parseInt('${{ steps.rounds.outputs.count }}') + 1;
+            const maxRounds = 3;
+            const isAgent = source !== 'manual';
 
-            let header = `## 🔍 PR 代码审核\n\n`;
+            // Determine if review passed
+            const passed = review.includes('✅') && !review.includes('⚠️') && !review.includes('❌');
+            const needsFix = review.includes('需要修改') || review.includes('不建议合并') || review.includes('⚠️') || review.includes('❌');
+
+            let header = `## 🔍 PR 代码审核（第 ${round}/${maxRounds} 轮）\n\n`;
             header += `**来源：** ${sourceDesc}\n`;
-            if (issueNum) {
-              header += `**关联 Issue：** #${issueNum}\n`;
+            if (issueNum) header += `**关联 Issue：** #${issueNum}\n`;
+            header += `**分支：** \`${{ github.event.pull_request.head.ref }}\`\n`;
+
+            if (isAgent && needsFix && round < maxRounds) {
+              header += `\n🔄 **审核未通过，将自动触发 Codex 修复（第 ${round+1} 轮）…**\n`;
+            } else if (isAgent && needsFix && round >= maxRounds) {
+              header += `\n⏹️ **已达最大审核轮次（${maxRounds}），不再自动修复。请人工检查。**\n`;
             }
-            header += `**分支：** \`${{ github.event.pull_request.head.ref }}\`\n\n---\n\n`;
+
+            header += `\n---\n\n`;
+            // Hidden marker for round tracking
+            header += `<!-- codex-review-round -->\n`;
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -165,3 +193,54 @@ jobs:
               issue_number: ${{ github.event.pull_request.number }},
               body: header + review,
             });
+
+            // Output for auto-fix decision
+            const shouldFix = isAgent && needsFix && round < maxRounds;
+            core.setOutput('should_fix', shouldFix ? 'true' : 'false');
+            core.setOutput('round', String(round));
+
+      # === Auto-fix: only for AI agent PRs, max 3 rounds ===
+
+      - name: Checkout PR branch for fix
+        if: steps.comment.outputs.should_fix == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Run Codex auto-fix
+        if: steps.comment.outputs.should_fix == 'true'
+        env:
+          CUSTOM_OPENAI_KEY: ${{ secrets.CODEX_API_KEY }}
+        run: |
+          REVIEW=$(cat /tmp/review_result.md 2>/dev/null || echo "no review")
+          cat > /tmp/fix_prompt.txt <<'FIXEOF'
+          你是代码修复专家。根据以下代码审核意见修改代码。
+          只修复审核中明确指出的问题，不要做额外的重构或改动。
+          修改完成后确保代码能正常运行。
+          FIXEOF
+          echo "" >> /tmp/fix_prompt.txt
+          echo "审核意见：" >> /tmp/fix_prompt.txt
+          echo "$REVIEW" >> /tmp/fix_prompt.txt
+
+          codex \
+            -c 'model_providers.custom_openai.name="Custom OpenAI"' \
+            -c "model_providers.custom_openai.base_url=\"${{ secrets.CODEX_API_BASE }}\"" \
+            -c 'model_providers.custom_openai.env_key="CUSTOM_OPENAI_KEY"' \
+            -c 'model_provider="custom_openai"' \
+            exec --full-auto -m gpt-5.2 \
+            "$(cat /tmp/fix_prompt.txt)"
+
+      - name: Push fixes
+        if: steps.comment.outputs.should_fix == 'true'
+        run: |
+          git config user.name "codex-bot"
+          git config user.email "codex-bot@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          ROUND="${{ steps.comment.outputs.round }}"
+          git commit -m "fix: auto-fix round $((ROUND+1)) based on review feedback"
+          git push origin ${{ github.event.pull_request.head.ref }}
