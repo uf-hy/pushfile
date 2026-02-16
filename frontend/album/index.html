@@ -7,6 +7,11 @@
 <link rel="stylesheet" href="/static/album/style.css">
 </head>
 <body>
+<div class="inapp-bar" id="inappBar" style="display:none">
+  <span>APP 内浏览器下载受限，建议在浏览器中打开</span>
+  <button onclick="copyLink()">复制链接</button>
+  <button onclick="closeInappBar()">&times;</button>
+</div>
 <div class="page">
   <div class="hero">
     <h1>{{ title }}</h1>

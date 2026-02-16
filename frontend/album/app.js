@@ -7,6 +7,60 @@ function isIOS() {
   return /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
+function detectInAppBrowser(ua = navigator.userAgent) {
+  const isXhs = /XiaoHongShu|discover\//i.test(ua);
+  const isWechat = /MicroMessenger/i.test(ua);
+  const isWeibo = /Weibo/i.test(ua);
+  const isQQ = /QQ\//i.test(ua);
+  const isDingTalk = /DingTalk/i.test(ua);
+  const isAndroid = /Android/i.test(ua);
+  const inApp = isXhs || isWechat || isWeibo || isQQ || isDingTalk;
+  return {isXhs, isWechat, isWeibo, isQQ, isDingTalk, isAndroid, inApp};
+}
+
+const __inappEnv = detectInAppBrowser();
+const __androidInApp = __inappEnv.isAndroid && __inappEnv.inApp;
+
+async function copyLink() {
+  const text = window.location.href;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (err) {
+    console.warn(err);
+  }
+  try {
+    const el = document.createElement('textarea');
+    el.value = text;
+    el.setAttribute('readonly', 'readonly');
+    el.style.position = 'fixed';
+    el.style.opacity = '0';
+    el.style.left = '-9999px';
+    document.body.appendChild(el);
+    el.select();
+    el.setSelectionRange(0, el.value.length);
+    const ok = document.execCommand('copy');
+    el.remove();
+    return ok;
+  } catch (err) {
+    console.warn(err);
+    return false;
+  }
+}
+
+function closeInappBar() {
+  const bar = document.getElementById('inappBar');
+  if (bar) bar.style.display = 'none';
+  document.body.classList.remove('has-inapp-bar');
+  try {
+    localStorage.setItem('pf_inapp_bar_closed', '1');
+  } catch (err) {
+    // ignore
+  }
+}
+
 function openLb(i) {
   lbIdx = i;
   const lb = document.getElementById('lb');
@@ -67,6 +121,7 @@ function trigger(url, name) {
 async function downloadAll(e) {
   e.preventDefault();
   if (!files.length) return;
+  if (__androidInApp) return;
   try {
     if (window.showDirectoryPicker) {
       const dir = await window.showDirectoryPicker();
@@ -109,4 +164,40 @@ async function downloadAll(e) {
 if (isIOS()) {
   document.getElementById('iosTip').style.display = 'block';
   document.getElementById('dlAllBtn').style.display = 'none';
+}
+
+if (__androidInApp) {
+  try {
+    if (localStorage.getItem('pf_inapp_bar_closed') !== '1') {
+      const bar = document.getElementById('inappBar');
+      if (bar) {
+        bar.style.display = 'flex';
+        document.body.classList.add('has-inapp-bar');
+      }
+    }
+  } catch (err) {
+    const bar = document.getElementById('inappBar');
+    if (bar) {
+      bar.style.display = 'flex';
+      document.body.classList.add('has-inapp-bar');
+    }
+  }
+
+  const dlAllBtn = document.getElementById('dlAllBtn');
+  if (dlAllBtn) {
+    dlAllBtn.disabled = true;
+    dlAllBtn.title = '请在浏览器中打开后使用批量下载';
+    const tip = document.createElement('div');
+    tip.className = 'inapp-tip';
+    tip.textContent = '请在浏览器中打开后使用批量下载';
+    dlAllBtn.parentNode && dlAllBtn.parentNode.appendChild(tip);
+  }
+
+  document.querySelectorAll('a.card-dl').forEach(a => {
+    a.addEventListener('click', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      window.location.href = a.getAttribute('href');
+    });
+  });
 }
