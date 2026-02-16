@@ -297,12 +297,12 @@ jobs:
               \"disable_notification\": false
             }"
 
-          # 2) fufu bot: action buttons
+          # 2) fufu bot: action buttons (包含完整上下文，确保任何会话都能直接操作)
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -H "Content-Type: application/json" \
             -d "{
               \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-              \"text\": \"[pushfile] PR #${PR_NUM}\\n${PR_TITLE}\\n审核通过（${TOTAL_ROUNDS} 轮），选择操作：\",
+              \"text\": \"📦 pushfile — PR #${PR_NUM} 审核通过\\n标题: ${PR_TITLE}\\n轮次: ${TOTAL_ROUNDS}\\n链接: ${PR_URL}\\n仓库: uf-hy/pushfile\\n分支: ${{ github.event.pull_request.head.ref }}\\n\\n操作说明:\\n• pf_merge_N → squash 合并 PR\\n• 合并后自动 bump 版本 + 构建镜像\\n• 推 production 分支触发自动部署\",
               \"reply_markup\": {
                 \"inline_keyboard\": [[
                   {\"text\": \"✅ 合并\", \"callback_data\": \"pf_merge_${PR_NUM}\"},
@@ -328,12 +328,12 @@ jobs:
               \"disable_notification\": false
             }"
 
-          # 2) fufu bot: action buttons
+          # 2) fufu bot: action buttons (包含完整上下文，确保任何会话都能直接操作)
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -H "Content-Type: application/json" \
             -d "{
               \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-              \"text\": \"[pushfile] PR #${PR_NUM}\\n${PR_TITLE}\\n${ROUND}轮未通过，选择操作：\",
+              \"text\": \"📦 pushfile — PR #${PR_NUM} 审核未通过\\n标题: ${PR_TITLE}\\n轮次: ${ROUND}\\n链接: ${PR_URL}\\n仓库: uf-hy/pushfile\\n分支: ${{ github.event.pull_request.head.ref }}\\n\\n操作说明:\\n• pf_retry_h_N → 触发 retry.yml (thinking: high)\\n• pf_retry_xh_N → 触发 retry.yml (thinking: xhigh)\\n• pf_close_N → 关闭 PR\\n• retry 方法: POST dispatch retry.yml, inputs: pr_number + thinking_level\",
               \"reply_markup\": {
                 \"inline_keyboard\": [
                   [
