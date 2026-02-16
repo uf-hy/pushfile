@@ -41,7 +41,7 @@ async def api_zip_import(
                 p = PurePosixPath(name)
                 if p.is_absolute():
                     continue
-                ext = Path(name).suffix.lower()
+                ext = p.suffix.lower()
                 if ext not in ALLOWED_SUFFIX:
                     continue
                 rel_dir = p.parent
@@ -53,7 +53,7 @@ async def api_zip_import(
                 if not target_dir.is_relative_to(BASE_DIR):
                     continue
                 target_dir.mkdir(parents=True, exist_ok=True)
-                target_file = target_dir / Path(name).name
+                target_file = target_dir / p.name
                 with zf.open(info) as src, target_file.open("wb") as dst:
                     dst.write(src.read())
                 imported += 1
