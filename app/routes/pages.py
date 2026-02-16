@@ -27,8 +27,8 @@ def manage_page(request: Request):
     )
 
 
-@router.get("/album/{token}", response_class=HTMLResponse)
-def album(request: Request, token: str):
+def _render_album(request: Request, token: str):
+    """Shared album renderer for both /album/{token} and /d/{token}."""
     token = safe_token(token)
     real_path = resolve_slug(token)
     if real_path:
@@ -65,3 +65,14 @@ def album(request: Request, token: str):
             **_common,
         },
     )
+
+
+@router.get("/album/{token}", response_class=HTMLResponse)
+def album(request: Request, token: str):
+    return _render_album(request, token)
+
+
+@router.get("/d/{token}", response_class=HTMLResponse)
+def album_short(request: Request, token: str):
+    """Short URL for album — no Caddy rewrite needed."""
+    return _render_album(request, token)
