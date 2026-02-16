@@ -2,7 +2,12 @@ import shutil
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from app.auth import safe_path, resolve_dir, auth_header_key, auth_query_key
-from app.storage import build_tree, list_images_by_path
+from app.storage import (
+    build_tree,
+    list_images_by_path,
+    reorder_subfolder,
+    remove_subfolder_from_order,
+)
 from app.config import BASE_DIR
 
 router = APIRouter(prefix="/api/folders", tags=["folders"])
@@ -19,6 +24,7 @@ class DeleteFolderPayload(BaseModel):
 class MoveFolderPayload(BaseModel):
     path: str
     dest: str = ""
+    before: str | None = None
 
 
 @router.get("/tree")
@@ -95,6 +101,11 @@ def api_folder_move(
         dest_path = ""
         dest_dir = BASE_DIR
 
+    before_raw = (payload.before or "").strip().strip("/")
+    before_path = safe_path(before_raw) if before_raw else ""
+    if before_path == src_path:
+        before_path = ""
+
     if not dest_dir.exists():
         raise HTTPException(status_code=404, detail="dest folder not found")
     if not dest_dir.is_dir():
@@ -103,17 +114,30 @@ def api_folder_move(
     if dest_dir == src_dir or dest_dir.is_relative_to(src_dir):
         raise HTTPException(status_code=400, detail="cannot move folder into itself")
 
+    if before_path:
+        before_parent = "/".join(before_path.split("/")[:-1])
+        if before_parent != dest_path:
+            raise HTTPException(status_code=400, detail="invalid before")
+        before_dir = resolve_dir(before_path)
+        if not before_dir.exists() or not before_dir.is_dir():
+            raise HTTPException(status_code=404, detail="before folder not found")
+
     new_path = f"{dest_path}/{src_dir.name}" if dest_path else src_dir.name
     target_dir = resolve_dir(new_path)
 
     if src_dir == target_dir:
+        if before_path:
+            reorder_subfolder(dest_dir, src_dir.name, before_name=before_dir.name)
         return {"ok": True, "path": src_path, "dest": dest_path, "new_path": src_path}
 
     if target_dir.exists():
         raise HTTPException(status_code=409, detail="target already exists")
 
     try:
+        old_parent_dir = src_dir.parent
         shutil.move(str(src_dir), str(target_dir))
+        remove_subfolder_from_order(old_parent_dir, src_dir.name)
+        reorder_subfolder(dest_dir, target_dir.name, before_name=(before_dir.name if before_path else None))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"move failed: {e}") from e
 

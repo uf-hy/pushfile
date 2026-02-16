@@ -1,4 +1,4 @@
-let S='',T='',files=[],sel=new Set(),dragN='',sheetTarget='',treeData=[],curPath='',expanded={},statsData={},slugMap={},treeDragPath='',treeDropEl=null;
+let S='',T='',files=[],sel=new Set(),dragN='',sheetTarget='',treeData=[],curPath='',expanded={},statsData={},slugMap={},treeDragPath='',treeDropEl=null,treeDropMode='';
 const $=id=>document.getElementById(id);
 const DOMAIN=window.__DOMAIN__||'photo.xaihub.de';
 const BASE=window.__BASE__||'';
@@ -86,14 +86,31 @@ function bindTreeDnD(box){
 
 function treeClearDrop(){
   const box=$('treeBox');
-  if(treeDropEl){treeDropEl.classList.remove('drop-target');treeDropEl=null}
+  if(treeDropEl){
+    treeDropEl.classList.remove('drop-target','drop-before','drop-after');
+    treeDropEl=null;treeDropMode='';
+  }
   if(box)box.classList.remove('drop-root');
 }
 
-function treeSetDropEl(el){
-  if(treeDropEl===el)return;
+function treeSetDropEl(el,mode){
+  if(treeDropEl===el&&treeDropMode===mode)return;
   treeClearDrop();
-  if(el){el.classList.add('drop-target');treeDropEl=el}
+  if(el){
+    if(mode==='before')el.classList.add('drop-before');
+    else if(mode==='after')el.classList.add('drop-after');
+    else el.classList.add('drop-target');
+    treeDropEl=el;treeDropMode=mode||'';
+  }
+}
+
+function treeDropModeForEvent(e,item){
+  const r=item.getBoundingClientRect();
+  const y=e.clientY-r.top;
+  const h=r.height||1;
+  if(y<h*0.25)return 'before';
+  if(y>h*0.75)return 'after';
+  return 'into';
 }
 
 function treeItemDragStart(e){
@@ -116,31 +133,49 @@ function treeItemDragEnter(e){
   e.preventDefault();e.stopPropagation();
   const item=e.currentTarget;const dest=item.dataset.path||'';
   if(!treeDragPath||!dest||dest===treeDragPath)return;
-  treeSetDropEl(item);
+  treeSetDropEl(item,treeDropModeForEvent(e,item));
 }
 
 function treeItemDragOver(e){
   e.preventDefault();e.stopPropagation();
   const item=e.currentTarget;const dest=item.dataset.path||'';
   if(!treeDragPath||!dest||dest===treeDragPath)return;
-  treeSetDropEl(item);
+  treeSetDropEl(item,treeDropModeForEvent(e,item));
 }
 
 function treeItemDragLeave(e){
   e.stopPropagation();
   const item=e.currentTarget;
   if(item.contains(e.relatedTarget))return;
-  if(treeDropEl===item){item.classList.remove('drop-target');treeDropEl=null}
+  if(treeDropEl===item){item.classList.remove('drop-target','drop-before','drop-after');treeDropEl=null;treeDropMode=''}
 }
 
 function treeItemDrop(e){
   e.preventDefault();e.stopPropagation();
-  const dest=e.currentTarget.dataset.path||'';
+  const item=e.currentTarget;
+  const dest=item.dataset.path||'';
   let src=treeDragPath;
   if(!src){try{src=e.dataTransfer.getData('text/plain')||''}catch(_){src=''}}
+  const mode=treeDropMode||'into';
   treeClearDrop();
   if(!src||!dest||src===dest)return;
-  moveFolderTo(src,dest);
+  if(mode==='into'){moveFolderTo(src,dest);return}
+  const li=item.closest('li');
+  const ul=li?li.parentElement:null;
+  if(!ul)return;
+  const sibItems=Array.from(ul.querySelectorAll(':scope > li > .tree-item'));
+  const sibPaths=sibItems.map(x=>x.dataset.path||'').filter(Boolean);
+  const hoverIdx=sibPaths.indexOf(dest);
+  if(hoverIdx<0)return;
+  let insertIdx=mode==='before'?hoverIdx:hoverIdx+1;
+  const srcIdx=sibPaths.indexOf(src);
+  const withoutSrc=sibPaths.filter(p=>p!==src);
+  if(srcIdx!==-1&&srcIdx<insertIdx)insertIdx-=1;
+  const beforePath=withoutSrc[insertIdx]||'';
+  const parentLi=ul.closest('li');
+  const parentItem=parentLi?parentLi.querySelector(':scope > .tree-item'):null;
+  const parentPath=parentItem?(parentItem.dataset.path||''):'';
+  moveFolderTo(src,parentPath,beforePath);
 }
 
 function treeRootDragEnter(e){
@@ -188,15 +223,16 @@ function treeRemapAfterMove(oldBase,newBase,dest){
   expanded[newBase]=true;
 }
 
-async function moveFolderTo(path,dest){
+async function moveFolderTo(path,dest,before){
   const src=(path||'').trim();
   const parent=(dest||'').trim().replace(/(^\/+|\/+$)/g,'');
+  const beforePath=(before||'').trim().replace(/(^\/+|\/+$)/g,'');
   if(!src)return;
   if(parent===src||parent.startsWith(src+'/'))return toast('不能把父文件夹移动到自己的子文件夹里');
   const name=src.split('/').pop();
   const newBase=parent?(parent+'/'+name):name;
   try{
-    await api('api/folders/move',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Key':S},body:JSON.stringify({path:src,dest:parent})});
+    await api('api/folders/move',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Key':S},body:JSON.stringify({path:src,dest:parent,before:beforePath||undefined})});
     treeRemapAfterMove(src,newBase,parent);
     toast('已移动');
     await loadTree();
