@@ -2,9 +2,10 @@
 # 模型：gpt-5.2 | 思考：high
 name: OpenCode Agent
 
+# 已暂停 OpenCode（主人决定先只用 Codex）
+# 如需手动跑：在 GitHub Actions 里手动 workflow_dispatch 触发
 on:
-  issues:
-    types: [opened]
+  workflow_dispatch:
 
 permissions:
   contents: write
