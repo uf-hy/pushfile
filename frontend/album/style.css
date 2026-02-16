@@ -1,16 +1,25 @@
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#f5f5f7;--card:#fff;--text:#1d1d1f;--sub:#86868b;--line:#d2d2d7;--accent:#0071e3;--radius:16px}
+:root{--bg:#f5f5f7;--card:#fff;--text:#1d1d1f;--sub:#86868b;--line:#d2d2d7;--accent:#0071e3;--radius:16px;--inapp-bar-h:56px}
 body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 .page{max-width:960px;margin:0 auto;padding:40px 20px 60px}
+.has-inapp-bar .page{padding-top:calc(40px + var(--inapp-bar-h))}
 .hero{text-align:center;margin-bottom:32px}
 .hero h1{font-size:28px;font-weight:600;letter-spacing:-.3px;margin-bottom:6px}
 .hero p{color:var(--sub);font-size:15px;line-height:1.5}
-.actions{display:flex;justify-content:center;gap:12px;margin-top:16px}
+.actions{display:flex;justify-content:center;gap:12px;margin-top:16px;flex-wrap:wrap}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:10px 20px;border-radius:980px;font-size:14px;font-weight:500;text-decoration:none;cursor:pointer;border:none;transition:all .2s}
+.btn:disabled{opacity:.55;cursor:not-allowed}
 .btn-primary{background:var(--accent);color:#fff}
 .btn-primary:hover{background:#0077ed}
 .btn-outline{background:transparent;color:var(--accent);border:1px solid var(--accent)}
 .btn-outline:hover{background:rgba(0,113,227,.08)}
+.inapp-tip{flex-basis:100%;text-align:center;margin-top:10px;font-size:13px;color:var(--sub);line-height:1.4}
+.inapp-bar{position:fixed;top:0;left:0;right:0;z-index:300;display:flex;align-items:center;gap:10px;padding:10px 12px;background:#fff3cd;color:#7a4b00;border-bottom:1px solid rgba(122,75,0,.25);flex-wrap:wrap}
+.inapp-bar span{flex:1;font-size:13px;line-height:1.4;min-width:0;overflow-wrap:anywhere}
+.inapp-bar .inapp-status{flex:0 0 auto;font-size:12px;line-height:1.2;white-space:nowrap}
+.inapp-bar button{appearance:none;border:1px solid rgba(122,75,0,.35);background:rgba(255,255,255,.65);color:#7a4b00;border-radius:10px;padding:8px 10px;font-size:13px;line-height:1;cursor:pointer;white-space:nowrap}
+.inapp-bar button:active{transform:translateY(1px)}
+.inapp-bar button:last-child{width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;padding:0;border-radius:999px}
 .ios-tip{display:none;margin-top:14px;padding:12px 16px;background:#fff;border:1px solid var(--line);border-radius:12px;font-size:13px;color:var(--sub);line-height:1.5}
 .ios-tip b{color:var(--text)}
 .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
@@ -43,6 +52,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .pbar-meta{display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--sub)}
 @media(max-width:600px){
   .page{padding:24px 14px 40px}
+  .has-inapp-bar .page{padding-top:calc(24px + var(--inapp-bar-h))}
   .hero h1{font-size:22px}
   .gallery{grid-template-columns:repeat(2,1fr);gap:10px}
   .card-footer{padding:8px 10px}
