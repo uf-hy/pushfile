@@ -12,14 +12,8 @@ function detectInAppBrowser(ua = navigator.userAgent) {
   const isXhs = /XiaoHongShu|discover\//i.test(ua);
   const isWechat = /MicroMessenger/i.test(ua);
   const isWeibo = /Weibo/i.test(ua);
-  // Issue #31 的 QQ 规则是 /QQ\//，但现实 UA 里 QQBrowser/X5 等可能混杂，
-  // 过宽会误伤“正常浏览器”（禁用批量下载/改写下载行为/展示提示条）。
-  // 这里保留 /QQ\// 命中，但仅在更像“QQ App 内置 WebView”时才视为 in-app：
-  // - QQ App 常见包含 MobileQQ（而独立 QQBrowser 通常不包含）
-  // - 明确出现 QQBrowser/MQQBrowser 且不包含 MobileQQ 时，视为浏览器壳（不降级）
-  const qqTokenHit = /QQ\//i.test(ua);
-  const isQQBrowserShell = /MQQBrowser|QQBrowser/i.test(ua) && !/MobileQQ/i.test(ua);
-  const isQQ = qqTokenHit && /MobileQQ/i.test(ua) && !isQQBrowserShell;
+  // Issue #31 要求：/QQ\//i 命中即视为 QQ in-app。
+  const isQQ = /QQ\//i.test(ua);
   const isDingTalk = /DingTalk/i.test(ua);
   const isAndroid = /Android/i.test(ua);
   const inApp = isXhs || isWechat || isWeibo || isQQ || isDingTalk;
@@ -236,14 +230,12 @@ if (__androidInApp) {
 
   document.querySelectorAll('a.card-dl').forEach(a => {
     a.addEventListener('click', ev => {
-      // 单张下载链接本身是 /f/{token}/{file}（服务端 attachment），优先保留“原生点击”语义。
-      // 仅在存在 download 属性等可能被 WebView 忽略的场景下，才用 location.assign 触发降级。
-      if (!a.hasAttribute('download')) return;
+      // Android in-app 下，单张下载统一降级为 location 跳转，以绕开 WebView 对下载行为的兼容问题。
       const href = a.getAttribute('href') || a.href;
       if (!href) return;
       ev.preventDefault();
       ev.stopPropagation();
-      window.location.assign(href);
+      window.location.href = href;
     });
   });
 }
