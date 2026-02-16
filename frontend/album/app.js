@@ -1,8 +1,14 @@
-const BASE = window.__BASE__ || '';
 const files = window.albumFiles || [];
 const token = window.albumToken || '';
-const domain = window.albumDomain || '';
 let lbIdx = 0;
+
+function imgUrl(name) {
+  return '/d/' + encodeURIComponent(token) + '/' + encodeURIComponent(name);
+}
+
+function dlUrl(name) {
+  return '/f/' + encodeURIComponent(token) + '/' + encodeURIComponent(name);
+}
 
 function isIOS() {
   return /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -29,7 +35,7 @@ function navLb(d, e) {
 }
 
 function updLb() {
-  document.getElementById('lbImg').src = '.." + (window.__BASE__||'') + "/d/' + token + '/' + files[lbIdx];
+  document.getElementById('lbImg').src = imgUrl(files[lbIdx]);
   document.getElementById('lbInfo').textContent = (lbIdx + 1) + ' / ' + files.length + '  ·  ' + files[lbIdx];
 }
 
@@ -74,7 +80,7 @@ async function downloadAll(e) {
       showOv();
       for (let i = 0; i < files.length; i++) {
         setP(i, files.length, files[i]);
-        const r = await fetch('.." + (window.__BASE__||'') + "/d/' + token + '/' + files[i]);
+        const r = await fetch(imgUrl(files[i]));
         if (!r.ok) continue;
         const fh = await dir.getFileHandle(files[i], {create: true});
         const ws = await fh.createWritable();
@@ -98,7 +104,7 @@ async function downloadAll(e) {
   showOv();
   for (let i = 0; i < files.length; i++) {
     setP(i, files.length, files[i]);
-    trigger('../f/' + token + '/' + files[i], files[i]);
+    trigger(dlUrl(files[i]), files[i]);
     await new Promise(r => setTimeout(r, 350));
     setP(i + 1, files.length, files[i]);
   }

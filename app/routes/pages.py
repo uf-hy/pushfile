@@ -5,12 +5,17 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 from app.auth import safe_token
 from app.storage import list_images, get_token_title, record_visit, resolve_slug, list_images_by_path
-from app.config import FRONTEND_DIR, SITE_DOMAIN, MAX_MB, BASE_PATH
+from app.config import FRONTEND_DIR, SITE_DOMAIN, MAX_MB, BASE_PATH, static_prefix
 
 router = APIRouter(tags=["pages"])
 templates = Jinja2Templates(directory=str(FRONTEND_DIR))
 
-_common = {"domain": SITE_DOMAIN, "max_mb": MAX_MB, "base": BASE_PATH}
+_common = {
+    "domain": SITE_DOMAIN,
+    "max_mb": MAX_MB,
+    "base": BASE_PATH,
+    "static_prefix": static_prefix(),
+}
 
 
 @router.get("/", response_class=HTMLResponse)
