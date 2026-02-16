@@ -2,7 +2,7 @@
 <html lang="zh-CN"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>PushFile Admin</title>
-<link rel="stylesheet" href="static/admin/style.css">
+<link rel="stylesheet" href="{{ base }}/static/admin/style.css">
 </head><body>
 <div class="page">
   <div class="nav">
@@ -109,5 +109,5 @@ window.__BASE__ = '{{ base }}';
 window.__DOMAIN__ = '{{ domain }}';
 window.__MAX_MB__ = {{ max_mb }};
 </script>
-<script src="static/admin/app.js"></script>
+<script src="{{ base }}/static/admin/app.js"></script>
 </body></html>
