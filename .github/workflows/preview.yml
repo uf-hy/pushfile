@@ -1,5 +1,5 @@
 # PR 预览部署 — 在闲置服务器(de)上起 Docker 预览
-# 使用受限 SSH Key，只能执行部署脚本，无法登录 shell
+# 每个 PR 独立随机密码和 demo token
 name: Preview Deploy
 
 on:
@@ -15,6 +15,7 @@ jobs:
     if: github.event.action != 'closed'
     steps:
       - name: Deploy Preview
+        id: deploy
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -23,21 +24,54 @@ jobs:
           port: ${{ secrets.SERVER_SSH_PORT }}
           script: |
             deploy ${{ github.event.pull_request.number }} ${{ github.head_ref }}
+          capture_stdout: true
 
       - name: Comment Preview URL
         uses: actions/github-script@v7
         with:
           script: |
             const prNum = context.payload.pull_request.number;
-            await github.rest.issues.createComment({
+            const output = `${{ steps.deploy.outputs.stdout }}`;
+            
+            // Parse secret and demo token from deploy output
+            const secretMatch = output.match(/🔑 Secret: (.+)/);
+            const demoMatch = output.match(/📁 Demo album: (.+)/);
+            const secret = secretMatch ? secretMatch[1].trim() : 'unknown';
+            const demoToken = demoMatch ? demoMatch[1].trim() : '';
+            
+            let body = `🚀 **预览环境已部署**\n\n` +
+              `- 预览地址: https://de.fufu.uno/preview/${prNum}/\n` +
+              `- 管理密码: \`${secret}\`\n`;
+            
+            if (demoToken) {
+              body += `- 示例相册: https://de.fufu.uno/preview/${prNum}/d/${demoToken}\n`;
+            }
+            
+            body += `\n每次推送代码会自动更新预览。PR 关闭后自动销毁。`;
+            
+            // Find and update existing preview comment, or create new
+            const comments = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: prNum,
-              body: `🚀 **预览环境已部署**\n\n` +
-                `- 预览地址: https://de.fufu.uno/preview/${prNum}/\n` +
-                `- 预览密码: \`preview-test-key\`\n\n` +
-                `每次推送代码会自动更新预览。PR 关闭后自动销毁。`
             });
+            const existing = comments.data.find(c => c.body.includes('预览环境已部署'));
+            
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNum,
+                body: body,
+              });
+            }
 
   cleanup-preview:
     runs-on: ubuntu-latest
