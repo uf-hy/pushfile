@@ -1,0 +1,45 @@
+# OpenCode — Issue 触发自动改代码
+# 模型：gpt-5.2 | 思考：high
+name: OpenCode Agent
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  opencode:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.issue.labels.*.name, 'skip-opencode')"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OpenCode
+        run: |
+          curl -fsSL https://opencode.ai/install | bash
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Run OpenCode
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OPENAI_API_BASE: ${{ secrets.OPENCODE_API_BASE }}
+          OPENCODE_MODEL: gpt-5.2
+          OPENCODE_REASONING_EFFORT: high
+        run: |
+          opencode -n \
+            "根据以下需求修改代码：\n标题：${{ github.event.issue.title }}\n内容：${{ github.event.issue.body }}"
+
+      - uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: opencode/issue-${{ github.event.issue.number }}
+          title: "🛠️ OpenCode: ${{ github.event.issue.title }}"
+          body: |
+            由 OpenCode (gpt-5.2, thinking: high) 自动生成
+            对应 Issue #${{ github.event.issue.number }}
+          commit-message: "feat: opencode auto-fix #${{ github.event.issue.number }}"
+          labels: agent-opencode

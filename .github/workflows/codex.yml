@@ -1,0 +1,44 @@
+# Codex — Issue 触发自动改代码
+# 模型：gpt-5.2 | 思考：high
+name: Codex Agent
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  codex:
+    runs-on: ubuntu-latest
+    # 只在 issue 没有 skip-codex 标签时运行
+    if: "!contains(github.event.issue.labels.*.name, 'skip-codex')"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
+      - name: Run Codex
+        env:
+          OPENAI_API_KEY: ${{ secrets.CODEX_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.CODEX_API_BASE }}
+        run: |
+          codex --approval-mode full-auto \
+            --model gpt-5.2 \
+            --reasoning-effort high \
+            -q "根据以下需求修改代码：\n标题：${{ github.event.issue.title }}\n内容：${{ github.event.issue.body }}"
+
+      - uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: codex/issue-${{ github.event.issue.number }}
+          title: "🤖 Codex: ${{ github.event.issue.title }}"
+          body: |
+            由 Codex CLI (gpt-5.2, thinking: high) 自动生成
+            对应 Issue #${{ github.event.issue.number }}
+          commit-message: "feat: codex auto-fix #${{ github.event.issue.number }}"
+          labels: agent-codex

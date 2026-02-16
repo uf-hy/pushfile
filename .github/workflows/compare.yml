@@ -1,0 +1,78 @@
+# AI 对比审核 — 等两个 Agent 的 PR 都出来后对比
+# 手动触发，输入 Issue 编号
+name: Compare PRs
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue 编号（两个 Agent 对应的 Issue）'
+        required: true
+        type: string
+
+permissions:
+  pull-requests: write
+  issues: write
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
+      - name: Fetch and Compare PRs
+        env:
+          OPENAI_API_KEY: ${{ secrets.CODEX_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.CODEX_API_BASE }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_NUM="${{ github.event.inputs.issue_number }}"
+          
+          # 获取两个 PR 的 diff
+          echo "=== Fetching Codex PR diff ===" > /tmp/compare_input.txt
+          gh pr diff "codex/issue-${ISSUE_NUM}" >> /tmp/compare_input.txt 2>/dev/null || echo "Codex PR not found" >> /tmp/compare_input.txt
+          
+          echo -e "\n=== Fetching OpenCode PR diff ===" >> /tmp/compare_input.txt
+          gh pr diff "opencode/issue-${ISSUE_NUM}" >> /tmp/compare_input.txt 2>/dev/null || echo "OpenCode PR not found" >> /tmp/compare_input.txt
+          
+          DIFFS=$(cat /tmp/compare_input.txt)
+          
+          codex --approval-mode full-auto \
+            --model gpt-5.2 \
+            --reasoning-effort high \
+            -q "你是代码审核专家。以下是两个 AI Agent 对同一个 Issue 的代码修改。请对比分析：
+
+          1. 代码质量（可读性、规范性）
+          2. 功能完整性（是否完整实现需求）
+          3. 安全性（有无漏洞）
+          4. 性能影响
+          5. 最终推荐（选哪个，或都不行需要改）
+
+          把对比结果写入 /tmp/review_result.md
+
+          ${DIFFS}"
+          
+          cat /tmp/review_result.md 2>/dev/null || echo "Review failed"
+
+      - name: Post Review Comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let review = '审核失败，请手动检查';
+            try {
+              review = fs.readFileSync('/tmp/review_result.md', 'utf8');
+            } catch(e) {}
+            
+            const issueNum = parseInt('${{ github.event.inputs.issue_number }}');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNum,
+              body: `## 🔍 AI 对比审核报告\n\n${review}`
+            });

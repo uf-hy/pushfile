@@ -1,0 +1,27 @@
+# 生产部署 — production 分支更新时自动部署
+name: Production Deploy
+
+on:
+  push:
+    branches: [production]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Production
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /root/code/photo
+            git fetch origin production
+            git checkout production
+            git reset --hard origin/production
+            
+            # 重启服务（不用 --reload）
+            systemctl restart photo-b.service
+            
+            echo "✅ Production deployed at $(date)"
