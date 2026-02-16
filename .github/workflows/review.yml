@@ -1,0 +1,167 @@
+# PR 自动审核 — 对所有 PR 进行代码审查
+# 自动识别来源：手动推送 / Codex Agent / OpenCode Agent
+name: PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches: [main]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # 跳过 bot 创建的 promote PR（production sync）
+    if: "!contains(github.event.pull_request.title, 'promote')"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect PR source
+        id: source
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+
+          if echo "$BRANCH" | grep -qE '^codex/issue-'; then
+            echo "source=codex-agent" >> $GITHUB_OUTPUT
+            echo "issue_num=$(echo $BRANCH | sed 's/codex\/issue-//')" >> $GITHUB_OUTPUT
+            echo "desc=🤖 Codex Agent 自动修复（由 Issue 触发）" >> $GITHUB_OUTPUT
+          elif echo "$BRANCH" | grep -qE '^opencode/issue-'; then
+            echo "source=opencode-agent" >> $GITHUB_OUTPUT
+            echo "issue_num=$(echo $BRANCH | sed 's/opencode\/issue-//')" >> $GITHUB_OUTPUT
+            echo "desc=🤖 OpenCode Agent 自动修复（由 Issue 触发）" >> $GITHUB_OUTPUT
+          else
+            echo "source=manual" >> $GITHUB_OUTPUT
+            echo "issue_num=" >> $GITHUB_OUTPUT
+            echo "desc=👤 人工提交的 PR" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get PR diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr_diff.txt 2>/dev/null || echo "Failed to get diff" > /tmp/pr_diff.txt
+          head -c 30000 /tmp/pr_diff.txt > /tmp/pr_diff_truncated.txt
+
+      - name: Write PR metadata to files
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const pr = context.payload.pull_request;
+            fs.writeFileSync('/tmp/pr_title.txt', pr.title || '');
+            fs.writeFileSync('/tmp/pr_body.txt', (pr.body || '').slice(0, 2000));
+
+      - name: Get linked issue context
+        if: steps.source.outputs.issue_num != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_NUM="${{ steps.source.outputs.issue_num }}"
+          gh issue view "$ISSUE_NUM" --json title,body --jq '"Issue #" + (.title) + "\n" + .body' > /tmp/issue_context.txt 2>/dev/null || echo "" > /tmp/issue_context.txt
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
+      - name: Run AI Review
+        env:
+          CUSTOM_OPENAI_KEY: ${{ secrets.CODEX_API_KEY }}
+        run: |
+          SOURCE="${{ steps.source.outputs.source }}"
+          PR_TITLE=$(cat /tmp/pr_title.txt)
+          PR_BODY=$(cat /tmp/pr_body.txt)
+          DIFF=$(cat /tmp/pr_diff_truncated.txt)
+          ISSUE_CTX=""
+          if [ -f /tmp/issue_context.txt ]; then
+            ISSUE_CTX=$(cat /tmp/issue_context.txt)
+          fi
+
+          # Build prompt in a file to avoid shell injection
+          if [ "$SOURCE" = "manual" ]; then
+            cat > /tmp/review_prompt.txt <<'PROMPT_END'
+          你是代码审核专家。这是一个 **人工提交** 的 PR，请以协作者的角度审核。
+
+          审核要点：
+          1. **代码质量** — 可读性、规范性、是否遵循项目风格
+          2. **功能正确性** — 逻辑是否正确，边界情况是否处理
+          3. **安全性** — 有无路径遍历、注入等风险
+          4. **建议** — 有什么可以改进的地方
+
+          语气：简洁专业，像一个靠谱的同事在 review。不需要过度夸奖。
+          PROMPT_END
+          else
+            cat > /tmp/review_prompt.txt <<PROMPT_END
+          你是代码审核专家。这是一个 **AI Agent (${SOURCE}) 自动生成** 的 PR，由 Issue 触发。
+
+          对 AI 生成的代码要更严格审核，重点关注：
+          1. **需求匹配** — 是否真正解决了 Issue 描述的问题（而非表面修复）
+          2. **代码质量** — AI 容易生成冗余代码、过度抽象、或遗漏边界情况
+          3. **安全性** — AI 可能引入不安全的模式（如未验证输入、硬编码等）
+          4. **副作用** — 是否影响了其他功能
+          5. **是否值得合并** — 明确给出 ✅ 推荐合并 / ⚠️ 需要修改 / ❌ 不建议合并
+          PROMPT_END
+          fi
+
+          # Append metadata from files (safe, no shell expansion)
+          {
+            echo ""
+            echo "PR 标题：$PR_TITLE"
+            echo ""
+            echo "PR 描述：$PR_BODY"
+            echo ""
+            if [ -n "$ISSUE_CTX" ]; then
+              echo "原始 Issue 内容："
+              echo "$ISSUE_CTX"
+              echo ""
+            fi
+            echo "代码变更（diff）："
+            echo "$DIFF"
+          } >> /tmp/review_prompt.txt
+
+          FULL_PROMPT=$(cat /tmp/review_prompt.txt)
+
+          codex \
+            -c 'model_providers.custom_openai.name="Custom OpenAI"' \
+            -c "model_providers.custom_openai.base_url=\"${{ secrets.CODEX_API_BASE }}\"" \
+            -c 'model_providers.custom_openai.env_key="CUSTOM_OPENAI_KEY"' \
+            -c 'model_provider="custom_openai"' \
+            exec --full-auto -m gpt-5.2 \
+            "$(cat /tmp/review_prompt.txt)
+
+          把审核结果写入 /tmp/review_result.md，格式清晰，用中文。"
+
+          cat /tmp/review_result.md 2>/dev/null || echo "审核执行完成但未生成报告" > /tmp/review_result.md
+
+      - name: Post Review Comment
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let review = '审核执行失败，请手动检查';
+            try {
+              review = fs.readFileSync('/tmp/review_result.md', 'utf8');
+            } catch(e) {}
+
+            const source = '${{ steps.source.outputs.source }}';
+            const sourceDesc = '${{ steps.source.outputs.desc }}';
+            const issueNum = '${{ steps.source.outputs.issue_num }}';
+
+            let header = `## 🔍 PR 代码审核\n\n`;
+            header += `**来源：** ${sourceDesc}\n`;
+            if (issueNum) {
+              header += `**关联 Issue：** #${issueNum}\n`;
+            }
+            header += `**分支：** \`${{ github.event.pull_request.head.ref }}\`\n\n---\n\n`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ github.event.pull_request.number }},
+              body: header + review,
+            });
