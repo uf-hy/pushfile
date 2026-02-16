@@ -27,6 +27,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.CODEX_API_KEY }}
           OPENAI_BASE_URL: ${{ secrets.CODEX_API_BASE }}
+          CODEX_DISABLE_RESPONSES_API: "1"
         run: |
           if codex exec --help >/dev/null 2>&1; then
             codex exec --full-auto -m gpt-5.2 "根据以下需求修改代码：
