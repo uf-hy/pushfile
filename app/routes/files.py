@@ -58,9 +58,4 @@ def serve_image(token: str, filename: str):
 def download_image(token: str, filename: str):
     """Force download with Content-Disposition: attachment."""
     f = _resolve_file(token, filename)
-    return FileResponse(
-        f,
-        filename=f.name,
-        media_type="application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{f.name}"'},
-    )
+    return FileResponse(f, filename=f.name, content_disposition_type="attachment")

@@ -5,7 +5,7 @@ from app.config import UPLOAD_SECRET, BASE_DIR
 
 TOKEN_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 FOLDER_SEGMENT_RE = re.compile(r"^[^/\\.\x00]{1,120}$")
-SAFE_NAME_RE = re.compile(r"^[^/\\\x00]{1,120}$")
+SAFE_NAME_RE = re.compile(r"^[^/\\\x00-\x1f\x7f]{1,120}$")
 
 
 def safe_token(token: str) -> str:
