@@ -1,4 +1,6 @@
 import json
+import os
+import ipaddress
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -15,14 +17,37 @@ _common = {"domain": SITE_DOMAIN, "max_mb": MAX_MB, "base": BASE_PATH}
 
 _d_404_limiter = SlidingWindowRateLimiter(limit=30, window_s=60.0)
 
+_TRUSTED_PROXY_NETS: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+_trusted_proxy_env = os.environ.get("TRUSTED_PROXY_NETS", "127.0.0.1/32,::1/128")
+for _net in _trusted_proxy_env.split(","):
+    _net = _net.strip()
+    if not _net:
+        continue
+    try:
+        _TRUSTED_PROXY_NETS.append(ipaddress.ip_network(_net, strict=False))
+    except ValueError:
+        continue
+
+
+def _is_trusted_proxy(host: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return any(ip in net for net in _TRUSTED_PROXY_NETS)
+
 
 def _client_ip(request: Request) -> str:
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
-    if request.client:
-        return request.client.host
-    return ""
+    peer = request.client.host if request.client else ""
+    if peer and _is_trusted_proxy(peer):
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            first = xff.split(",")[0].strip()
+            if first:
+                return first
+    if peer:
+        return peer
+    return "unknown"
 
 
 @router.get("/", response_class=HTMLResponse)
