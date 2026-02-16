@@ -6,6 +6,7 @@ from app.config import FRONTEND_DIR
 
 app = FastAPI(title="photo-uploader-b", docs_url=None, redoc_url=None, openapi_url=None)
 
+
 @app.middleware("http")
 async def referrer_policy_middleware(request, call_next):
     response = await call_next(request)
