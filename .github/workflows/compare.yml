@@ -45,7 +45,7 @@ jobs:
 
           DIFFS=$(cat /tmp/compare_input.txt | head -500)
 
-          codex --full-auto \
+          codex exec --full-auto \
             -m gpt-5.2 \
             "你是代码审核专家。以下是 AI Agent 对 Issue #${ISSUE_NUM} 的代码修改。
 

@@ -27,7 +27,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.CODEX_API_KEY }}
           OPENAI_BASE_URL: ${{ secrets.CODEX_API_BASE }}
         run: |
-          codex --full-auto \
+          codex exec --full-auto \
             -m gpt-5.2 \
             "根据以下需求修改代码：
           标题：${{ github.event.issue.title }}

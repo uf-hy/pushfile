@@ -127,7 +127,7 @@ jobs:
           npm install -g @openai/codex
           ERRORS=$(cat /tmp/all_errors.txt | head -100)
 
-          codex --full-auto \
+          codex exec --full-auto \
             -m gpt-5.2 \
             "以下测试/lint 失败了，请修复代码：\n\n${ERRORS}"
 
