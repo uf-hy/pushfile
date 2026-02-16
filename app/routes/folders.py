@@ -16,6 +16,11 @@ class DeleteFolderPayload(BaseModel):
     path: str
 
 
+class MoveFolderPayload(BaseModel):
+    src: str
+    dst: str
+
+
 @router.get("/tree")
 def api_folder_tree(key: str):
     auth_query_key(key)
@@ -66,3 +71,41 @@ def api_folder_delete(
         raise HTTPException(status_code=400, detail="not a folder")
     shutil.rmtree(d)
     return {"ok": True, "path": path}
+
+
+@router.post("/move")
+def api_folder_move(
+    payload: MoveFolderPayload,
+    x_upload_key: str | None = Header(default=None),
+):
+    """Move/rename a folder within BASE_DIR.
+
+    Blocks moving a folder into itself or into its own subdirectory.
+    """
+    auth_header_key(x_upload_key)
+    src_path = safe_path(payload.src)
+    dst_path = safe_path(payload.dst)
+
+    src = resolve_dir(src_path).resolve()
+    dst = resolve_dir(dst_path).resolve()
+
+    if not src.exists():
+        raise HTTPException(status_code=404, detail="source folder not found")
+    if not src.is_dir():
+        raise HTTPException(status_code=400, detail="source is not a folder")
+
+    if dst == src or dst.is_relative_to(src):
+        raise HTTPException(status_code=400, detail="cannot move folder into itself")
+
+    if dst.exists():
+        raise HTTPException(status_code=409, detail="destination exists")
+
+    if not src.is_relative_to(BASE_DIR) or not dst.is_relative_to(BASE_DIR):
+        raise HTTPException(status_code=400, detail="invalid path")
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        src.rename(dst)
+    except OSError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True, "src": src_path, "dst": dst_path}

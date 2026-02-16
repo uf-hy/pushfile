@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from fastapi import HTTPException
 from pathlib import Path
 from app.config import UPLOAD_SECRET, BASE_DIR
@@ -35,6 +36,10 @@ def resolve_dir(path: str) -> Path:
 
 def safe_name(name: str) -> str:
     name = name.strip()
+    # Reject control/non-printable characters (e.g. \n, \t) to avoid header/log injection
+    # and confusing filesystem/UI behavior.
+    if not name.isprintable() or any(unicodedata.category(ch) == "Cc" for ch in name):
+        raise HTTPException(status_code=400, detail="invalid filename")
     if not SAFE_NAME_RE.match(name) or name in (".", "..") or name.startswith("."):
         raise HTTPException(status_code=400, detail="invalid filename")
     return name
