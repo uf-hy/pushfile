@@ -145,29 +145,47 @@ def api_manage_batch_move(
     token = safe_token(token)
     dest_path = safe_path(payload.dest)
     names = [safe_name(x) for x in payload.names]
-    src_dir = token_dir(token)
+    src_dir = token_dir(token).resolve()
     dst_dir = resolve_dir(dest_path)
+
+    # Block move-to-self
+    if dst_dir.resolve() == src_dir:
+        raise HTTPException(status_code=400, detail="cannot move to same folder")
+
+    # Block if dest exists but is not a directory
+    if dst_dir.exists() and not dst_dir.is_dir():
+        raise HTTPException(status_code=400, detail="destination is not a folder")
+
     dst_dir.mkdir(parents=True, exist_ok=True)
     moved = []
+    skipped = []
     for name in names:
         src = (src_dir / name).resolve()
         if not src.is_relative_to(src_dir) or not src.is_file():
+            skipped.append({"name": name, "reason": "not found"})
             continue
         if src.suffix.lower() not in ALLOWED_SUFFIX:
+            skipped.append({"name": name, "reason": "type not allowed"})
             continue
         dst = dst_dir / name
+        final_name = name
         if dst.exists():
-            # Avoid overwrite: add suffix
             stem = dst.stem
             ext = dst.suffix
             i = 1
             while dst.exists():
-                dst = dst_dir / f"{stem}_{i}{ext}"
+                final_name = f"{stem}_{i}{ext}"
+                dst = dst_dir / final_name
                 i += 1
-        src.rename(dst)
+        try:
+            import shutil
+            shutil.move(str(src), str(dst))
+        except Exception as e:
+            skipped.append({"name": name, "reason": str(e)})
+            continue
         remove_in_order(token, name)
-        moved.append(name)
-    return {"ok": True, "moved": moved, "count": len(moved), "dest": dest_path}
+        moved.append({"src": name, "dst": final_name})
+    return {"ok": True, "moved": moved, "count": len(moved), "skipped": skipped, "dest": dest_path}
 
 
 @router.post("/{token}/batch-rename")
