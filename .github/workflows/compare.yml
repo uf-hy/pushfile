@@ -45,10 +45,9 @@ jobs:
 
           DIFFS=$(cat /tmp/compare_input.txt | head -500)
 
-          codex --approval-mode full-auto \
-            --model gpt-5.2 \
-            --reasoning-effort high \
-            -q "你是代码审核专家。以下是 AI Agent 对 Issue #${ISSUE_NUM} 的代码修改。
+          codex --full-auto \
+            -m gpt-5.2 \
+            "你是代码审核专家。以下是 AI Agent 对 Issue #${ISSUE_NUM} 的代码修改。
 
           如果两个 PR 都存在，请对比分析：
           1. 代码质量（可读性、规范性）

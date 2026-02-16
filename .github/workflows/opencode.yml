@@ -28,11 +28,11 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           OPENAI_API_BASE: ${{ secrets.OPENCODE_API_BASE }}
-          OPENCODE_MODEL: gpt-5.2
-          OPENCODE_REASONING_EFFORT: high
         run: |
-          opencode -n \
-            "根据以下需求修改代码：\n标题：${{ github.event.issue.title }}\n内容：${{ github.event.issue.body }}"
+          opencode --prompt "根据以下需求修改代码：
+          标题：${{ github.event.issue.title }}
+          内容：${{ github.event.issue.body }}" \
+            -m openai/gpt-5.2
 
       - name: Create PR
         id: pr
