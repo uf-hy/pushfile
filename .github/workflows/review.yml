@@ -177,10 +177,18 @@ jobs:
             if (issueNum) header += `**关联 Issue：** #${issueNum}\n`;
             header += `**分支：** \`${{ github.event.pull_request.head.ref }}\`\n`;
 
-            if (isAgent && needsFix && round < maxRounds) {
+            // Auto-fix ONLY when PR has 'auto-fix' label (owner controls)
+            // Codex PRs get this label automatically; others need manual labeling
+            const labels = context.payload.pull_request.labels.map(l => l.name);
+            const hasAutoFixLabel = labels.includes('auto-fix');
+            const canAutoFix = hasAutoFixLabel && round < maxRounds;
+
+            if (canAutoFix && needsFix) {
               header += `\n🔄 **审核未通过，将自动触发 Codex 修复（第 ${round+1} 轮）…**\n`;
-            } else if (isAgent && needsFix && round >= maxRounds) {
+            } else if (hasAutoFixLabel && needsFix && round >= maxRounds) {
               header += `\n⏹️ **已达最大审核轮次（${maxRounds}），不再自动修复。请人工检查。**\n`;
+            } else if (needsFix && !hasAutoFixLabel) {
+              header += `\n💡 **审核未通过。添加 \`auto-fix\` label 可触发自动修复（最多 ${maxRounds} 轮）。**\n`;
             }
 
             header += `\n---\n\n`;
@@ -194,8 +202,8 @@ jobs:
               body: header + review,
             });
 
-            // Output for auto-fix decision
-            const shouldFix = isAgent && needsFix && round < maxRounds;
+            // Auto-fix only if PR has 'auto-fix' label (owner controls)
+            const shouldFix = hasAutoFixLabel && needsFix && round < maxRounds;
             core.setOutput('should_fix', shouldFix ? 'true' : 'false');
             core.setOutput('round', String(round));
 
