@@ -2,11 +2,12 @@ import hashlib
 import time
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Header
-from app.auth import safe_token, safe_name, auth_query_key, auth_header_key, token_dir, SAFE_NAME_RE
+from app.auth import safe_token, safe_name, safe_path, auth_query_key, auth_header_key, token_dir, resolve_dir, SAFE_NAME_RE
 from app.models import (
     RenamePayload,
     DeletePayload,
     BatchDeletePayload,
+    BatchMovePayload,
     BatchRenamePayload,
     OrderPayload,
     TokenMetaPayload,
@@ -131,6 +132,42 @@ def api_manage_batch_delete(
             deleted.append(name)
             remove_in_order(token, name)
     return {"ok": True, "deleted": deleted, "count": len(deleted)}
+
+
+@router.post("/{token}/batch-move")
+def api_manage_batch_move(
+    token: str,
+    payload: BatchMovePayload,
+    x_upload_key: str | None = Header(default=None),
+):
+    """Move selected files to another folder. Creates dest if needed."""
+    auth_header_key(x_upload_key)
+    token = safe_token(token)
+    dest_path = safe_path(payload.dest)
+    names = [safe_name(x) for x in payload.names]
+    src_dir = token_dir(token)
+    dst_dir = resolve_dir(dest_path)
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    moved = []
+    for name in names:
+        src = (src_dir / name).resolve()
+        if not src.is_relative_to(src_dir) or not src.is_file():
+            continue
+        if src.suffix.lower() not in ALLOWED_SUFFIX:
+            continue
+        dst = dst_dir / name
+        if dst.exists():
+            # Avoid overwrite: add suffix
+            stem = dst.stem
+            ext = dst.suffix
+            i = 1
+            while dst.exists():
+                dst = dst_dir / f"{stem}_{i}{ext}"
+                i += 1
+        src.rename(dst)
+        remove_in_order(token, name)
+        moved.append(name)
+    return {"ok": True, "moved": moved, "count": len(moved), "dest": dest_path}
 
 
 @router.post("/{token}/batch-rename")

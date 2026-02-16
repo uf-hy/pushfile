@@ -111,3 +111,13 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .breadcrumb span{cursor:pointer;color:var(--accent)}
 .breadcrumb span:hover{text-decoration:underline}
 .breadcrumb .sep{color:var(--line);cursor:default}
+
+.picker-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;display:flex;align-items:flex-end;justify-content:center;padding:16px}
+.picker-box{background:var(--card);border-radius:var(--r);width:100%;max-width:500px;max-height:70vh;padding:20px;display:flex;flex-direction:column;overflow:hidden}
+.picker-title{font-size:17px;font-weight:600;text-align:center;margin-bottom:16px}
+.picker-input{display:flex;gap:8px;margin-bottom:12px}
+.picker-input input{flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;background:var(--bg)}
+.picker-tree{overflow-y:auto;flex:1;min-height:0}
+.picker-item{padding:10px 12px;font-size:15px;cursor:pointer;border-radius:8px;display:flex;align-items:center;gap:6px}
+.picker-item:hover{background:var(--bg)}
+.picker-item:active{background:#e5e5ea}

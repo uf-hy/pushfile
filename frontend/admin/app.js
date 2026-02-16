@@ -219,6 +219,64 @@ async function saveOrder(){
   try{await api('api/manage/'+encodeURIComponent(slugMap[T]||T)+'/order',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Key':S},body:JSON.stringify({names:files})});toast('排序已保存')}catch(e){toast('失败：'+e.message)}
 }
 
+async function batchMove(){
+  const names=files.filter(x=>sel.has(x));if(!names.length)return toast('请先选择');
+  showFolderPicker(names);
+}
+
+function showFolderPicker(names){
+  let overlay=document.createElement('div');
+  overlay.className='picker-overlay';
+  let html='<div class="picker-box"><div class="picker-title">移动 '+names.length+' 张图片到…</div>';
+  html+='<div class="picker-input"><input type="text" id="pickerNewFolder" placeholder="输入新文件夹路径（如 待整理/2026）"><button class="btn btn-blue btn-sm" onclick="doMove(this)">确定</button></div>';
+  html+='<div class="picker-tree" id="pickerTree"></div>';
+  html+='<button class="btn btn-sm" onclick="this.closest(\'.picker-overlay\').remove()" style="margin-top:12px;width:100%">取消</button>';
+  html+='</div>';
+  overlay.innerHTML=html;
+  overlay.dataset.names=JSON.stringify(names);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove()});
+  document.body.appendChild(overlay);
+  renderPickerTree(treeData,'');
+}
+
+function renderPickerTree(nodes,prefix){
+  const box=$('pickerTree');if(!box)return;
+  let h='';
+  function walk(nodes,depth){
+    for(const n of nodes){
+      if(n.path===T)continue;// skip current folder
+      const pad=depth*16;
+      h+='<div class="picker-item" style="padding-left:'+pad+'px" onclick="pickFolder(\''+esc(n.path)+'\')">';
+      h+=(n.is_album?'🖼️':'📁')+' '+esc(n.name);
+      if(n.image_count>0)h+='<span class="tree-count">'+n.image_count+'</span>';
+      h+='</div>';
+      if(n.children)walk(n.children,depth+1);
+    }
+  }
+  walk(nodes,0);
+  if(!h)h='<div style="padding:12px;color:var(--sub)">没有其他文件夹</div>';
+  box.innerHTML=h;
+}
+
+function pickFolder(path){
+  const input=$('pickerNewFolder');
+  if(input)input.value=path;
+}
+
+async function doMove(btn){
+  const overlay=btn.closest('.picker-overlay');
+  const dest=$('pickerNewFolder').value.trim();
+  if(!dest)return toast('请输入或选择目标文件夹');
+  const names=JSON.parse(overlay.dataset.names);
+  overlay.remove();
+  try{
+    const r=await api('api/manage/'+encodeURIComponent(slugMap[T]||T)+'/batch-move',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Key':S},body:JSON.stringify({names,dest})});
+    toast('已移动 '+r.count+' 张到 '+r.dest);
+    await loadTree();
+    if(T)await loadAlbumFiles(T);
+  }catch(e){toast('移动失败：'+e.message)}
+}
+
 async function createToken(){
   S=S||$('secret').value.trim();const tk=$('newTokenInput').value.trim();if(!S||!tk)return toast('请填写密码和名称');
   try{await api('api/tokens',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Key':S},body:JSON.stringify({token:tk})});
