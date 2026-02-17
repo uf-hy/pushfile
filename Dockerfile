@@ -2,30 +2,37 @@ FROM python:3.12-slim
 
 WORKDIR /app
 COPY pyproject.toml /app/
-RUN pip install --no-cache-dir fastapi uvicorn[standard] python-multipart jinja2 aiofiles geoip2 && \
+RUN pip install --no-cache-dir fastapi uvicorn[standard] python-multipart jinja2 aiofiles && \
     mkdir -p /app/data && \
     python - <<'PY'
-import urllib.request
+import urllib.request, os
 
+# ip2region v4 — 中国 IP 精确到市+运营商，11MB
 urls = [
-    "https://git.io/GeoLite2-City.mmdb",
-    "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb",
+    "https://raw.githubusercontent.com/lionsoul2014/ip2region/master/data/ip2region_v4.xdb",
+    "https://mirror.ghproxy.com/https://raw.githubusercontent.com/lionsoul2014/ip2region/master/data/ip2region_v4.xdb",
 ]
-dst = "/app/data/GeoLite2-City.mmdb"
+dst = "/app/data/ip2region.xdb"
 
 for u in urls:
     try:
         urllib.request.urlretrieve(u, dst)
-        print("Downloaded GeoLite2-City.mmdb from", u)
-        break
+        sz = os.path.getsize(dst)
+        if sz > 1_000_000:  # sanity check: should be ~11MB
+            print(f"Downloaded ip2region.xdb ({sz/1024/1024:.1f}MB) from {u}")
+            break
+        else:
+            os.remove(dst)
+            print(f"ip2region download too small ({sz}B), trying next: {u}")
     except Exception as e:
-        print("GeoLite2 download failed:", u, e)
+        print(f"ip2region download failed: {u} {e}")
 else:
-    print("GeoLite2-City.mmdb not downloaded; analytics will run without city lookup")
+    print("ip2region.xdb not downloaded; analytics will run without city lookup")
 PY
 
 COPY app /app/app
 COPY frontend /app/frontend
+COPY ip2region /app/ip2region
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000

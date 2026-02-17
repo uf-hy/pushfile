@@ -18,15 +18,15 @@ STATS_FILE = BASE_DIR / "_stats.json"
 VISITS_FILE = BASE_DIR / "_visits.jsonl"
 VISITS_OLD_FILE = BASE_DIR / "_visits.old.jsonl"
 _VISITS_MAX_BYTES = 10 * 1024 * 1024
-_GEOIP_DB_PATH = Path("/app/data/GeoLite2-City.mmdb")
+_IP2REGION_DB_PATH = Path("/app/data/ip2region.xdb")
 SLUGS_FILE = BASE_DIR / "_slugs.json"
 _stats_lock = threading.Lock()
 _visits_lock = threading.Lock()
 _slugs_lock = threading.Lock()
 _SLUG_SALT = os.environ.get("SLUG_SALT", "xaihub-photo-2026")
-_geoip_lock = threading.Lock()
-_geoip_reader = None
-_geoip_unavailable = False
+_ip2region_lock = threading.Lock()
+_ip2region_searcher = None
+_ip2region_unavailable = False
 
 
 def list_raw_images(token: str) -> List[str]:
@@ -325,65 +325,65 @@ def _is_local_ip(ip: str) -> bool:
     return addr.is_private or addr.is_link_local
 
 
-def _get_geoip_reader():
-    global _geoip_reader, _geoip_unavailable
-    if _geoip_unavailable:
+def _get_ip2region_searcher():
+    """Lazy-init ip2region searcher (content-cached, thread-safe)."""
+    global _ip2region_searcher, _ip2region_unavailable
+    if _ip2region_unavailable:
         return None
-    if _geoip_reader is not None:
-        return _geoip_reader
-    with _geoip_lock:
-        if _geoip_unavailable:
+    if _ip2region_searcher is not None:
+        return _ip2region_searcher
+    with _ip2region_lock:
+        if _ip2region_unavailable:
             return None
-        if _geoip_reader is not None:
-            return _geoip_reader
-        if not _GEOIP_DB_PATH.exists():
-            _geoip_unavailable = True
-            return None
-        try:
-            import geoip2.database  # type: ignore
-        except Exception:
-            _geoip_unavailable = True
+        if _ip2region_searcher is not None:
+            return _ip2region_searcher
+        if not _IP2REGION_DB_PATH.exists():
+            _ip2region_unavailable = True
             return None
         try:
-            _geoip_reader = geoip2.database.Reader(str(_GEOIP_DB_PATH))
-            return _geoip_reader
+            import sys, importlib, io
+            # ip2region binding is bundled in /app/ip2region/
+            ip2r_path = Path("/app/ip2region")
+            if ip2r_path.exists() and str(ip2r_path) not in sys.path:
+                sys.path.insert(0, str(ip2r_path))
+            from ip2region import searcher as ip2r_searcher, util as ip2r_util
+            buf = ip2r_util.load_content_from_file(str(_IP2REGION_DB_PATH))
+            header = ip2r_util.load_header_from_file(str(_IP2REGION_DB_PATH))
+            ver = ip2r_util.version_from_header(header)
+            _ip2region_searcher = ip2r_searcher.Searcher(ver, str(_IP2REGION_DB_PATH), None, buf)
+            return _ip2region_searcher
         except Exception:
-            _geoip_unavailable = True
+            _ip2region_unavailable = True
             return None
-
-
-def _pick_localized_name(obj) -> str:
-    if not obj:
-        return ""
-    names = getattr(obj, "names", None) or {}
-    if isinstance(names, dict):
-        return (
-            names.get("zh-CN")
-            or names.get("zh")
-            or names.get("en")
-            or getattr(obj, "name", "")
-            or ""
-        )
-    return getattr(obj, "name", "") or ""
 
 
 def _geoip_lookup(ip: str) -> tuple[str, str, str]:
+    """Lookup IP geolocation. Returns (city, region, country)."""
     if not ip:
         return "", "", ""
     if _is_local_ip(ip):
         return "本地", "", ""
-    reader = _get_geoip_reader()
-    if not reader:
+    s = _get_ip2region_searcher()
+    if not s:
         return "", "", ""
     try:
-        resp = reader.city(ip)
-        city = _pick_localized_name(getattr(resp, "city", None))
-        region = _pick_localized_name(getattr(resp, "most_specific_subdivision", None))
-        if not region:
-            subs = getattr(resp, "subdivisions", None)
-            most = getattr(subs, "most_specific", None) if subs else None
-            region = _pick_localized_name(most)
-        country = getattr(getattr(resp, "country", None), "iso_code", "") or ""
+        # ip2region returns: "国家|区域|省份|城市|ISP|国家代码"
+        # e.g. "中国|华中|湖南省|娄底市|电信|CN"
+        result = s.search(ip)
+        if not result or result == "0|0|0|0|0|0":
+            return "", "", ""
+        parts = str(result).split("|")
+        # parts: [country, area, province, city, isp, country_code]
+        country = parts[5] if len(parts) > 5 else (parts[0] if parts else "")
+        region = parts[2] if len(parts) > 2 else ""
+        city = parts[3] if len(parts) > 3 else ""
+        # Clean up "0" placeholders
+        if city == "0":
+            city = ""
+        if region == "0":
+            region = ""
+        if country == "0":
+            country = parts[0] if parts[0] != "0" else ""
         return city or "", region or "", country or ""
     except Exception:
         return "", "", ""
