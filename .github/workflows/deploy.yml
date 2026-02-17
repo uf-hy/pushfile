@@ -1,4 +1,4 @@
-# 生产部署 — 手动触发 或 由 build.yml 调用
+# 生产部署 — 手动触发
 name: Production Deploy
 
 on:
@@ -8,20 +8,6 @@ on:
         description: '镜像标签（默认 latest）'
         required: false
         default: 'latest'
-  workflow_call:
-    secrets:
-      PROD_SERVER_HOST:
-        required: true
-      PROD_SERVER_USER:
-        required: true
-      PROD_SERVER_SSH_KEY:
-        required: true
-      PROD_SERVER_SSH_PORT:
-        required: true
-      TELEGRAM_NOTIFY_TOKEN:
-        required: true
-      TELEGRAM_CHAT_ID:
-        required: true
 
 permissions:
   contents: write
@@ -29,7 +15,6 @@ permissions:
 
 env:
   IMAGE: ghcr.io/uf-hy/pushfile
-  CONTAINER: pushfile-prod
 
 jobs:
   deploy:
@@ -49,9 +34,9 @@ jobs:
         if: success()
         run: |
           TEXT="✅ *pushfile 已部署到生产*
-
-提交: \`${GITHUB_SHA:0:7}\`
-镜像: \`${{ env.IMAGE }}:${{ inputs.image_tag || 'latest' }}\`"
+          
+          提交: \`${GITHUB_SHA:0:7}\`
+          镜像: \`${{ env.IMAGE }}:${{ inputs.image_tag || 'latest' }}\`"
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_NOTIFY_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d text="$TEXT" \
@@ -61,25 +46,9 @@ jobs:
         if: failure()
         run: |
           TEXT="🚨 *pushfile 生产部署失败！*
-
-提交: \`${GITHUB_SHA:0:7}\`
-日志: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-请检查！"
+          
+          日志: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_NOTIFY_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d text="$TEXT" \
             -d parse_mode="Markdown" > /dev/null
-
-      - name: Create issue on failure
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: '🚨 生产部署失败',
-              body: `部署失败！\n\nCommit: ${context.sha}\nWorkflow: ${context.runId}\n\n请检查日志并手动处理。`,
-              labels: ['deploy-failed'],
-            });
