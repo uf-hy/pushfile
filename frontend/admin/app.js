@@ -5,6 +5,7 @@ const BASE=window.__BASE__||'';
 const MAX_MB=window.__MAX_MB__||25;
 const ADMIN_KEY_COOKIE='pf_admin_key';
 const ADMIN_KEY_MAX_AGE=518400; // 144 hours
+let showAnalytics=false,analyticsData=null;
 
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2000)}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
@@ -46,6 +47,7 @@ async function connect(key,opts){
     await api('api/tokens?key='+encodeURIComponent(S));
     $('connBadge').textContent='✅ 已连接';$('connBadge').style.color='var(--green)';
     $('loginSection').style.display='none';$('mainSection').style.display='';
+    const ab=$('analyticsBtn');if(ab){ab.style.display='';ab.textContent='📊 统计'}
     if(rememberEl&&rememberEl.checked)setAdminKeyCookie(S);else clearAdminKeyCookie();
     await loadTree();
     if(toastSuccess)toast('连接成功');
@@ -56,12 +58,16 @@ async function connect(key,opts){
     S='';
     if(rememberEl)rememberEl.checked=false;
     if(inputEl)inputEl.value='';
+    const ab=$('analyticsBtn');if(ab){ab.style.display='none'}
+    closeAnalytics(true);
     $('connBadge').textContent='未连接';$('connBadge').style.color='var(--sub)';
     $('loginSection').style.display='';$('mainSection').style.display='none';
     if(toastFailure)toast('自动连接失败，请重新输入密码');
     return false;
   }
   if(toastFailure)toast('密码错误');
+  const ab=$('analyticsBtn');if(ab){ab.style.display='none'}
+  closeAnalytics(true);
   S='';
   return false;
 }
@@ -72,6 +78,99 @@ async function loadTree(){
   try{statsData=await api('api/stats?key='+encodeURIComponent(S))}catch(_){statsData={}}
   slugMap={};buildSlugMap(treeData);
   renderTree();
+}
+
+function toggleAnalytics(){if(showAnalytics)closeAnalytics();else openAnalytics()}
+
+function closeAnalytics(silent){
+  showAnalytics=false;analyticsData=null;
+  const panel=$('analyticsPanel');if(panel)panel.style.display='none';
+  const admin=$('adminPanel');if(admin)admin.style.display='';
+  const btn=$('analyticsBtn');if(btn&&btn.style.display!=='none')btn.textContent='📊 统计';
+  if(!silent)toast('已返回管理');
+}
+
+async function openAnalytics(){
+  if(!S)return toast('请先连接');
+  showAnalytics=true;
+  const panel=$('analyticsPanel');const admin=$('adminPanel');
+  if(!panel)return;
+  if(panel)panel.style.display='';if(admin)admin.style.display='none';
+  const btn=$('analyticsBtn');if(btn)btn.textContent='⬅ 返回';
+  try{
+    panel.innerHTML='<div class="group"><div class="group-label">统计分析</div><div class="group-box"><div class="row"><span class="row-label">加载中</span><span class="row-value">请稍候…</span></div></div></div>';
+    analyticsData=await api('api/analytics?key='+encodeURIComponent(S));
+    renderAnalytics(analyticsData);
+  }catch(e){
+    if(panel)panel.innerHTML='<div class="group"><div class="group-label">统计分析</div><div class="group-box"><div class="row"><span class="row-label">错误</span><span class="row-value">'+esc(e.message)+'</span></div><div class="row row-tap" onclick="openAnalytics()"><span style="color:var(--accent)">重试</span></div></div></div>';
+  }
+}
+
+function maskIp(ip){
+  ip=String(ip||'');
+  const parts=ip.split('.');
+  if(parts.length===4)return parts[0]+'.'+parts[1]+'.*.'+parts[3];
+  // Basic IPv6 mask
+  const v6=ip.split(':').filter(Boolean);
+  if(v6.length>=2)return v6[0]+':*:'+v6[v6.length-1];
+  return ip;
+}
+
+function renderAnalytics(d){
+  const panel=$('analyticsPanel');if(!panel)return;
+  const total=Number(d.total_visit_count||0)||0;
+  const today=Number(d.today_visit_count||0)||0;
+  const uniq=Number(d.unique_ip_count||0)||0;
+  const albums=Number(d.album_count||0)||Object.keys(d.by_token||{}).length;
+
+  // Cities
+  const byCity=d.by_city||{};
+  const cityArr=Object.entries(byCity).map(([k,v])=>[k||'',Number(v)||0]).filter(x=>x[1]>0);
+  cityArr.sort((a,b)=>b[1]-a[1]||String(a[0]).localeCompare(String(b[0])));
+  const cityRows=cityArr.slice(0,50).map(([city,count])=>{
+    const name=city||'未知';
+    const pct=total?((count*100/total).toFixed(1)+'%'):'0%';
+    return '<div class="ana-row"><div class="ana-left"><div class="ana-title">'+esc(name)+'</div><div class="ana-sub">'+esc(pct)+'</div></div><div class="ana-num">'+count+'</div></div>';
+  }).join('')||'<div class="empty" style="padding:18px 16px">暂无数据</div>';
+
+  // Trend (last 30 days, Beijing time UTC+8)
+  const byDate=d.by_date||{};
+  const days=[];
+  const now=new Date(Date.now()+8*3600000);
+  const toISODate=(dt)=>{const y=dt.getUTCFullYear();const m=String(dt.getUTCMonth()+1).padStart(2,'0');const da=String(dt.getUTCDate()).padStart(2,'0');return y+'-'+m+'-'+da};
+  for(let i=29;i>=0;i--){
+    const dt=new Date(now.getTime()-i*86400000);
+    const k=toISODate(dt);
+    const c=Number(byDate[k]||0)||0;
+    days.push({k,c});
+  }
+  const max=Math.max(1,...days.map(x=>x.c));
+  const bars=days.map((x,i)=>{
+    const h=Math.round((x.c/max)*100);
+    const label=(i%5===0||i===days.length-1)?x.k.slice(5):'';
+    return '<div class="ana-bar" title="'+esc(x.k)+'：'+x.c+'"><div class="ana-bar-fill" style="height:'+h+'%"></div><div class="ana-bar-lbl">'+esc(label)+'</div></div>';
+  }).join('');
+
+  // Cross visit
+  const cross=(d.cross_visit||[]).filter(x=>x&&x.tokens&&x.tokens.length>=2);
+  const crossRows=cross.slice(0,80).map(x=>{
+    const ip=String(x.ip||'');
+    const city=String(x.city||'')||'未知';
+    const tokens=(x.tokens||[]).map(t=>'<span class="ana-tag">'+esc(t)+'</span>').join('');
+    const cnt=Number(x.count||0)||0;
+    return '<div class="ana-cross"><div class="ana-cross-top"><div class="ana-title">'+esc(maskIp(ip))+'</div><div class="ana-num">'+cnt+'</div></div><div class="ana-sub">'+esc(city)+'</div><div class="ana-tags">'+tokens+'</div></div>';
+  }).join('')||'<div class="empty" style="padding:18px 16px">暂无跨相册访问</div>';
+
+  panel.innerHTML=
+    '<div class="group"><div class="group-label">概览</div><div class="ana-cards">'+
+      '<div class="ana-card"><div class="ana-card-num">'+today+'</div><div class="ana-card-lbl">今日访问量</div></div>'+
+      '<div class="ana-card"><div class="ana-card-num">'+total+'</div><div class="ana-card-lbl">总访问量</div></div>'+
+      '<div class="ana-card"><div class="ana-card-num">'+uniq+'</div><div class="ana-card-lbl">独立 IP 数</div></div>'+
+      '<div class="ana-card"><div class="ana-card-num">'+albums+'</div><div class="ana-card-lbl">涉及相册数</div></div>'+
+    '</div><button class="btn btn-gray" onclick="openAnalytics()">刷新</button></div>'+
+    '<div class="group"><div class="group-label">城市分布</div><div class="group-box ana-list">'+cityRows+'</div></div>'+
+    '<div class="group"><div class="group-label">时间趋势（30天）</div><div class="group-box"><div class="ana-bars">'+bars+'</div></div></div>'+
+    '<div class="group"><div class="group-label">跨相册访问</div><div class="group-box ana-cross-list">'+crossRows+'</div></div>';
 }
 
 function buildSlugMap(nodes){for(const n of nodes){if(n.slug)slugMap[n.path]=n.slug;if(n.children)buildSlugMap(n.children)}}

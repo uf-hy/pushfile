@@ -7,6 +7,7 @@
 <div class="page">
   <div class="nav">
     <h1>PushFile Admin</h1>
+    <button class="nav-btn" id="analyticsBtn" onclick="toggleAnalytics()" style="display:none">📊 统计</button>
     <span class="badge" id="connBadge">未连接</span>
   </div>
 
@@ -55,33 +56,36 @@
 
   <!-- Main (hidden until connected) -->
   <div id="mainSection" style="display:none">
-    <div class="group">
-      <div class="group-label">导入 ZIP</div>
-      <div class="zip-zone" id="zipZone" onclick="document.getElementById('zipInput').click()">
-        <p>📦 点击选择或拖拽 ZIP 文件导入</p>
-        <p><small>保持目录结构，自动创建文件夹</small></p>
-        <input id="zipInput" type="file" accept=".zip" style="display:none" onchange="handleZipImport(this.files)">
-      </div>
-      <div class="zip-prog" id="zipProg"><div class="zip-bar"><div class="zip-fill" id="zipFill"></div></div><div class="zip-txt" id="zipTxt"></div></div>
-    </div>
-
-    <div class="group">
-      <div class="group-label">新建文件夹</div>
-      <div class="group-box">
-        <div class="row">
-          <span class="row-label">名称</span>
-          <input id="newFolderInput" type="text" placeholder="如：朋友圈创意九宫格/01_蛇年限定">
+    <div id="analyticsPanel" style="display:none"></div>
+    <div id="adminPanel">
+      <div class="group">
+        <div class="group-label">导入 ZIP</div>
+        <div class="zip-zone" id="zipZone" onclick="document.getElementById('zipInput').click()">
+          <p>📦 点击选择或拖拽 ZIP 文件导入</p>
+          <p><small>保持目录结构，自动创建文件夹</small></p>
+          <input id="zipInput" type="file" accept=".zip" style="display:none" onchange="handleZipImport(this.files)">
         </div>
-        <div class="row row-tap" onclick="createFolder()"><span style="color:var(--accent)">创建</span></div>
+        <div class="zip-prog" id="zipProg"><div class="zip-bar"><div class="zip-fill" id="zipFill"></div></div><div class="zip-txt" id="zipTxt"></div></div>
       </div>
-    </div>
 
-    <div class="group">
-      <div class="group-label">目录结构</div>
-      <div class="group-box" id="treeBox"></div>
-    </div>
+      <div class="group">
+        <div class="group-label">新建文件夹</div>
+        <div class="group-box">
+          <div class="row">
+            <span class="row-label">名称</span>
+            <input id="newFolderInput" type="text" placeholder="如：朋友圈创意九宫格/01_蛇年限定">
+          </div>
+          <div class="row row-tap" onclick="createFolder()"><span style="color:var(--accent)">创建</span></div>
+        </div>
+      </div>
 
-    <div id="contentArea"></div>
+      <div class="group">
+        <div class="group-label">目录结构</div>
+        <div class="group-box" id="treeBox"></div>
+      </div>
+
+      <div id="contentArea"></div>
+    </div>
   </div>
 </div>
 

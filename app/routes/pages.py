@@ -93,11 +93,16 @@ def manage_page(request: Request):
 def _render_album(request: Request, token: str):
     """Shared album renderer for both /album/{token} and /d/{token}."""
     token = safe_token(token)
+    client_ip = (
+        (request.headers.get("X-Forwarded-For", "").split(",")[0].strip())
+        or (request.client.host if request.client else "unknown")
+    )
+    ua = request.headers.get("User-Agent", "")
     real_path = resolve_slug(token)
     if real_path:
         files = list_images_by_path(real_path)
         display_name = real_path.split("/")[-1]
-        record_visit(real_path)
+        record_visit(token, ip=client_ip, ua=ua, stats_key=real_path)
         return templates.TemplateResponse(
             "album/index.html",
             {
@@ -115,7 +120,7 @@ def _render_album(request: Request, token: str):
     if not files:
         raise HTTPException(status_code=404, detail="album not found")
     title = get_token_title(token) or token
-    record_visit(token)
+    record_visit(token, ip=client_ip, ua=ua)
     return templates.TemplateResponse(
         "album/index.html",
         {
