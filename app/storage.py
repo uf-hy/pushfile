@@ -2,6 +2,8 @@ import hashlib
 import json
 import os
 import threading
+import ipaddress
+from collections import Counter, defaultdict, deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
@@ -13,10 +15,18 @@ MANIFEST = ".manifest.json"
 FOLDER_ORDER_FILE = ".folder_order.json"
 ARCHIVE_DIRNAME = "_archived"
 STATS_FILE = BASE_DIR / "_stats.json"
+VISITS_FILE = BASE_DIR / "_visits.jsonl"
+VISITS_OLD_FILE = BASE_DIR / "_visits.old.jsonl"
+_VISITS_MAX_BYTES = 10 * 1024 * 1024
+_GEOIP_DB_PATH = Path("/app/data/GeoLite2-City.mmdb")
 SLUGS_FILE = BASE_DIR / "_slugs.json"
 _stats_lock = threading.Lock()
+_visits_lock = threading.Lock()
 _slugs_lock = threading.Lock()
 _SLUG_SALT = os.environ.get("SLUG_SALT", "xaihub-photo-2026")
+_geoip_lock = threading.Lock()
+_geoip_reader = None
+_geoip_unavailable = False
 
 
 def list_raw_images(token: str) -> List[str]:
@@ -285,21 +295,238 @@ def _save_stats(data: dict):
     STATS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def record_visit(token: str):
+def _utc_now_z() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _is_local_ip(ip: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    # Spec mentions common IPv4 private ranges; include IPv6 local too for safety.
+    if addr.is_loopback:
+        return True
+    if addr.version == 4:
+        return (
+            addr in ipaddress.ip_network("10.0.0.0/8")
+            or addr in ipaddress.ip_network("192.168.0.0/16")
+            or addr in ipaddress.ip_network("172.16.0.0/12")
+        )
+    return addr.is_private or addr.is_link_local
+
+
+def _get_geoip_reader():
+    global _geoip_reader, _geoip_unavailable
+    if _geoip_unavailable:
+        return None
+    if _geoip_reader is not None:
+        return _geoip_reader
+    with _geoip_lock:
+        if _geoip_unavailable:
+            return None
+        if _geoip_reader is not None:
+            return _geoip_reader
+        if not _GEOIP_DB_PATH.exists():
+            _geoip_unavailable = True
+            return None
+        try:
+            import geoip2.database  # type: ignore
+        except Exception:
+            _geoip_unavailable = True
+            return None
+        try:
+            _geoip_reader = geoip2.database.Reader(str(_GEOIP_DB_PATH))
+            return _geoip_reader
+        except Exception:
+            _geoip_unavailable = True
+            return None
+
+
+def _pick_localized_name(obj) -> str:
+    if not obj:
+        return ""
+    names = getattr(obj, "names", None) or {}
+    if isinstance(names, dict):
+        return (
+            names.get("zh-CN")
+            or names.get("zh")
+            or names.get("en")
+            or getattr(obj, "name", "")
+            or ""
+        )
+    return getattr(obj, "name", "") or ""
+
+
+def _geoip_lookup(ip: str) -> tuple[str, str, str]:
+    if not ip:
+        return "", "", ""
+    if _is_local_ip(ip):
+        return "本地", "", ""
+    reader = _get_geoip_reader()
+    if not reader:
+        return "", "", ""
+    try:
+        resp = reader.city(ip)
+        city = _pick_localized_name(getattr(resp, "city", None))
+        region = _pick_localized_name(getattr(resp, "most_specific_subdivision", None))
+        if not region:
+            subs = getattr(resp, "subdivisions", None)
+            most = getattr(subs, "most_specific", None) if subs else None
+            region = _pick_localized_name(most)
+        country = getattr(getattr(resp, "country", None), "iso_code", "") or ""
+        return city or "", region or "", country or ""
+    except Exception:
+        return "", "", ""
+
+
+def _rotate_visits_if_needed():
+    try:
+        if VISITS_FILE.exists() and VISITS_FILE.stat().st_size >= _VISITS_MAX_BYTES:
+            try:
+                if VISITS_OLD_FILE.exists():
+                    VISITS_OLD_FILE.unlink()
+            except Exception:
+                pass
+            try:
+                VISITS_FILE.replace(VISITS_OLD_FILE)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _append_visit_record(token: str, ip: str, ua: str, time_z: str):
+    city, region, country = _geoip_lookup(ip)
+    rec = {
+        "token": token,
+        "ip": ip,
+        "city": city,
+        "region": region,
+        "country": country,
+        "ua": ua or "",
+        "time": time_z,
+    }
+    line = json.dumps(rec, ensure_ascii=False, separators=(",", ":")) + "\n"
+    with _visits_lock:
+        _rotate_visits_if_needed()
+        VISITS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(VISITS_FILE, "a", encoding="utf-8") as f:
+            f.write(line)
+
+
+def record_visit(token: str, ip: str, ua: str = ""):
     with _stats_lock:
         stats = _load_stats()
         entry = stats.get(token, {"views": 0, "first_visit": None, "last_visit": None})
-        now = datetime.now(timezone.utc).isoformat()
+        now = _utc_now_z()
         entry["views"] = entry.get("views", 0) + 1
         if not entry.get("first_visit"):
             entry["first_visit"] = now
         entry["last_visit"] = now
         stats[token] = entry
         _save_stats(stats)
+    try:
+        _append_visit_record(token=token, ip=ip or "", ua=ua or "", time_z=now)
+    except Exception:
+        # Never break album rendering on analytics failures.
+        pass
 
 
 def get_all_stats() -> dict:
     return _load_stats()
+
+
+def _iter_jsonl(path: Path):
+    if not path.exists():
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(obj, dict):
+                    yield obj
+    except Exception:
+        return
+
+
+def iter_visit_records():
+    # Old file first, then current file. Both are capped by rotation (10MB each).
+    yield from _iter_jsonl(VISITS_OLD_FILE)
+    yield from _iter_jsonl(VISITS_FILE)
+
+
+def get_analytics(limit: int = 1000) -> dict:
+    limit = max(1, min(int(limit or 1000), 5000))
+
+    recent = deque(maxlen=limit)
+    by_city: Counter[str] = Counter()
+    by_date: Counter[str] = Counter()
+    by_token: Counter[str] = Counter()
+    ip_token: dict[str, Counter[str]] = defaultdict(Counter)
+    ip_city: dict[str, Counter[str]] = defaultdict(Counter)
+    unique_ips: set[str] = set()
+    total = 0
+
+    for rec in iter_visit_records():
+        total += 1
+        recent.append(rec)
+        token = str(rec.get("token") or "")
+        ip = str(rec.get("ip") or "")
+        city = str(rec.get("city") or "")
+        t = str(rec.get("time") or "")
+        date = t[:10] if len(t) >= 10 else ""
+        if token:
+            by_token[token] += 1
+        if date:
+            by_date[date] += 1
+        by_city[city] += 1
+        if ip:
+            unique_ips.add(ip)
+            if token:
+                ip_token[ip][token] += 1
+            if city:
+                ip_city[ip][city] += 1
+
+    cross_visit = []
+    for ip, tok_ctr in ip_token.items():
+        tokens = [t for t, c in tok_ctr.items() if t and c > 0]
+        if len(tokens) < 2:
+            continue
+        tokens_sorted = [t for t, _ in sorted(tok_ctr.items(), key=lambda x: (-x[1], x[0])) if t]
+        city = ""
+        if ip in ip_city and ip_city[ip]:
+            city = ip_city[ip].most_common(1)[0][0]
+        cross_visit.append(
+            {
+                "ip": ip,
+                "city": city,
+                "tokens": tokens_sorted,
+                "count": int(sum(tok_ctr.values())),
+            }
+        )
+    cross_visit.sort(key=lambda x: (-int(x.get("count") or 0), str(x.get("ip") or "")))
+
+    today = datetime.now(timezone.utc).date().isoformat()
+    today_count = int(by_date.get(today, 0))
+
+    return {
+        "visits": list(recent),
+        "by_city": dict(by_city),
+        "by_date": dict(by_date),
+        "by_token": dict(by_token),
+        "cross_visit": cross_visit,
+        "total_visit_count": int(total),
+        "today_visit_count": today_count,
+        "unique_ip_count": int(len(unique_ips)),
+        "album_count": int(len(by_token)),
+    }
 
 
 def _load_slugs() -> dict:
@@ -357,4 +584,3 @@ def resolve_slug(slug: str) -> str | None:
 
 def get_all_slugs() -> dict:
     return _load_slugs()
-
