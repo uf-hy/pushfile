@@ -295,6 +295,11 @@ def _save_stats(data: dict):
     STATS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _utc_now_z() -> str:
+    """UTC time for _stats.json backward compat."""
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 _BJT = timezone(timedelta(hours=8))
 
 
@@ -422,18 +427,19 @@ def _append_visit_record(token: str, ip: str, ua: str, time_z: str):
 def record_visit(token: str, ip: str, ua: str = "", stats_key: str = ""):
     """Record a visit. stats_key is used for _stats.json (defaults to token)."""
     sk = stats_key or token
+    now_utc = _utc_now_z()
+    now_bjt = _now_bjt()
     with _stats_lock:
         stats = _load_stats()
         entry = stats.get(sk, {"views": 0, "first_visit": None, "last_visit": None})
-        now = _now_bjt()
         entry["views"] = entry.get("views", 0) + 1
         if not entry.get("first_visit"):
-            entry["first_visit"] = now
-        entry["last_visit"] = now
+            entry["first_visit"] = now_utc
+        entry["last_visit"] = now_utc
         stats[sk] = entry
         _save_stats(stats)
     try:
-        _append_visit_record(token=token, ip=ip or "", ua=ua or "", time_z=now)
+        _append_visit_record(token=token, ip=ip or "", ua=ua or "", time_z=now_bjt)
     except Exception:
         # Never break album rendering on analytics failures.
         pass

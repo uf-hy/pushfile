@@ -133,11 +133,11 @@ function renderAnalytics(d){
     return '<div class="ana-row"><div class="ana-left"><div class="ana-title">'+esc(name)+'</div><div class="ana-sub">'+esc(pct)+'</div></div><div class="ana-num">'+count+'</div></div>';
   }).join('')||'<div class="empty" style="padding:18px 16px">暂无数据</div>';
 
-  // Trend (last 30 days, UTC)
+  // Trend (last 30 days, Beijing time UTC+8)
   const byDate=d.by_date||{};
   const days=[];
-  const now=new Date();
-  const toISODate=(dt)=>{const y=dt.getFullYear();const m=String(dt.getMonth()+1).padStart(2,'0');const da=String(dt.getDate()).padStart(2,'0');return y+'-'+m+'-'+da};
+  const now=new Date(Date.now()+8*3600000);
+  const toISODate=(dt)=>{const y=dt.getUTCFullYear();const m=String(dt.getUTCMonth()+1).padStart(2,'0');const da=String(dt.getUTCDate()).padStart(2,'0');return y+'-'+m+'-'+da};
   for(let i=29;i>=0;i--){
     const dt=new Date(now.getTime()-i*86400000);
     const k=toISODate(dt);
