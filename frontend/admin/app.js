@@ -27,10 +27,11 @@ function getCookie(name){
 }
 
 function setAdminKeyCookie(key){
-  document.cookie=ADMIN_KEY_COOKIE+'='+encodeURIComponent(key)+'; path=/admin; max-age='+ADMIN_KEY_MAX_AGE+'; SameSite=Strict';
+  document.cookie=ADMIN_KEY_COOKIE+'='+encodeURIComponent(key)+'; path=/; max-age='+ADMIN_KEY_MAX_AGE+'; SameSite=Strict';
 }
 
 function clearAdminKeyCookie(){
+  document.cookie=ADMIN_KEY_COOKIE+'=; path=/; max-age=0; SameSite=Strict';
   document.cookie=ADMIN_KEY_COOKIE+'=; path=/admin; max-age=0; SameSite=Strict';
 }
 
