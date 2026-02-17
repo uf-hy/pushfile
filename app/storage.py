@@ -367,24 +367,24 @@ def _geoip_lookup(ip: str) -> tuple[str, str, str]:
     if not s:
         return "", "", ""
     try:
-        # ip2region returns: "国家|区域|省份|城市|ISP|国家代码"
-        # e.g. "中国|华中|湖南省|娄底市|电信|CN"
+        # ip2region returns: "国家|省份|城市|ISP|国家代码"
+        # e.g. "中国|湖南省|娄底市|电信|CN"
         result = s.search(ip)
-        if not result or result == "0|0|0|0|0|0":
+        if not result or result == "0|0|0|0|0":
             return "", "", ""
         parts = str(result).split("|")
-        # parts: [country, area, province, city, isp, country_code]
-        country = parts[5] if len(parts) > 5 else (parts[0] if parts else "")
-        region = parts[2] if len(parts) > 2 else ""
-        city = parts[3] if len(parts) > 3 else ""
+        # parts: [country, province, city, isp, country_code]
+        country_code = parts[4] if len(parts) > 4 else ""
+        region = parts[1] if len(parts) > 1 else ""  # province
+        city = parts[2] if len(parts) > 2 else ""     # city
         # Clean up "0" placeholders
         if city == "0":
             city = ""
         if region == "0":
             region = ""
-        if country == "0":
-            country = parts[0] if parts[0] != "0" else ""
-        return city or "", region or "", country or ""
+        if country_code == "0":
+            country_code = ""
+        return city or "", region or "", country_code or ""
     except Exception:
         return "", "", ""
 
