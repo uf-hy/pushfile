@@ -1,8 +1,10 @@
-# 生产部署 — Docker 镜像拉取 + 健康检查 + 自动回滚
+# 生产部署 — 由 build.yml 完成后触发，确保镜像已推送
 name: Production Deploy
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Build & Push Docker Image"]
+    types: [completed]
     branches: [production]
   workflow_dispatch:
     inputs:
@@ -22,6 +24,7 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Deploy to Production
         uses: appleboy/ssh-action@v1
