@@ -86,7 +86,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=production,enable=${{ github.ref == 'refs/heads/production' }}
+            type=raw,value=production,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/production' }}
             type=sha,prefix=sha-,format=short
             type=raw,value=v${{ steps.version.outputs.version }},enable=${{ steps.version.outputs.version != '' && github.event_name == 'push' }}
 
