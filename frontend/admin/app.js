@@ -145,9 +145,9 @@ function renderAnalytics(d){
     days.push({k,c});
   }
   const max=Math.max(1,...days.map(x=>x.c));
-  const bars=days.map(x=>{
+  const bars=days.map((x,i)=>{
     const h=Math.round((x.c/max)*100);
-    const label=x.k.slice(5);
+    const label=(i%5===0||i===days.length-1)?x.k.slice(5):'';
     return '<div class="ana-bar" title="'+esc(x.k)+'：'+x.c+'"><div class="ana-bar-fill" style="height:'+h+'%"></div><div class="ana-bar-lbl">'+esc(label)+'</div></div>';
   }).join('');
 
