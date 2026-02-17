@@ -99,3 +99,15 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    uses: ./.github/workflows/deploy.yml
+    secrets:
+      PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
+      PROD_SERVER_USER: ${{ secrets.PROD_SERVER_USER }}
+      PROD_SERVER_SSH_KEY: ${{ secrets.PROD_SERVER_SSH_KEY }}
+      PROD_SERVER_SSH_PORT: ${{ secrets.PROD_SERVER_SSH_PORT }}
+      TELEGRAM_NOTIFY_TOKEN: ${{ secrets.TELEGRAM_NOTIFY_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

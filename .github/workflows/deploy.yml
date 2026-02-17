@@ -1,17 +1,27 @@
-# 生产部署 — 由 build.yml 完成后触发，确保镜像已推送
+# 生产部署 — 手动触发 或 由 build.yml 调用
 name: Production Deploy
 
 on:
-  workflow_run:
-    workflows: ["Build & Push Docker Image"]
-    types: [completed]
-    branches: [main, production]
   workflow_dispatch:
     inputs:
       image_tag:
-        description: '镜像标签（默认 production）'
+        description: '镜像标签（默认 latest）'
         required: false
-        default: 'production'
+        default: 'latest'
+  workflow_call:
+    secrets:
+      PROD_SERVER_HOST:
+        required: true
+      PROD_SERVER_USER:
+        required: true
+      PROD_SERVER_SSH_KEY:
+        required: true
+      PROD_SERVER_SSH_PORT:
+        required: true
+      TELEGRAM_NOTIFY_TOKEN:
+        required: true
+      TELEGRAM_CHAT_ID:
+        required: true
 
 permissions:
   contents: write
@@ -24,7 +34,6 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Deploy to Production
         uses: appleboy/ssh-action@v1
@@ -34,19 +43,15 @@ jobs:
           key: ${{ secrets.PROD_SERVER_SSH_KEY }}
           port: ${{ secrets.PROD_SERVER_SSH_PORT }}
           script: |
-            deploy ${{ github.event.inputs.image_tag || 'production' }}
+            deploy ${{ inputs.image_tag || 'latest' }}
 
       - name: Notify Telegram — success
         if: success()
         run: |
-          COMMIT_MSG=$(echo '${{ github.event.workflow_run.head_commit.message || 'manual dispatch' }}' | head -1)
           TEXT="✅ *pushfile 已部署到生产*
 
 提交: \`${GITHUB_SHA:0:7}\`
-触发: ${{ github.event_name }}
-镜像: \`${{ env.IMAGE }}:production\`
-
-$COMMIT_MSG"
+镜像: \`${{ env.IMAGE }}:${{ inputs.image_tag || 'latest' }}\`"
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_NOTIFY_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d text="$TEXT" \
