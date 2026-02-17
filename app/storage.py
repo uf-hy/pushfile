@@ -4,7 +4,7 @@ import os
 import threading
 import ipaddress
 from collections import Counter, defaultdict, deque
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import List
 from app.config import BASE_DIR
@@ -295,8 +295,12 @@ def _save_stats(data: dict):
     STATS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _utc_now_z() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+_CST = timezone(timedelta(hours=8))
+
+
+def _now_cst() -> str:
+    """Return current time in Asia/Shanghai (UTC+8) as ISO string."""
+    return datetime.now(_CST).isoformat()
 
 
 def _is_local_ip(ip: str) -> bool:
@@ -419,7 +423,7 @@ def record_visit(token: str, ip: str, ua: str = ""):
     with _stats_lock:
         stats = _load_stats()
         entry = stats.get(token, {"views": 0, "first_visit": None, "last_visit": None})
-        now = _utc_now_z()
+        now = _now_cst()
         entry["views"] = entry.get("views", 0) + 1
         if not entry.get("first_visit"):
             entry["first_visit"] = now
@@ -513,7 +517,7 @@ def get_analytics(limit: int = 1000) -> dict:
         )
     cross_visit.sort(key=lambda x: (-int(x.get("count") or 0), str(x.get("ip") or "")))
 
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = datetime.now(_CST).date().isoformat()
     today_count = int(by_date.get(today, 0))
 
     return {
