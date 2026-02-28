@@ -1,8 +1,11 @@
 let S='',T='',files=[],sel=new Set(),dragN='',sheetTarget='',treeData=[],curPath='',expanded={},statsData={},slugMap={};
+let importDraft={type:'',zipFile:null,folderEntries:[],sourceName:'',preferredDest:''};
 const $=id=>document.getElementById(id);
 const DOMAIN=window.__DOMAIN__||'photo.xaihub.de';
 const BASE=window.__BASE__||'';
 const MAX_MB=window.__MAX_MB__||25;
+const APP_VERSION=window.__APP_VERSION__||'dev';
+const APP_BUILD_TIME=window.__APP_BUILD_TIME__||'local';
 
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2000)}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
@@ -28,6 +31,20 @@ async function loadTree(){
 }
 
 function buildSlugMap(nodes){for(const n of nodes){if(n.slug)slugMap[n.path]=n.slug;if(n.children)buildSlugMap(n.children)}}
+
+function collectFolderPaths(nodes,prefix=''){
+  let out=[];
+  for(const n of nodes){
+    const current=prefix?(prefix+'/'+n.name):n.name;
+    out.push(current);
+    if(n.children&&n.children.length)out=out.concat(collectFolderPaths(n.children,current));
+  }
+  return out;
+}
+
+function currentImportPath(){
+  return T||curPath||'';
+}
 
 function renderTree(){
   const box=$('treeBox');
@@ -64,11 +81,15 @@ function selectNode(path,isAlbum){
 
 async function loadFolderView(path){
   const d=await api('api/folders/list?path='+encodeURIComponent(path)+'&key='+encodeURIComponent(S));
+  T=path;
+  files=(d.files||[]).slice();
+  sel.clear();
   const c=$('contentArea');
   let h=renderBreadcrumb(path);
   h+='<div class="group"><div class="group-label">'+esc(path.split('/').pop())+'</div><div class="group-box">';
+  h+='<div class="row row-tap" onclick="openImportChooser(\''+esc(path)+'\')"><span class="tree-icon">📥</span><span style="flex:1">导入 ZIP / 文件夹到此目录</span><span class="row-chevron">›</span></div>';
   if(d.subfolders&&d.subfolders.length)for(const sf of d.subfolders)h+='<div class="row row-tap" onclick="selectNode(\''+esc(path+'/'+sf)+'\',false)"><span class="tree-icon">📁</span><span style="flex:1">'+esc(sf)+'</span><span class="row-chevron">›</span></div>';
-  if(d.files&&d.files.length){T=path;files=d.files.slice();sel.clear();h+='<div class="row"><span style="color:var(--sub)">'+d.files.length+' 张图片</span></div>';}
+  if(d.files&&d.files.length){h+='<div class="row"><span style="color:var(--sub)">'+d.files.length+' 张图片</span></div>';}
   if((!d.subfolders||!d.subfolders.length)&&(!d.files||!d.files.length))h+='<div class="row"><span style="color:var(--sub)">空文件夹</span></div>';
   h+='<div class="row row-tap" onclick="deleteFolder(\''+esc(path)+'\')"><span style="color:var(--danger)">删除此文件夹</span></div>';
   h+='</div></div>';
@@ -104,7 +125,8 @@ function renderAlbumContent(){
   h+='<div class="group"><div class="group-label">上传照片</div>'+
     '<div class="upload-zone" id="uploadZone" onclick="$(\'fileInput\').click()"><div style="font-size:36px;color:var(--sub)">⊕</div><p>点击选择或拖拽图片</p><small>JPG/PNG/GIF/WebP · 最大 '+MAX_MB+'MB</small>'+
     '<input id="fileInput" type="file" accept="image/*" multiple style="display:none" onchange="handleUpload(this.files)"></div>'+
-    '<div class="upload-prog" id="uploadProg"><div class="upload-bar"><div class="upload-fill" id="uploadFill"></div></div><div class="upload-txt" id="uploadTxt"></div></div></div>';
+    '<div class="upload-prog" id="uploadProg"><div class="upload-bar"><div class="upload-fill" id="uploadFill"></div></div><div class="upload-txt" id="uploadTxt"></div></div>'+
+    '<div class="zip-actions import-trigger"><button class="btn btn-sm btn-gray zip-btn" type="button" onclick="openImportChooser(\''+esc(T)+'\')">导入 ZIP / 文件夹</button></div></div>';
   h+='<div class="group"><div class="group-label">照片 ('+files.length+')</div><div class="photos" id="photoGrid"></div></div>';
   c.innerHTML=h;
   const zone=$('uploadZone');
@@ -134,7 +156,7 @@ function renderPhotos(){
 }
 
 function toggleSel(name,e){e.stopPropagation();sel.has(name)?sel.delete(name):sel.add(name);renderPhotos()}
-function selectAll(){files.forEach(n=>sel.add(n));renderPhotos()}
+function selectAll(){files.forEach(n=>{sel.add(n)});renderPhotos()}
 function updateBatch(){const n=sel.size;$('batchCount').textContent=n+' 已选';$('batchBar').classList.toggle('show',n>0)}
 function openSheet(name){sheetTarget=name;$('sheetBg').classList.add('show')}
 function closeSheet(){$('sheetBg').classList.remove('show');sheetTarget=''}
@@ -175,26 +197,268 @@ async function handleUpload(fileList){
   await loadTree();await loadAlbumFiles(T);
 }
 
-function handleZipImport(fileList){
-  if(!fileList||!fileList.length)return;const f=fileList[0];
+function normalizeRelPath(p){
+  return (p||'').replace(/\\/g,'/').replace(/^\/+/, '').trim();
+}
+
+function sourceBaseName(name){
+  if(!name)return 'new-import';
+  return name.replace(/\.[^.]+$/, '').replace(/[\\/]/g,'').trim()||'new-import';
+}
+
+function sanitizeFolderName(name){
+  return (name||'new-import').replace(/[\\/]/g,'').trim()||'new-import';
+}
+
+function fileFromEntry(entry){
+  return new Promise((resolve,reject)=>entry.file(resolve,reject));
+}
+
+function readAllEntries(reader){
+  return new Promise((resolve,reject)=>{
+    const all=[];
+    const step=()=>reader.readEntries(entries=>{
+      if(!entries.length)return resolve(all);
+      all.push(...entries);
+      step();
+    },reject);
+    step();
+  });
+}
+
+async function collectFilesFromEntry(entry,prefix=''){
+  if(!entry)return[];
+  if(entry.isFile){
+    const file=await fileFromEntry(entry);
+    return [{file,relativePath:normalizeRelPath(prefix+file.name)}];
+  }
+  if(entry.isDirectory){
+    const entries=await readAllEntries(entry.createReader());
+    const out=[];
+    for(const child of entries){
+      const children=await collectFilesFromEntry(child,prefix+entry.name+'/');
+      out.push(...children);
+    }
+    return out;
+  }
+  return [];
+}
+
+function isImageName(name){
+  return /\.(jpe?g|png|gif|webp)$/i.test(name||'');
+}
+
+function setZipProgress(text,pct,show=true){
+  const prog=$('zipProg');
+  prog.style.display=show?'block':'none';
+  $('zipTxt').textContent=text||'';
+  $('zipFill').style.width=(pct||0)+'%';
+}
+
+function refreshAfterImport(){
+  if(curPath){
+    const node=pathToNode(curPath,treeData);
+    if(node&&node.is_album)return loadAlbumFiles(curPath);
+    return loadFolderView(curPath);
+  }
+  return Promise.resolve();
+}
+
+function pathToNode(path,nodes){
+  for(const n of nodes){
+    if(n.path===path)return n;
+    if(n.children&&n.children.length){
+      const hit=pathToNode(path,n.children);
+      if(hit)return hit;
+    }
+  }
+  return null;
+}
+
+function openImportChooser(preferredPath){
+  importDraft.preferredDest=preferredPath||currentImportPath();
+  $('zipInput').value='';
+  $('zipInput').click();
+}
+
+function openFolderPicker(preferredPath){
+  importDraft.preferredDest=preferredPath||currentImportPath();
+  $('folderInput').value='';
+  $('folderInput').click();
+}
+
+function prepareZipImport(fileList,preferredDest){
+  if(!fileList||!fileList.length)return;
+  const f=fileList[0];
   if(!f.name.toLowerCase().endsWith('.zip'))return toast('请选择 .zip 文件');
-  const prog=$('zipProg');prog.style.display='block';$('zipTxt').textContent='上传中… 0%';$('zipFill').style.width='0%';
-  const fd=new FormData();fd.append('file',f);
-  const xhr=new XMLHttpRequest();
-  xhr.open('POST',BASE+'/api/upload/zip-import');
-  xhr.setRequestHeader('X-Upload-Key',S);
-  xhr.upload.onprogress=function(e){
-    if(e.lengthComputable){const pct=Math.round(e.loaded/e.total*90);$('zipFill').style.width=pct+'%';$('zipTxt').textContent='上传中… '+pct+'%'}
+  importDraft={
+    type:'zip',
+    zipFile:f,
+    folderEntries:[],
+    sourceName:f.name,
+    preferredDest:preferredDest||importDraft.preferredDest||currentImportPath()
   };
-  xhr.onload=async function(){
-    try{const j=JSON.parse(xhr.responseText);
-      if(xhr.status>=400)throw new Error(j.detail||'fail');
-      $('zipFill').style.width='100%';$('zipTxt').textContent='导入完成 ✅ 共 '+j.imported+' 张图片';
-      await loadTree();setTimeout(()=>{prog.style.display='none';$('zipFill').style.width='0%'},2000);
-    }catch(e){$('zipTxt').textContent='导入失败：'+e.message;setTimeout(()=>{prog.style.display='none';$('zipFill').style.width='0%'},3000)}
+  openImportModal();
+}
+
+function prepareFolderImport(fileList,preferredDest){
+  if(!fileList||!fileList.length)return;
+  const entries=[];
+  for(const file of Array.from(fileList)){
+    const relativePath=normalizeRelPath(file.webkitRelativePath||file.name);
+    entries.push({file,relativePath});
+  }
+  const top=entries[0]?.relativePath?.split('/')[0]||'new-folder';
+  importDraft={
+    type:'folder',
+    zipFile:null,
+    folderEntries:entries,
+    sourceName:top,
+    preferredDest:preferredDest||importDraft.preferredDest||currentImportPath()
   };
-  xhr.onerror=function(){$('zipTxt').textContent='网络错误';setTimeout(()=>{prog.style.display='none';$('zipFill').style.width='0%'},3000)};
-  xhr.send(fd);
+  openImportModal();
+}
+
+function fillDestinationOptions(){
+  const list=$('folderPathOptions');
+  if(!list)return;
+  const options=collectFolderPaths(treeData);
+  list.innerHTML=options.map(p=>'<option value="'+esc(p)+'"></option>').join('');
+}
+
+function openImportModal(){
+  fillDestinationOptions();
+  $('importSourceLabel').textContent=importDraft.sourceName||'-';
+  $('importNameInput').value=sanitizeFolderName(sourceBaseName(importDraft.sourceName));
+  $('importDestInput').value=importDraft.preferredDest||currentImportPath()||'';
+  $('importModalBg').classList.add('show');
+}
+
+function closeImportModal(){
+  $('importModalBg').classList.remove('show');
+}
+
+function focusImportDestination(){
+  const input=$('importDestInput');
+  input.focus();
+  input.select();
+}
+
+function uploadZipWithOptions(file,destination,folderName){
+  return new Promise(resolve=>{
+    setZipProgress('上传中… 0%',0,true);
+    const fd=new FormData();
+    fd.append('file',file);
+    fd.append('destination',destination||'');
+    fd.append('folder_name',folderName||'');
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST',BASE+'/api/upload/zip-import');
+    xhr.setRequestHeader('X-Upload-Key',S);
+    xhr.upload.onprogress=function(e){
+      if(e.lengthComputable){const pct=Math.round(e.loaded/e.total*90);setZipProgress('上传中… '+pct+'%',pct,true)}
+    };
+    xhr.onload=async function(){
+      try{
+        const j=JSON.parse(xhr.responseText);
+        if(xhr.status>=400)throw new Error(j.detail||'fail');
+        setZipProgress('导入完成 ✅ 共 '+j.imported+' 张图片',100,true);
+        await loadTree();
+        await refreshAfterImport();
+        setTimeout(()=>setZipProgress('',0,false),2000);
+      }catch(e){
+        setZipProgress('导入失败：'+e.message,0,true);
+        setTimeout(()=>setZipProgress('',0,false),3000);
+      }
+      resolve();
+    };
+    xhr.onerror=function(){setZipProgress('网络错误',0,true);setTimeout(()=>setZipProgress('',0,false),3000);resolve()};
+    xhr.send(fd);
+  });
+}
+
+function uploadFolderWithOptions(entries,destination,folderName){
+  const valid=(entries||[])
+    .map(x=>({file:x.file,relativePath:normalizeRelPath(x.relativePath)}))
+    .filter(x=>x.file&&x.relativePath&&x.relativePath.includes('/')&&isImageName(x.file.name));
+  if(!valid.length){toast('文件夹内没有可导入的图片');return Promise.resolve()}
+
+  return new Promise(resolve=>{
+    setZipProgress('文件夹导入中… 0%',0,true);
+    const fd=new FormData();
+    valid.forEach(({file,relativePath})=>{fd.append('files',file,file.name);fd.append('paths',relativePath)});
+    fd.append('destination',destination||'');
+    fd.append('folder_name',folderName||'');
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST',BASE+'/api/upload/folder-import');
+    xhr.setRequestHeader('X-Upload-Key',S);
+    xhr.upload.onprogress=function(e){
+      if(e.lengthComputable){const pct=Math.round(e.loaded/e.total*90);setZipProgress('文件夹导入中… '+pct+'%',pct,true)}
+    };
+    xhr.onload=async function(){
+      try{
+        const j=JSON.parse(xhr.responseText);
+        if(xhr.status>=400)throw new Error(j.detail||'fail');
+        setZipProgress('导入完成 ✅ 共 '+j.imported+' 张图片',100,true);
+        await loadTree();
+        await refreshAfterImport();
+        setTimeout(()=>setZipProgress('',0,false),2000);
+      }catch(e){
+        setZipProgress('导入失败：'+e.message,0,true);
+        setTimeout(()=>setZipProgress('',0,false),3000);
+      }
+      resolve();
+    };
+    xhr.onerror=function(){setZipProgress('网络错误',0,true);setTimeout(()=>setZipProgress('',0,false),3000);resolve()};
+    xhr.send(fd);
+  });
+}
+
+async function confirmImportUpload(){
+  const destination=normalizeRelPath($('importDestInput').value||'');
+  const folderName=sanitizeFolderName($('importNameInput').value||sourceBaseName(importDraft.sourceName));
+  closeImportModal();
+  if(importDraft.type==='zip'&&importDraft.zipFile){
+    await uploadZipWithOptions(importDraft.zipFile,destination,folderName);
+    return;
+  }
+  if(importDraft.type==='folder'&&importDraft.folderEntries.length){
+    await uploadFolderWithOptions(importDraft.folderEntries,destination,folderName);
+    return;
+  }
+  toast('请先选择 ZIP 或文件夹');
+}
+
+function handleZipImport(fileList){
+  prepareZipImport(fileList,importDraft.preferredDest||currentImportPath());
+}
+
+function handleFolderImport(fileList){
+  prepareFolderImport(fileList,importDraft.preferredDest||currentImportPath());
+}
+
+async function handleZipZoneDrop(dataTransfer){
+  const preferred=currentImportPath();
+  const items=Array.from(dataTransfer?.items||[]);
+  const folderEntries=[];
+  for(const item of items){
+    if(item.kind!=='file'||typeof item.webkitGetAsEntry!=='function')continue;
+    const entry=item.webkitGetAsEntry();
+    if(!entry)continue;
+    const files=await collectFilesFromEntry(entry);
+    folderEntries.push(...files);
+  }
+  if(folderEntries.some(x=>x.relativePath.includes('/'))){
+    importDraft.preferredDest=preferred;
+    importDraft={...importDraft,type:'folder',zipFile:null,folderEntries,sourceName:folderEntries[0].relativePath.split('/')[0]||'new-folder',preferredDest:preferred};
+    openImportModal();
+    return;
+  }
+  const dropped=dataTransfer?.files;
+  if(dropped&&dropped.length===1&&dropped[0].name.toLowerCase().endsWith('.zip')){
+    prepareZipImport(dropped,preferred);
+    return;
+  }
+  if(dropped&&dropped.length)return toast('请拖入 ZIP 或文件夹');
 }
 
 async function createFolder(){
@@ -228,5 +492,7 @@ async function createToken(){
 }
 
 $('secret').addEventListener('keydown',e=>{if(e.key==='Enter')connect()});
+const vb=$('versionBadge');if(vb)vb.textContent='版本 '+APP_VERSION;
+const bm=$('buildMeta');if(bm)bm.textContent='最新版本：'+APP_VERSION+' · 构建时间：'+APP_BUILD_TIME;
 const zz=$('zipZone');
-if(zz){zz.addEventListener('dragover',e=>{e.preventDefault();zz.classList.add('dragover')});zz.addEventListener('dragleave',()=>zz.classList.remove('dragover'));zz.addEventListener('drop',e=>{e.preventDefault();zz.classList.remove('dragover');handleZipImport(e.dataTransfer.files)})}
+if(zz){zz.addEventListener('dragover',e=>{e.preventDefault();zz.classList.add('dragover')});zz.addEventListener('dragleave',()=>zz.classList.remove('dragover'));zz.addEventListener('drop',async e=>{e.preventDefault();zz.classList.remove('dragover');await handleZipZoneDrop(e.dataTransfer)})}

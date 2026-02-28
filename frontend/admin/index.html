@@ -6,9 +6,11 @@
 </head><body>
 <div class="page">
   <div class="nav">
+    <span class="badge badge-left" id="versionBadge" title="最新部署版本">版本 --</span>
     <h1>PushFile Admin</h1>
     <span class="badge" id="connBadge">未连接</span>
   </div>
+  <div class="build-meta" id="buildMeta">最新版本：--</div>
 
   <!-- Login -->
   <div id="loginSection">
@@ -21,7 +23,7 @@
         </div>
       </div>
     </div>
-    <button class="btn btn-blue" onclick="connect()" style="margin-bottom:20px">连接</button>
+    <button class="btn btn-blue" type="button" onclick="connect()" style="margin-bottom:20px">连接</button>
 
     <div class="group">
       <div class="group-label">新建相册</div>
@@ -32,7 +34,7 @@
         </div>
       </div>
     </div>
-    <button class="btn btn-gray" onclick="createToken()" style="margin-bottom:20px">创建相册</button>
+    <button class="btn btn-gray" type="button" onclick="createToken()" style="margin-bottom:20px">创建相册</button>
 
     <div class="group" style="margin-top:24px">
       <div class="group-label">使用说明</div>
@@ -50,10 +52,15 @@
   <div id="mainSection" style="display:none">
     <div class="group">
       <div class="group-label">导入 ZIP</div>
-      <div class="zip-zone" id="zipZone" onclick="document.getElementById('zipInput').click()">
-        <p>📦 点击选择或拖拽 ZIP 文件导入</p>
+      <div class="zip-zone" id="zipZone" onclick="openImportChooser(currentImportPath())">
+        <p>📦 点击选择 ZIP，或直接拖入 ZIP / 文件夹</p>
         <p><small>保持目录结构，自动创建文件夹</small></p>
+        <p class="import-flag"><small>✅ 当前版本支持：拖拽文件夹导入 / 选择文件夹导入</small></p>
+        <div class="zip-actions">
+          <button class="btn btn-sm btn-gray zip-btn" type="button" onclick="event.stopPropagation();openFolderPicker(currentImportPath())">选择文件夹</button>
+        </div>
         <input id="zipInput" type="file" accept=".zip" style="display:none" onchange="handleZipImport(this.files)">
+        <input id="folderInput" type="file" multiple webkitdirectory directory style="display:none" onchange="handleFolderImport(this.files)">
       </div>
       <div class="zip-prog" id="zipProg"><div class="zip-bar"><div class="zip-fill" id="zipFill"></div></div><div class="zip-txt" id="zipTxt"></div></div>
     </div>
@@ -94,19 +101,53 @@
 <!-- Batch toolbar -->
 <div class="batch" id="batchBar">
   <span class="batch-count" id="batchCount">0 已选</span>
-  <button class="btn btn-sm btn-gray" onclick="selectAll()">全选</button>
-  <button class="btn btn-sm btn-gray" onclick="sel.clear();renderPhotos()">取消</button>
-  <button class="btn btn-sm btn-red" onclick="batchDelete()">删除</button>
-  <button class="btn btn-sm btn-gray" onclick="saveOrder()">保存排序</button>
+  <button class="btn btn-sm btn-gray" type="button" onclick="selectAll()">全选</button>
+  <button class="btn btn-sm btn-gray" type="button" onclick="sel.clear();renderPhotos()">取消</button>
+  <button class="btn btn-sm btn-red" type="button" onclick="batchDelete()">删除</button>
+  <button class="btn btn-sm btn-gray" type="button" onclick="saveOrder()">保存排序</button>
 </div>
 
 <div class="toast" id="toast"></div>
+
+<div class="modal-bg" id="importModalBg" onclick="closeImportModal()">
+  <div class="modal-card" onclick="event.stopPropagation()">
+    <div class="group" style="margin-bottom:16px">
+      <div class="group-label">导入到文件夹</div>
+      <div class="group-box">
+        <div class="row row-stack">
+          <div class="import-meta">来源文件</div>
+          <div class="import-source" id="importSourceLabel">-</div>
+        </div>
+        <div class="row">
+          <span class="row-label">名称</span>
+          <input id="importNameInput" type="text" placeholder="新文件夹名称">
+        </div>
+        <div class="row row-stack">
+          <div class="import-row-head">
+            <span class="row-label" style="width:auto">位置</span>
+            <button class="btn btn-sm btn-gray" type="button" onclick="focusImportDestination()">修改位置</button>
+          </div>
+          <input id="importDestInput" type="text" list="folderPathOptions" placeholder="默认导入到当前目录">
+          <small class="import-tip">默认就是你当前打开的目录，也可以改成其他已存在目录</small>
+        </div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-gray" type="button" onclick="closeImportModal()">取消</button>
+      <button class="btn btn-blue" type="button" onclick="confirmImportUpload()">确认导入</button>
+    </div>
+  </div>
+</div>
+
+<datalist id="folderPathOptions"></datalist>
 
 <script>
 // Use relative URLs so preview/prod work without BASE_PATH/proxy special-casing
 window.__BASE__ = '{{ base }}';
 window.__DOMAIN__ = '{{ domain }}';
-window.__MAX_MB__ = {{ max_mb }};
+window.__MAX_MB__ = Number('{{ max_mb }}');
+window.__APP_VERSION__ = '{{ app_version }}';
+window.__APP_BUILD_TIME__ = '{{ app_build_time }}';
 </script>
 <script src="{{ base }}/static/admin/app.js"></script>
 </body></html>
