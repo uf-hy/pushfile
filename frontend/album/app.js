@@ -1,7 +1,20 @@
 const files = window.albumFiles || [];
 const token = window.albumToken || '';
 const domain = window.albumDomain || '';
+const base = window.__BASE__ || '';
 let lbIdx = 0;
+
+function rawUrl(name){
+  return `${base}/d/${encodeURIComponent(token)}/${encodeURIComponent(name)}`;
+}
+
+function thumbUrl(name){
+  return `${base}/v/${encodeURIComponent(token)}/${encodeURIComponent(name)}?kind=thumb-avif&src=${encodeURIComponent(name)}`;
+}
+
+function viewUrl(name){
+  return `${base}/v/${encodeURIComponent(token)}/${encodeURIComponent(name)}?kind=view-jpg&src=${encodeURIComponent(name)}`;
+}
 
 function isIOS() {
   return /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -28,7 +41,7 @@ function navLb(d, e) {
 }
 
 function updLb() {
-  document.getElementById('lbImg').src = '.." + (window.__BASE__||'') + "/d/' + token + '/' + files[lbIdx];
+  document.getElementById('lbImg').src = viewUrl(files[lbIdx]);
   document.getElementById('lbInfo').textContent = (lbIdx + 1) + ' / ' + files.length + '  ·  ' + files[lbIdx];
 }
 
@@ -73,7 +86,7 @@ async function downloadAll(e) {
       showOv();
       for (let i = 0; i < files.length; i++) {
         setP(i, files.length, files[i]);
-        const r = await fetch('.." + (window.__BASE__||'') + "/d/' + token + '/' + files[i]);
+        const r = await fetch(rawUrl(files[i]));
         if (!r.ok) continue;
         const fh = await dir.getFileHandle(files[i], {create: true});
         const ws = await fh.createWritable();

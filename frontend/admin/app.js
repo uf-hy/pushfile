@@ -190,7 +190,7 @@ function renderPhotos(){
     const imgBase=slugMap[T]||T;
     const d=document.createElement('div');d.className='photo'+(sel.has(name)?' selected':'');d.draggable=true;d.dataset.name=name;
     d.innerHTML='<div class="photo-sel'+(sel.has(name)?' on':'')+'" onclick="toggleSel(\''+esc(name)+'\',event)">'+(sel.has(name)?'✓':'')+'</div>'+
-      '<img src="/d/'+encodeURIComponent(imgBase)+'/'+encodeURIComponent(name)+'" loading="lazy"><div class="photo-name">'+esc(name)+'</div>';
+      '<img src="/v/'+encodeURIComponent(imgBase)+'/'+encodeURIComponent(name)+'?kind=thumb-avif&src='+encodeURIComponent(name)+'" loading="lazy"><div class="photo-name">'+esc(name)+'</div>';
     d.addEventListener('click',e=>{if(e.target.closest('.photo-sel'))return;openSheet(name)});
     d.addEventListener('dragstart',()=>{dragN=name;d.classList.add('dragging')});
     d.addEventListener('dragend',()=>{dragN='';d.classList.remove('dragging')});

@@ -24,8 +24,8 @@
   <div class="gallery" id="gallery">
     {% for file in files %}
     <div class="card" onclick="openLb({{ loop.index0 }})">
-      <div class="card-img"><img src="/d/{{ token }}/{{ file }}" alt="{{ file }}" loading="lazy"></div>
-      <div class="card-footer"><span class="card-name">{{ file }}</span><a class="card-dl" href="/f/{{ token }}/{{ file }}" onclick="event.stopPropagation()">下载</a></div>
+      <div class="card-img"><img src="{{ base }}/v/{{ token|urlencode }}/{{ file|urlencode }}?kind=thumb-avif&amp;src={{ file|urlencode }}" alt="{{ file }}" loading="lazy"></div>
+      <div class="card-footer"><span class="card-name">{{ file.rsplit('.', 1)[0] }}</span><a class="card-dl" href="/f/{{ token }}/{{ file }}" onclick="event.stopPropagation()">下载</a></div>
     </div>
     {% endfor %}
   </div>
@@ -54,7 +54,8 @@
 window.albumFiles = {{ files_json|safe }};
 window.albumToken = '{{ token }}';
 window.albumDomain = '{{ domain }}';
+window.__BASE__ = '{{ base }}';
 </script>
-<script src="{{ base }}/static/album/app.js"></script>
+<script src="{{ base }}/static/album/app.js?v=20260228h4"></script>
 </body>
 </html>

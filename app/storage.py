@@ -341,12 +341,15 @@ def _get_ip2region_searcher():
             _ip2region_unavailable = True
             return None
         try:
-            import sys, importlib, io
+            import importlib
+            import sys
             # ip2region binding is bundled in /app/ip2region/
             ip2r_path = Path("/app/ip2region")
             if ip2r_path.exists() and str(ip2r_path) not in sys.path:
                 sys.path.insert(0, str(ip2r_path))
-            from ip2region import searcher as ip2r_searcher, util as ip2r_util
+            ip2region = importlib.import_module("ip2region")
+            ip2r_searcher = getattr(ip2region, "searcher")
+            ip2r_util = getattr(ip2region, "util")
             buf = ip2r_util.load_content_from_file(str(_IP2REGION_DB_PATH))
             header = ip2r_util.load_header_from_file(str(_IP2REGION_DB_PATH))
             ver = ip2r_util.version_from_header(header)
@@ -474,6 +477,13 @@ def iter_visit_records():
     yield from _iter_jsonl(VISITS_FILE)
 
 
+def _normalize_city(city: str, ip: str) -> str:
+    c = (city or "").strip()
+    if not c or c == "本地":
+        return "未知"
+    return c
+
+
 def get_analytics(limit: int = 1000, include_local: bool = False) -> dict:
     limit = max(1, min(int(limit or 1000), 5000))
 
@@ -485,18 +495,17 @@ def get_analytics(limit: int = 1000, include_local: bool = False) -> dict:
     ip_city: dict[str, Counter[str]] = defaultdict(Counter)
     unique_ips: set[str] = set()
     total = 0
-    filtered_local = 0
+    mapped_local = 0
 
     for rec in iter_visit_records():
         token = str(rec.get("token") or "")
         ip = str(rec.get("ip") or "")
-        if ip and (not include_local) and _is_local_ip(ip):
-            filtered_local += 1
-            continue
-
         total += 1
         recent.append(rec)
-        city = str(rec.get("city") or "")
+        raw_city = str(rec.get("city") or "")
+        city = _normalize_city(raw_city, ip)
+        if city == "未知" and raw_city == "本地":
+            mapped_local += 1
         t = str(rec.get("time") or "")
         date = t[:10] if len(t) >= 10 else ""
         if token:
@@ -543,8 +552,9 @@ def get_analytics(limit: int = 1000, include_local: bool = False) -> dict:
         "today_visit_count": today_count,
         "unique_ip_count": int(len(unique_ips)),
         "album_count": int(len(by_token)),
-        "local_visit_filtered": int(filtered_local),
-        "include_local": bool(include_local),
+        "local_visit_filtered": 0,
+        "include_local": True,
+        "local_visit_mapped": int(mapped_local),
     }
 
 
