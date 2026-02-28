@@ -135,7 +135,6 @@ async function loadFolderView(path){
   const c=$('contentArea');
   let h=renderBreadcrumb(path);
   h+='<div class="group"><div class="group-label">'+esc(path.split('/').pop())+'</div><div class="group-box">';
-  h+='<div class="row row-tap" onclick="openImportChooser(\''+esc(path)+'\')"><span class="tree-icon">📥</span><span style="flex:1">导入 ZIP / 文件夹到此目录</span><span class="row-chevron">›</span></div>';
   if(d.subfolders&&d.subfolders.length)h+='<div class="row"><span style="color:var(--sub)">子文件夹请在上方目录树中选择（共 '+d.subfolders.length+' 个）</span></div>';
   if(d.files&&d.files.length){h+='<div class="row"><span style="color:var(--sub)">'+d.files.length+' 张图片</span></div>';}
   if((!d.subfolders||!d.subfolders.length)&&(!d.files||!d.files.length))h+='<div class="row"><span style="color:var(--sub)">空文件夹</span></div>';
@@ -173,8 +172,7 @@ function renderAlbumContent(){
   h+='<div class="group"><div class="group-label">上传照片</div>'+
     '<div class="upload-zone" id="uploadZone" onclick="$(\'fileInput\').click()"><div style="font-size:36px;color:var(--sub)">⊕</div><p>点击选择或拖拽图片</p><small>JPG/PNG/GIF/WebP · 最大 '+MAX_MB+'MB</small>'+
     '<input id="fileInput" type="file" accept="image/*" multiple style="display:none" onchange="handleUpload(this.files)"></div>'+
-    '<div class="upload-prog" id="uploadProg"><div class="upload-bar"><div class="upload-fill" id="uploadFill"></div></div><div class="upload-txt" id="uploadTxt"></div></div>'+
-    '<div class="zip-actions import-trigger"><button class="btn btn-sm btn-gray zip-btn" type="button" onclick="openImportChooser(\''+esc(T)+'\')">导入 ZIP / 文件夹</button></div></div>';
+    '<div class="upload-prog" id="uploadProg"><div class="upload-bar"><div class="upload-fill" id="uploadFill"></div></div><div class="upload-txt" id="uploadTxt"></div></div></div>';
   h+='<div class="group"><div class="group-label">照片 ('+files.length+')</div><div class="photos" id="photoGrid"></div></div>';
   c.innerHTML=h;
   const zone=$('uploadZone');

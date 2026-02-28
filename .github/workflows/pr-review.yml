@@ -1,0 +1,67 @@
+name: PR AI Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
+      - name: Build review prompt from PR diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
+          head -n 1200 /tmp/pr.diff > /tmp/pr.diff.short
+          cat > /tmp/review.prompt <<'EOF'
+          你是资深代码审查员。请基于以下 PR diff 输出中文审查结论：
+          1) 必须按 P0/P1/P2 分级输出问题清单：
+             - P0: 会导致线上不可用/数据错误/安全问题，必须阻断合并
+             - P1: 重要功能缺陷或明显回归风险，建议修复后合并
+             - P2: 体验或代码质量优化项，可后续迭代
+          2) 给出每个问题的文件路径和简短修复建议
+          3) 给出测试覆盖建议
+          4) 最终结论：允许合并 / 需修复后合并 / 阻断合并
+          输出简洁，适合直接贴到 PR 评论。
+          EOF
+          cat /tmp/pr.diff.short >> /tmp/review.prompt
+
+      - name: Run AI Review
+        env:
+          CUSTOM_OPENAI_KEY: ${{ secrets.CODEX_API_KEY }}
+        run: |
+          if [ -z "${CUSTOM_OPENAI_KEY}" ]; then
+            echo "未配置 CODEX_API_KEY，跳过 AI 审查" > /tmp/review_result.md
+            exit 0
+          fi
+
+          codex \
+            -c 'model_providers.custom_openai.name="Custom OpenAI"' \
+            -c 'model_providers.custom_openai.base_url="${{ secrets.CODEX_API_BASE }}"' \
+            -c 'model_providers.custom_openai.env_key="CUSTOM_OPENAI_KEY"' \
+            -c 'model_provider="custom_openai"' \
+            exec --full-auto -m gpt-5.2 "$(cat /tmp/review.prompt)" > /tmp/review_result.md
+
+      - name: Comment review result
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('/tmp/review_result.md', 'utf8');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: `## 🤖 AI PR 审查\n\n${body}`,
+            });
