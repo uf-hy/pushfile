@@ -1,5 +1,6 @@
 let S='',T='',files=[],sel=new Set(),dragN='',sheetTarget='',treeData=[],curPath='',expanded={},statsData={},slugMap={};
 let importDraft={type:'',zipFile:null,folderEntries:[],sourceName:'',preferredDest:''};
+let showAnalytics=false,analyticsData=null;
 const $=id=>document.getElementById(id);
 const DOMAIN=window.__DOMAIN__||'photo.xaihub.de';
 const BASE=window.__BASE__||'';
@@ -18,8 +19,9 @@ async function connect(){
     await api('api/tokens?key='+encodeURIComponent(S));
     $('connBadge').textContent='✅ 已连接';$('connBadge').style.color='var(--green)';
     $('loginSection').style.display='none';$('mainSection').style.display='';
+    const ab=$('analyticsBtn');if(ab){ab.style.display='';ab.textContent='📊 统计'}
     await loadTree();toast('连接成功');
-  }catch(e){toast('密码错误');S=''}
+  }catch(e){const ab=$('analyticsBtn');if(ab)ab.style.display='none';closeAnalytics(true);toast('密码错误');S=''}
 }
 
 async function loadTree(){
@@ -31,6 +33,52 @@ async function loadTree(){
 }
 
 function buildSlugMap(nodes){for(const n of nodes){if(n.slug)slugMap[n.path]=n.slug;if(n.children)buildSlugMap(n.children)}}
+
+function toggleAnalytics(){if(showAnalytics)closeAnalytics();else openAnalytics()}
+
+function closeAnalytics(silent){
+  showAnalytics=false;
+  analyticsData=null;
+  const panel=$('analyticsPanel');if(panel)panel.style.display='none';
+  const admin=$('adminPanel');if(admin)admin.style.display='';
+  const btn=$('analyticsBtn');if(btn&&btn.style.display!=='none')btn.textContent='📊 统计';
+  if(!silent)toast('已返回管理');
+}
+
+async function openAnalytics(){
+  if(!S)return toast('请先连接');
+  showAnalytics=true;
+  const panel=$('analyticsPanel');
+  const admin=$('adminPanel');
+  if(!panel)return;
+  panel.style.display='';
+  if(admin)admin.style.display='none';
+  const btn=$('analyticsBtn');if(btn)btn.textContent='⬅ 返回';
+  panel.innerHTML='<div class="group"><div class="group-label">统计分析</div><div class="group-box"><div class="row"><span class="row-label">加载中</span><span class="row-value">请稍候…</span></div></div></div>';
+  try{
+    analyticsData=await api('api/analytics?key='+encodeURIComponent(S));
+    renderAnalytics(analyticsData);
+  }catch(e){
+    panel.innerHTML='<div class="group"><div class="group-label">统计分析</div><div class="group-box"><div class="row"><span class="row-label">错误</span><span class="row-value">'+esc(e.message)+'</span></div></div></div>';
+  }
+}
+
+function renderAnalytics(d){
+  const panel=$('analyticsPanel');if(!panel)return;
+  const total=Number(d.total_visit_count||0)||0;
+  const today=Number(d.today_visit_count||0)||0;
+  const uniq=Number(d.unique_ip_count||0)||0;
+  const byCity=d.by_city||{};
+  const cityTop=Object.entries(byCity).sort((a,b)=>Number(b[1]||0)-Number(a[1]||0)).slice(0,8);
+  const rows=cityTop.map(([k,v])=>'<div class="row"><span class="row-label">'+esc(k||'未知')+'</span><span class="row-value">'+(Number(v)||0)+'</span></div>').join('')||'<div class="row"><span class="row-label">暂无</span><span class="row-value">0</span></div>';
+  panel.innerHTML='<div class="group"><div class="group-label">统计概览</div><div class="ana-cards">'+
+    '<div class="ana-card"><div class="ana-num">'+today+'</div><div class="ana-lbl">今日访问</div></div>'+
+    '<div class="ana-card"><div class="ana-num">'+total+'</div><div class="ana-lbl">总访问</div></div>'+
+    '<div class="ana-card"><div class="ana-num">'+uniq+'</div><div class="ana-lbl">独立 IP</div></div>'+
+    '<div class="ana-card"><div class="ana-num">'+Object.keys(d.by_token||{}).length+'</div><div class="ana-lbl">相册数</div></div>'+
+    '</div></div>'+
+    '<div class="group"><div class="group-label">城市分布（TOP 8）</div><div class="group-box">'+rows+'</div></div>';
+}
 
 function collectFolderPaths(nodes,prefix=''){
   let out=[];
@@ -488,11 +536,29 @@ async function createToken(){
   try{await api('api/tokens',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Key':S},body:JSON.stringify({token:tk})});
     $('newTokenInput').value='';
     if($('mainSection').style.display==='none'){$('loginSection').style.display='none';$('mainSection').style.display='';$('connBadge').textContent='✅';$('connBadge').style.color='var(--green)'}
+    const ab=$('analyticsBtn');if(ab){ab.style.display='';ab.textContent='📊 统计'}
     await loadTree();toast('已创建 '+tk)}catch(e){toast('创建失败：'+e.message)}
 }
 
 $('secret').addEventListener('keydown',e=>{if(e.key==='Enter')connect()});
-const vb=$('versionBadge');if(vb)vb.textContent='版本 '+APP_VERSION;
-const bm=$('buildMeta');if(bm)bm.textContent='最新版本：'+APP_VERSION+' · 构建时间：'+APP_BUILD_TIME;
+
+async function hydrateBuildMeta(){
+  let version=APP_VERSION;
+  let buildTime=APP_BUILD_TIME;
+  if(!version||version==='dev'||!buildTime||buildTime==='local'){
+    try{
+      const r=await fetch(BASE+'/health');
+      const j=await r.json();
+      if(j&&j.version)version=j.version;
+      if(j&&j.buildTime)buildTime=j.buildTime;
+    }catch(_){ }
+  }
+  if(!version||version==='dev')version='unknown';
+  if(!buildTime||buildTime==='local')buildTime='unknown';
+  const vb=$('versionBadge');if(vb)vb.textContent='版本 '+version;
+  const bm=$('buildMeta');if(bm)bm.textContent='最新版本：'+version+' · 构建时间：'+buildTime;
+}
+
+hydrateBuildMeta();
 const zz=$('zipZone');
 if(zz){zz.addEventListener('dragover',e=>{e.preventDefault();zz.classList.add('dragover')});zz.addEventListener('dragleave',()=>zz.classList.remove('dragover'));zz.addEventListener('drop',async e=>{e.preventDefault();zz.classList.remove('dragover');await handleZipZoneDrop(e.dataTransfer)})}

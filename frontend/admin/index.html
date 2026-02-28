@@ -8,6 +8,7 @@
   <div class="nav">
     <span class="badge badge-left" id="versionBadge" title="最新部署版本">版本 --</span>
     <h1>PushFile Admin</h1>
+    <button class="nav-btn" id="analyticsBtn" type="button" onclick="toggleAnalytics()" style="display:none">📊 统计</button>
     <span class="badge" id="connBadge">未连接</span>
   </div>
   <div class="build-meta" id="buildMeta">最新版本：--</div>
@@ -50,6 +51,8 @@
 
   <!-- Main (hidden until connected) -->
   <div id="mainSection" style="display:none">
+    <div id="analyticsPanel" style="display:none"></div>
+    <div id="adminPanel">
     <div class="group">
       <div class="group-label">导入 ZIP</div>
       <div class="zip-zone" id="zipZone" onclick="openImportChooser(currentImportPath())">
@@ -82,6 +85,7 @@
     </div>
 
     <div id="contentArea"></div>
+    </div>
   </div>
 </div>
 
@@ -146,8 +150,8 @@
 window.__BASE__ = '{{ base }}';
 window.__DOMAIN__ = '{{ domain }}';
 window.__MAX_MB__ = Number('{{ max_mb }}');
-window.__APP_VERSION__ = '{{ app_version }}';
-window.__APP_BUILD_TIME__ = '{{ app_build_time }}';
+window.__APP_VERSION__ = '{{ app_version }}' || 'upload-v2';
+window.__APP_BUILD_TIME__ = '{{ app_build_time }}' || '2026-02-28T17:30:00+08:00';
 </script>
-<script src="{{ base }}/static/admin/app.js"></script>
+<script src="{{ base }}/static/admin/app.js?v=20260228h2"></script>
 </body></html>
