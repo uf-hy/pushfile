@@ -21,6 +21,7 @@ from app.storage import (
     remove_in_order,
     ALLOWED_SUFFIX,
 )
+from app.image_variants import remove_variants_for_source
 
 router = APIRouter(prefix="/api/manage", tags=["manage"])
 
@@ -84,6 +85,7 @@ def api_manage_rename(
         raise HTTPException(status_code=400, detail="invalid destination")
     if dst.exists():
         raise HTTPException(status_code=409, detail="target filename exists")
+    remove_variants_for_source(src)
     src.rename(dst)
     rename_in_order(token, old_name, dst.name)
     return {"ok": True, "old": old_name, "new": dst.name}
@@ -104,6 +106,7 @@ def api_manage_delete(
         raise HTTPException(status_code=404, detail="file not found")
     if f.suffix.lower() not in ALLOWED_SUFFIX:
         raise HTTPException(status_code=400, detail="file type not allowed")
+    remove_variants_for_source(f)
     f.unlink()
     remove_in_order(token, name)
     return {"ok": True, "deleted": name}
@@ -128,6 +131,7 @@ def api_manage_batch_delete(
             and f.is_file()
             and f.suffix.lower() in ALLOWED_SUFFIX
         ):
+            remove_variants_for_source(f)
             f.unlink()
             deleted.append(name)
             remove_in_order(token, name)
@@ -167,6 +171,7 @@ def api_manage_batch_move(
         if src.suffix.lower() not in ALLOWED_SUFFIX:
             skipped.append({"name": name, "reason": "type not allowed"})
             continue
+        remove_variants_for_source(src)
         dst = dst_dir / name
         final_name = name
         if dst.exists():
@@ -239,5 +244,6 @@ def api_manage_batch_rename(
     for old in selected:
         dst = (d / mapping[old]).resolve()
         temp_map[old].rename(dst)
+        remove_variants_for_source(d / old)
         rename_in_order(token, old, mapping[old])
     return {"ok": True, "renamed": [{"old": k, "new": v} for k, v in mapping.items()]}

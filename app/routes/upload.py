@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import threading
 import time
 import zipfile
 import tempfile
@@ -7,11 +8,24 @@ from pathlib import Path
 from fastapi import APIRouter, File, UploadFile, HTTPException, Header, Form
 from fastapi.responses import JSONResponse
 from app.auth import safe_token, safe_path, auth_header_key, token_dir, resolve_dir, sniff_image_type
+from app.image_variants import ensure_all_variants_best_effort
 from app.storage import append_in_order, ALLOWED_SUFFIX
 from app.config import MAX_BYTES, MAX_MB
 
 router = APIRouter(prefix="/api/upload", tags=["upload"])
 logger = logging.getLogger(__name__)
+
+
+def _generate_variants_async(paths: list[Path]) -> None:
+    if not paths:
+        return
+
+    def _worker(items: list[Path]) -> None:
+        for p in items:
+            ensure_all_variants_best_effort(p)
+
+    thread = threading.Thread(target=_worker, args=(paths,), daemon=True)
+    thread.start()
 
 
 def _safe_destination(destination: str | None) -> str:
@@ -75,6 +89,7 @@ async def api_zip_import(
 
     try:
         imported = 0
+        imported_files: list[Path] = []
         skipped_hidden = 0
         skipped_ext = 0
         skipped_root = 0
@@ -122,6 +137,7 @@ async def api_zip_import(
                             dst.write(chunk)
                     if size <= MAX_BYTES:
                         imported += 1
+                        imported_files.append(target_file)
         except zipfile.BadZipFile as e:
             logger.warning("zip import failed: invalid zip '%s'", file.filename)
             raise HTTPException(status_code=400, detail="invalid zip file") from e
@@ -150,6 +166,7 @@ async def api_zip_import(
             skipped_path,
             skipped_oversize,
         )
+        _generate_variants_async(imported_files)
         return {"ok": True, "imported": imported}
     finally:
         tmp_path.unlink(missing_ok=True)
@@ -171,6 +188,7 @@ async def api_folder_import(
     target_folder_name = _safe_folder_name(folder_name)
 
     imported = 0
+    imported_files: list[Path] = []
     skipped_invalid = 0
     skipped_hidden = 0
     skipped_root = 0
@@ -234,6 +252,7 @@ async def api_folder_import(
                 out.write(chunk)
         if total <= MAX_BYTES:
             imported += 1
+            imported_files.append(target)
 
     if imported == 0:
         logger.warning(
@@ -258,6 +277,7 @@ async def api_folder_import(
         skipped_type,
         skipped_oversize,
     )
+    _generate_variants_async(imported_files)
     return {"ok": True, "imported": imported}
 
 
@@ -290,6 +310,7 @@ async def api_upload(
                 )
             w.write(chunk)
     append_in_order(token, out.name)
+    _generate_variants_async([out])
     return JSONResponse(
         {"ok": True, "token": token, "file": out.name, "album": f"/d/{token}"}
     )

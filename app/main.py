@@ -1,8 +1,12 @@
+import mimetypes
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import PlainTextResponse
 from app.routes import tokens, manage, upload, pages, folders, stats, health, files, api
 from app.config import FRONTEND_DIR
+
+mimetypes.add_type("image/webp", ".webp")
+mimetypes.add_type("image/avif", ".avif")
 
 app = FastAPI(title="photo-uploader-b", docs_url=None, redoc_url=None, openapi_url=None)
 

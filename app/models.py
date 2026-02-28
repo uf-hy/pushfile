@@ -22,6 +22,11 @@ class BatchRenamePayload(BaseModel):
     padding: int = 3
 
 
+class BatchMovePayload(BaseModel):
+    names: List[str]
+    dest: str
+
+
 class CreateTokenPayload(BaseModel):
     token: str
 
