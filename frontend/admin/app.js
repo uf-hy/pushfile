@@ -136,7 +136,7 @@ async function loadFolderView(path){
   let h=renderBreadcrumb(path);
   h+='<div class="group"><div class="group-label">'+esc(path.split('/').pop())+'</div><div class="group-box">';
   h+='<div class="row row-tap" onclick="openImportChooser(\''+esc(path)+'\')"><span class="tree-icon">📥</span><span style="flex:1">导入 ZIP / 文件夹到此目录</span><span class="row-chevron">›</span></div>';
-  if(d.subfolders&&d.subfolders.length)for(const sf of d.subfolders)h+='<div class="row row-tap" onclick="selectNode(\''+esc(path+'/'+sf)+'\',false)"><span class="tree-icon">📁</span><span style="flex:1">'+esc(sf)+'</span><span class="row-chevron">›</span></div>';
+  if(d.subfolders&&d.subfolders.length)h+='<div class="row"><span style="color:var(--sub)">子文件夹请在上方目录树中选择（共 '+d.subfolders.length+' 个）</span></div>';
   if(d.files&&d.files.length){h+='<div class="row"><span style="color:var(--sub)">'+d.files.length+' 张图片</span></div>';}
   if((!d.subfolders||!d.subfolders.length)&&(!d.files||!d.files.length))h+='<div class="row"><span style="color:var(--sub)">空文件夹</span></div>';
   h+='<div class="row row-tap" onclick="deleteFolder(\''+esc(path)+'\')"><span style="color:var(--danger)">删除此文件夹</span></div>';
@@ -555,8 +555,8 @@ async function hydrateBuildMeta(){
   }
   if(!version||version==='dev')version='unknown';
   if(!buildTime||buildTime==='local')buildTime='unknown';
-  const vb=$('versionBadge');if(vb)vb.textContent='版本 '+version;
-  const bm=$('buildMeta');if(bm)bm.textContent='最新版本：'+version+' · 构建时间：'+buildTime;
+  const vb=$('versionBadge');if(vb)vb.textContent='v'+version;
+  const bm=$('buildMeta');if(bm)bm.textContent=buildTime+' 构建';
 }
 
 hydrateBuildMeta();

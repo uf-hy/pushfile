@@ -6,12 +6,12 @@
 </head><body>
 <div class="page">
   <div class="nav">
-    <span class="badge badge-left" id="versionBadge" title="最新部署版本">版本 --</span>
+    <span class="badge badge-left" id="versionBadge" title="当前版本">v--</span>
     <h1>PushFile Admin</h1>
     <button class="nav-btn" id="analyticsBtn" type="button" onclick="toggleAnalytics()" style="display:none">📊 统计</button>
     <span class="badge" id="connBadge">未连接</span>
   </div>
-  <div class="build-meta" id="buildMeta">最新版本：--</div>
+  <div class="build-meta" id="buildMeta">-- -- 构建</div>
 
   <!-- Login -->
   <div id="loginSection">
@@ -150,8 +150,8 @@
 window.__BASE__ = '{{ base }}';
 window.__DOMAIN__ = '{{ domain }}';
 window.__MAX_MB__ = Number('{{ max_mb }}');
-window.__APP_VERSION__ = '{{ app_version }}' || 'upload-v2';
-window.__APP_BUILD_TIME__ = '{{ app_build_time }}' || '2026-02-28T17:30:00+08:00';
+window.__APP_VERSION__ = '{{ app_version }}' || '1.1.0';
+window.__APP_BUILD_TIME__ = '{{ app_build_time }}' || '02-28 17:30';
 </script>
 <script src="{{ base }}/static/admin/app.js?v=20260228h2"></script>
 </body></html>
