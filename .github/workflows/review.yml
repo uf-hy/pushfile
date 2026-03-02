@@ -1,0 +1,395 @@
+# PR 自动审核 — 对所有 PR 进行代码审查
+# AI Agent PR: 审核不通过自动修复（最多 3 轮）
+# 人工 PR: 只审核不修复
+# 通知: 通过/到上限 → Telegram 通知 + 操作按钮
+name: PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches: [main]
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    if: "!contains(github.event.pull_request.title, 'promote')"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect PR source
+        id: source
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          if echo "$BRANCH" | grep -qE '^codex/issue-'; then
+            echo "source=codex-agent" >> $GITHUB_OUTPUT
+            echo "issue_num=$(echo $BRANCH | sed 's/codex\/issue-//')" >> $GITHUB_OUTPUT
+            echo "desc=🤖 Codex Agent 自动修复（由 Issue 触发）" >> $GITHUB_OUTPUT
+          elif echo "$BRANCH" | grep -qE '^opencode/issue-'; then
+            echo "source=opencode-agent" >> $GITHUB_OUTPUT
+            echo "issue_num=$(echo $BRANCH | sed 's/opencode\/issue-//')" >> $GITHUB_OUTPUT
+            echo "desc=🤖 OpenCode Agent 自动修复（由 Issue 触发）" >> $GITHUB_OUTPUT
+          else
+            echo "source=manual" >> $GITHUB_OUTPUT
+            echo "issue_num=" >> $GITHUB_OUTPUT
+            echo "desc=👤 人工提交的 PR" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Count review rounds
+        id: rounds
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+            });
+            const rounds = comments.data.filter(c =>
+              c.body.includes('<!-- codex-review-round -->')
+            ).length;
+            core.setOutput('count', String(rounds));
+            console.log(`Review rounds so far: ${rounds}`);
+
+      - name: Get PR diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr_diff.txt 2>/dev/null || echo "Failed to get diff" > /tmp/pr_diff.txt
+          head -c 30000 /tmp/pr_diff.txt > /tmp/pr_diff_truncated.txt
+
+      - name: Write PR metadata to files
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const pr = context.payload.pull_request;
+            fs.writeFileSync('/tmp/pr_title.txt', pr.title || '');
+            fs.writeFileSync('/tmp/pr_body.txt', (pr.body || '').slice(0, 2000));
+
+      - name: Get linked issue context
+        if: steps.source.outputs.issue_num != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_NUM="${{ steps.source.outputs.issue_num }}"
+          gh issue view "$ISSUE_NUM" --json title,body --jq '"Issue #" + (.title) + "\n" + .body' > /tmp/issue_context.txt 2>/dev/null || echo "" > /tmp/issue_context.txt
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
+      - name: Run AI Review
+        env:
+          CUSTOM_OPENAI_KEY: ${{ secrets.CODEX_API_KEY }}
+        run: |
+          SOURCE="${{ steps.source.outputs.source }}"
+          ROUND="${{ steps.rounds.outputs.count }}"
+          PR_TITLE=$(cat /tmp/pr_title.txt)
+          PR_BODY=$(cat /tmp/pr_body.txt)
+          DIFF=$(cat /tmp/pr_diff_truncated.txt)
+          ISSUE_CTX=""
+          if [ -f /tmp/issue_context.txt ]; then
+            ISSUE_CTX=$(cat /tmp/issue_context.txt)
+          fi
+
+          if [ "$SOURCE" = "manual" ]; then
+            cat > /tmp/review_prompt.txt <<'PROMPT_END'
+          你是代码审核专家。这是一个人工提交的 PR。
+
+          ## 审核原则
+
+          1. **范围锁定**：以原始 Issue 的需求为边界，只审核 PR 是否正确实现了 Issue 要求的功能。
+          2. **双维度评估**：同时考虑 Issue 优先级和改动区域风险：
+             - 改动涉及认证/权限/支付/数据迁移 → 无论 Issue 优先级，严格审核
+             - 改动涉及普通业务逻辑/UI/配置 → 按 Issue 优先级调整标准
+          3. **阻塞 vs 建议**：
+             - 「阻塞」= 功能缺失、实际安全漏洞、会崩溃/丢数据的 bug
+             - 「建议」= 代码风格、文件组织、可选优化、缺少测试
+
+          ## 审核要点
+
+          1. **功能正确性** — 是否实现了 Issue 描述的需求
+          2. **安全性** — 有无可被利用的漏洞（越权、注入、数据泄露等）
+          3. **稳定性** — 有无会导致崩溃、数据丢失、功能不可用的 bug
+          4. **回归风险** — 是否破坏了现有功能
+
+          ## 结论三选一
+
+          - ✅ 推荐合并 — 需求满足，无阻塞问题
+          - ⚠️ 需要修改 — 存在阻塞问题（每条必须说明触发条件和用户可见后果）
+          - ❌ 不建议合并 — 方向错误或引入严重问题
+
+          超出 Issue 范围的改进建议单独列在「建议（非阻塞）」区域，不影响合并结论。
+          PROMPT_END
+          else
+            cat > /tmp/review_prompt.txt <<PROMPT_END
+          你是代码审核专家。这是一个 AI Agent (${SOURCE}) 自动生成的 PR（第 $((ROUND+1)) 轮审核）。
+
+          ## 审核原则（必须严格遵守）
+
+          ### 范围锁定
+          只审核 PR 是否正确实现了原始 Issue 的需求。Issue 没要求的东西不算缺陷。
+
+          ### 双维度评估
+          同时考虑两个维度来决定审核严格度：
+          - **Issue 优先级**：高 → 严格 / 中低 → 功能正确+无漏洞即可
+          - **改动区域风险**：认证/权限/支付/数据迁移 → 无论优先级都严格审核
+
+          ### 硬门禁（任何轮次都不降级）
+          以下问题无论第几轮都必须标记为阻塞：
+          - 需求未实现或实现错误
+          - 可形成攻击路径的安全漏洞（即使有前置条件，只要影响是越权/数据泄露/RCE/注入，就算阻塞）
+          - 会导致崩溃、数据丢失、关键功能不可用的 bug
+          - 明确破坏现有功能的回归
+
+          ### 软门禁（随轮次递减）
+          以下问题在第 1 轮可以提出，第 2 轮后降为建议，第 3 轮后不再提及：
+          - 代码应该放在哪个文件/模块组织方式
+          - 缺少单元测试（除非 Issue 明确要求）
+          - 配置项的防御性校验
+          - 代码风格、命名偏好
+          - "更好的实现方式"
+
+          ### 轮次规则
+          - 第 1 轮：全量审核（硬门禁 + 软门禁）
+          - 第 2 轮起：只追踪未解决的硬门禁 + 本轮新引入的高风险问题，软门禁降为建议
+          - 第 3 轮起：只看硬门禁，不再新增软门禁建议
+          - 例外：如果本轮 diff 变化量 > 上一轮的 50%，或触及高风险目录，重置为第 1 轮标准
+
+          ## 阻塞项输出格式（每条必须包含）
+
+          给出 ⚠️ 时，每条阻塞问题必须按以下格式说明：
+          - **问题**：具体描述
+          - **触发条件**：在什么情况下会发生
+          - **用户可见后果**：用户/系统会遇到什么具体问题
+          - **影响范围**：影响多大（单用户/全部用户/数据层面）
+          - **置信度**：高/中/低
+
+          置信度为「低」的问题默认降为建议，除非属于 OWASP Top 10 或已知高危漏洞模式。
+
+          ## 结论三选一
+
+          - ✅ 推荐合并 — Issue 需求全部满足，无硬门禁问题
+          - ⚠️ 需要修改 — 存在硬门禁问题（必须按上述格式逐条列出）
+          - ❌ 不建议合并 — 方向完全错误或引入严重安全漏洞
+
+          超出 Issue 范围的改进建议单独列在「建议（非阻塞）」区域，不影响合并结论。
+          PROMPT_END
+          fi
+
+          {
+            echo ""
+            echo "PR 标题：$PR_TITLE"
+            echo ""
+            echo "PR 描述：$PR_BODY"
+            echo ""
+            if [ -n "$ISSUE_CTX" ]; then
+              echo "原始 Issue 内容："
+              echo "$ISSUE_CTX"
+              echo ""
+            fi
+            echo "代码变更（diff）："
+            echo "$DIFF"
+          } >> /tmp/review_prompt.txt
+
+          codex \
+            -c 'model_providers.custom_openai.name="Custom OpenAI"' \
+            -c "model_providers.custom_openai.base_url=\"${{ secrets.CODEX_API_BASE }}\"" \
+            -c 'model_providers.custom_openai.env_key="CUSTOM_OPENAI_KEY"' \
+            -c 'model_provider="custom_openai"' \
+            exec --full-auto -m gpt-5.2 \
+            "$(cat /tmp/review_prompt.txt)
+
+          把审核结果写入 /tmp/review_result.md，格式清晰，用中文。"
+
+          cat /tmp/review_result.md 2>/dev/null || echo "审核执行完成但未生成报告" > /tmp/review_result.md
+
+      - name: Post Review Comment & Decide
+        if: always()
+        id: comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let review = '审核执行失败，请手动检查';
+            try {
+              review = fs.readFileSync('/tmp/review_result.md', 'utf8');
+            } catch(e) {}
+
+            const source = '${{ steps.source.outputs.source }}';
+            const sourceDesc = '${{ steps.source.outputs.desc }}';
+            const issueNum = '${{ steps.source.outputs.issue_num }}';
+            const round = parseInt('${{ steps.rounds.outputs.count }}') + 1;
+            const maxRounds = 3;
+            const prNum = ${{ github.event.pull_request.number }};
+            const prTitle = '${{ github.event.pull_request.title }}'.replace(/'/g, '');
+
+            const passed = review.includes('✅') && !review.includes('⚠️') && !review.includes('❌');
+            const needsFix = review.includes('需要修改') || review.includes('不建议合并') || review.includes('⚠️') || review.includes('❌');
+
+            const labels = context.payload.pull_request.labels.map(l => l.name);
+            const hasAutoFixLabel = labels.includes('auto-fix');
+            const canAutoFix = hasAutoFixLabel && round < maxRounds;
+
+            let header = `## 🔍 PR 代码审核（第 ${round}/${maxRounds} 轮）\n\n`;
+            header += `**来源：** ${sourceDesc}\n`;
+            if (issueNum) header += `**关联 Issue：** #${issueNum}\n`;
+            header += `**分支：** \`${{ github.event.pull_request.head.ref }}\`\n`;
+
+            // Decide notification type: passed / silent-autofix / max-reached / no-label
+            let notifyType = 'none';
+
+            if (passed) {
+              header += `\n✅ **审核通过！等待人工确认合并。**\n`;
+              notifyType = 'passed';
+            } else if (canAutoFix && needsFix) {
+              header += `\n🔄 **审核未通过，将自动触发 Codex 修复（第 ${round+1} 轮）…**\n`;
+              notifyType = 'none'; // silent during auto-fix
+            } else if (hasAutoFixLabel && needsFix && round >= maxRounds) {
+              header += `\n⏹️ **已达最大审核轮次（${maxRounds}），不再自动修复。请人工检查。**\n`;
+              notifyType = 'max_reached';
+            } else if (needsFix && !hasAutoFixLabel) {
+              header += `\n💡 **审核未通过。添加 \`auto-fix\` label 可触发自动修复（最多 ${maxRounds} 轮）。**\n`;
+              notifyType = 'no_label';
+            }
+
+            header += `\n---\n\n`;
+            header += `<!-- codex-review-round -->\n`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNum,
+              body: header + review,
+            });
+
+            const shouldFix = hasAutoFixLabel && needsFix && round < maxRounds;
+            core.setOutput('should_fix', shouldFix ? 'true' : 'false');
+            core.setOutput('round', String(round));
+            core.setOutput('notify_type', notifyType);
+            core.setOutput('pr_num', String(prNum));
+            core.setOutput('pr_title', prTitle);
+            core.setOutput('passed', passed ? 'true' : 'false');
+            core.setOutput('total_rounds', String(round));
+
+      # === Telegram Notification ===
+
+      - name: Notify — review passed
+        if: steps.comment.outputs.notify_type == 'passed'
+        run: |
+          PR_NUM="${{ steps.comment.outputs.pr_num }}"
+          PR_TITLE="${{ steps.comment.outputs.pr_title }}"
+          PR_URL="https://github.com/uf-hy/pushfile/pull/${PR_NUM}"
+          TOTAL_ROUNDS="${{ steps.comment.outputs.total_rounds }}"
+
+          # 1) Notification bot: text message
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_NOTIFY_TOKEN }}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
+              \"text\": \"✅ PR #${PR_NUM} 审核通过（经过 ${TOTAL_ROUNDS} 轮审核）\\n${PR_TITLE}\\n\\n等待确认合并\",
+              \"disable_notification\": false
+            }"
+
+          # 2) fufu bot: action buttons (包含完整上下文，确保任何会话都能直接操作)
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
+              \"text\": \"📦 pushfile — PR #${PR_NUM} 审核通过\\n标题: ${PR_TITLE}\\n轮次: ${TOTAL_ROUNDS}\\n链接: ${PR_URL}\\n仓库: uf-hy/pushfile\\n分支: ${{ github.event.pull_request.head.ref }}\\n\\n操作说明:\\n• pf_merge_N → squash 合并 PR\\n• 合并后自动 bump 版本 + 构建镜像\\n• 推 production 分支触发自动部署\",
+              \"reply_markup\": {
+                \"inline_keyboard\": [[
+                  {\"text\": \"✅ 合并\", \"callback_data\": \"pf_merge_${PR_NUM}\"},
+                  {\"text\": \"👀 查看\", \"url\": \"${PR_URL}\"}
+                ]]
+              }
+            }"
+
+      - name: Notify — max rounds reached
+        if: steps.comment.outputs.notify_type == 'max_reached'
+        run: |
+          PR_NUM="${{ steps.comment.outputs.pr_num }}"
+          PR_TITLE="${{ steps.comment.outputs.pr_title }}"
+          PR_URL="https://github.com/uf-hy/pushfile/pull/${PR_NUM}"
+          ROUND="${{ steps.comment.outputs.round }}"
+
+          # 1) Notification bot: text message
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_NOTIFY_TOKEN }}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
+              \"text\": \"❌ PR #${PR_NUM} ${ROUND}轮修复仍未通过\\n${PR_TITLE}\\n\\n需要人工介入\",
+              \"disable_notification\": false
+            }"
+
+          # 2) fufu bot: action buttons (包含完整上下文，确保任何会话都能直接操作)
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
+              \"text\": \"📦 pushfile — PR #${PR_NUM} 审核未通过\\n标题: ${PR_TITLE}\\n轮次: ${ROUND}\\n链接: ${PR_URL}\\n仓库: uf-hy/pushfile\\n分支: ${{ github.event.pull_request.head.ref }}\\n\\n操作说明:\\n• pf_retry_h_N → 触发 retry.yml (thinking: high)\\n• pf_retry_xh_N → 触发 retry.yml (thinking: xhigh)\\n• pf_close_N → 关闭 PR\\n• retry 方法: POST dispatch retry.yml, inputs: pr_number + thinking_level\",
+              \"reply_markup\": {
+                \"inline_keyboard\": [
+                  [
+                    {\"text\": \"🔄 再试 (high)\", \"callback_data\": \"pf_retry_h_${PR_NUM}\"},
+                    {\"text\": \"🧠 xhigh 再试\", \"callback_data\": \"pf_retry_xh_${PR_NUM}\"}
+                  ],
+                  [
+                    {\"text\": \"❌ 关闭 PR\", \"callback_data\": \"pf_close_${PR_NUM}\"},
+                    {\"text\": \"👀 查看\", \"url\": \"${PR_URL}\"}
+                  ]
+                ]
+              }
+            }"
+
+      # === Auto-fix: only for AI agent PRs, max 3 rounds ===
+
+      - name: Checkout PR branch for fix
+        if: steps.comment.outputs.should_fix == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Run Codex auto-fix
+        if: steps.comment.outputs.should_fix == 'true'
+        env:
+          CUSTOM_OPENAI_KEY: ${{ secrets.CODEX_API_KEY }}
+        run: |
+          REVIEW=$(cat /tmp/review_result.md 2>/dev/null || echo "no review")
+          cat > /tmp/fix_prompt.txt <<'FIXEOF'
+          你是代码修复专家。根据以下代码审核意见修改代码。
+          只修复审核中明确指出的问题，不要做额外的重构或改动。
+          修改完成后确保代码能正常运行。
+          FIXEOF
+          echo "" >> /tmp/fix_prompt.txt
+          echo "审核意见：" >> /tmp/fix_prompt.txt
+          echo "$REVIEW" >> /tmp/fix_prompt.txt
+
+          codex \
+            -c 'model_providers.custom_openai.name="Custom OpenAI"' \
+            -c "model_providers.custom_openai.base_url=\"${{ secrets.CODEX_API_BASE }}\"" \
+            -c 'model_providers.custom_openai.env_key="CUSTOM_OPENAI_KEY"' \
+            -c 'model_provider="custom_openai"' \
+            exec --full-auto -m gpt-5.2 \
+            "$(cat /tmp/fix_prompt.txt)"
+
+      - name: Push fixes
+        if: steps.comment.outputs.should_fix == 'true'
+        run: |
+          git config user.name "Codex"
+          git config user.email "codex@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          ROUND="${{ steps.comment.outputs.round }}"
+          git commit -m "fix: auto-fix round $((ROUND+1)) based on review feedback"
+          git push origin ${{ github.event.pull_request.head.ref }}

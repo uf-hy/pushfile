@@ -12,9 +12,38 @@ function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show')
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
 async function api(path,opts){const r=await fetch(BASE+'/'+path,opts||{});const j=await r.json().catch(()=>({detail:'error'}));if(!r.ok)throw new Error(j.detail||'fail');return j}
 
-async function connect(){
-  S=$('secret').value.trim();
-  if(!S)return toast('请输入密码');
+function getCookie(name){
+  const all=document.cookie||'';
+  if(!all)return '';
+  const parts=all.split(/;\s*/);
+  for(const p of parts){
+    const i=p.indexOf('=');
+    const k=i>=0?p.slice(0,i):p;
+    if(k===name){
+      const v=i>=0?p.slice(i+1):'';
+      try{return decodeURIComponent(v)}catch(_){return v}
+    }
+  }
+  return '';
+}
+
+function setAdminKeyCookie(key){
+  document.cookie=ADMIN_KEY_COOKIE+'='+encodeURIComponent(key)+'; path=/admin; max-age='+ADMIN_KEY_MAX_AGE+'; SameSite=Strict';
+}
+
+function clearAdminKeyCookie(){
+  document.cookie=ADMIN_KEY_COOKIE+'=; path=/admin; max-age=0; SameSite=Strict';
+}
+
+async function connect(key,opts){
+  const isAuto=!!(opts&&opts.auto);
+  const toastSuccess=!(opts&&opts.toastSuccess===false);
+  const toastFailure=!(opts&&opts.toastFailure===false);
+  const rememberEl=$('remember');
+  const inputEl=$('secret');
+
+  S=((key!=null?String(key):(inputEl?inputEl.value:''))||'').trim();
+  if(!S){if(toastFailure)toast('请输入密码');return false}
   try{
     await api('api/tokens?key='+encodeURIComponent(S));
     $('connBadge').textContent='✅ 已连接';$('connBadge').style.color='var(--green)';
@@ -96,8 +125,15 @@ function currentImportPath(){
 
 function renderTree(){
   const box=$('treeBox');
+  box.classList.remove('drop-root');
   box.innerHTML=buildTreeHTML(treeData);
-  if(!treeData.length)box.innerHTML='<div class="empty" style="padding:24px"><p>还没有文件夹，上传 ZIP 或手动创建</p></div>';
+  if(!treeData.length){box.innerHTML='<div class="empty" style="padding:24px"><p>还没有文件夹，上传 ZIP 或手动创建</p></div>';return}
+  box.onclick=treeBoxClick;
+  bindTreeDnD(box);
+  box.ondragover=treeRootDragOver;
+  box.ondragenter=treeRootDragEnter;
+  box.ondragleave=treeRootDragLeave;
+  box.ondrop=treeRootDrop;
 }
 
 function buildTreeHTML(nodes){
@@ -107,9 +143,9 @@ function buildTreeHTML(nodes){
     const isOpen=expanded[n.path];
     const isActive=curPath===n.path;
     const icon=n.is_album?'🖼️':(isOpen?'📂':'📁');
-    const arrow=hasKids?'<span class="tree-arrow'+(isOpen?' open':'')+'" onclick="toggleExpand(\''+esc(n.path)+'\',event)">▶</span>':'<span class="tree-arrow" style="visibility:hidden">▶</span>';
+    const arrow='<span class="tree-arrow'+(isOpen?' open':'')+'" data-path="'+esc(n.path)+'" data-has="'+(hasKids?'1':'0')+'"'+(hasKids?'':' style="visibility:hidden"')+'>▶</span>';
     h+='<li>';
-    h+='<div class="tree-item'+(isActive?' active':'')+'" onclick="selectNode(\''+esc(n.path)+'\','+n.is_album+')">';
+    h+='<div class="tree-item'+(isActive?' active':'')+'" data-path="'+esc(n.path)+'" data-album="'+(n.is_album?'1':'0')+'" draggable="true">';
     h+=arrow+'<span class="tree-icon">'+icon+'</span><span class="tree-name">'+esc(n.name)+'</span>';
     if(n.image_count>0)h+='<span class="tree-count">'+n.image_count+'</span>';
     const st=statsData[n.path];if(st&&st.views)h+='<span class="tree-views">👁 '+st.views+'</span>';
@@ -121,6 +157,183 @@ function buildTreeHTML(nodes){
 }
 
 function toggleExpand(path,e){e.stopPropagation();expanded[path]=!expanded[path];renderTree()}
+
+function treeBoxClick(e){
+  const arrow=e.target.closest('.tree-arrow');
+  if(arrow&&arrow.dataset&&arrow.dataset.has==='1'){toggleExpand(arrow.dataset.path,e);return}
+  const item=e.target.closest('.tree-item');
+  if(!item||!item.dataset||!item.dataset.path)return;
+  selectNode(item.dataset.path,item.dataset.album==='1');
+}
+
+function bindTreeDnD(box){
+  const items=box.querySelectorAll('.tree-item');
+  for(const it of items){
+    it.addEventListener('dragstart',treeItemDragStart);
+    it.addEventListener('dragend',treeItemDragEnd);
+    it.addEventListener('dragenter',treeItemDragEnter);
+    it.addEventListener('dragleave',treeItemDragLeave);
+    it.addEventListener('dragover',treeItemDragOver);
+    it.addEventListener('drop',treeItemDrop);
+  }
+}
+
+function treeClearDrop(){
+  const box=$('treeBox');
+  if(treeDropEl){
+    treeDropEl.classList.remove('drop-target','drop-before','drop-after');
+    treeDropEl=null;treeDropMode='';
+  }
+  if(box)box.classList.remove('drop-root');
+}
+
+function treeSetDropEl(el,mode){
+  if(treeDropEl===el&&treeDropMode===mode)return;
+  treeClearDrop();
+  if(el){
+    if(mode==='before')el.classList.add('drop-before');
+    else if(mode==='after')el.classList.add('drop-after');
+    else el.classList.add('drop-target');
+    treeDropEl=el;treeDropMode=mode||'';
+  }
+}
+
+function treeDropModeForEvent(e,item){
+  const r=item.getBoundingClientRect();
+  const y=e.clientY-r.top;
+  const h=r.height||1;
+  if(y<h*0.25)return 'before';
+  if(y>h*0.75)return 'after';
+  return 'into';
+}
+
+function treeItemDragStart(e){
+  const item=e.currentTarget;
+  treeDragPath=item.dataset.path||'';
+  if(!treeDragPath)return;
+  e.dataTransfer.effectAllowed='move';
+  try{e.dataTransfer.setData('text/plain',treeDragPath)}catch(_){}
+  item.classList.add('dragging');
+  treeClearDrop();
+}
+
+function treeItemDragEnd(e){
+  e.currentTarget.classList.remove('dragging');
+  treeDragPath='';
+  treeClearDrop();
+}
+
+function treeItemDragEnter(e){
+  e.preventDefault();e.stopPropagation();
+  const item=e.currentTarget;const dest=item.dataset.path||'';
+  if(!treeDragPath||!dest||dest===treeDragPath)return;
+  treeSetDropEl(item,treeDropModeForEvent(e,item));
+}
+
+function treeItemDragOver(e){
+  e.preventDefault();e.stopPropagation();
+  const item=e.currentTarget;const dest=item.dataset.path||'';
+  if(!treeDragPath||!dest||dest===treeDragPath)return;
+  treeSetDropEl(item,treeDropModeForEvent(e,item));
+}
+
+function treeItemDragLeave(e){
+  e.stopPropagation();
+  const item=e.currentTarget;
+  if(item.contains(e.relatedTarget))return;
+  if(treeDropEl===item){item.classList.remove('drop-target','drop-before','drop-after');treeDropEl=null;treeDropMode=''}
+}
+
+function treeItemDrop(e){
+  e.preventDefault();e.stopPropagation();
+  const item=e.currentTarget;
+  const dest=item.dataset.path||'';
+  let src=treeDragPath;
+  if(!src){try{src=e.dataTransfer.getData('text/plain')||''}catch(_){src=''}}
+  const mode=treeDropMode||'into';
+  treeClearDrop();
+  if(!src||!dest||src===dest)return;
+  if(mode==='into'){moveFolderTo(src,dest);return}
+  const li=item.closest('li');
+  const ul=li?li.parentElement:null;
+  if(!ul)return;
+  const sibItems=Array.from(ul.querySelectorAll(':scope > li > .tree-item'));
+  const sibPaths=sibItems.map(x=>x.dataset.path||'').filter(Boolean);
+  const hoverIdx=sibPaths.indexOf(dest);
+  if(hoverIdx<0)return;
+  let insertIdx=mode==='before'?hoverIdx:hoverIdx+1;
+  const srcIdx=sibPaths.indexOf(src);
+  const withoutSrc=sibPaths.filter(p=>p!==src);
+  if(srcIdx!==-1&&srcIdx<insertIdx)insertIdx-=1;
+  const beforePath=withoutSrc[insertIdx]||'';
+  const parentLi=ul.closest('li');
+  const parentItem=parentLi?parentLi.querySelector(':scope > .tree-item'):null;
+  const parentPath=parentItem?(parentItem.dataset.path||''):'';
+  moveFolderTo(src,parentPath,beforePath);
+}
+
+function treeRootDragEnter(e){
+  if(e.target.closest&&e.target.closest('.tree-item'))return;
+  if(!treeDragPath)return;
+  e.preventDefault();
+  treeClearDrop();
+  $('treeBox').classList.add('drop-root');
+}
+
+function treeRootDragOver(e){
+  if(e.target.closest&&e.target.closest('.tree-item'))return;
+  if(!treeDragPath)return;
+  e.preventDefault();
+  treeClearDrop();
+  $('treeBox').classList.add('drop-root');
+}
+
+function treeRootDragLeave(e){
+  const box=$('treeBox');if(!box)return;
+  if(box.contains(e.relatedTarget))return;
+  box.classList.remove('drop-root');
+}
+
+function treeRootDrop(e){
+  if(e.target.closest&&e.target.closest('.tree-item'))return;
+  e.preventDefault();
+  let src=treeDragPath;
+  if(!src){try{src=e.dataTransfer.getData('text/plain')||''}catch(_){src=''}}
+  treeClearDrop();
+  if(!src)return;
+  moveFolderTo(src,'');
+}
+
+function treeRemapAfterMove(oldBase,newBase,dest){
+  if(curPath===oldBase||curPath.startsWith(oldBase+'/'))curPath=newBase+curPath.slice(oldBase.length);
+  if(T===oldBase||T.startsWith(oldBase+'/'))T=newBase+T.slice(oldBase.length);
+  const next={};
+  for(const k in expanded){
+    if(k===oldBase||k.startsWith(oldBase+'/'))next[newBase+k.slice(oldBase.length)]=expanded[k];
+    else next[k]=expanded[k];
+  }
+  expanded=next;
+  if(dest)expanded[dest]=true;
+  expanded[newBase]=true;
+}
+
+async function moveFolderTo(path,dest,before){
+  const src=(path||'').trim();
+  const parent=(dest||'').trim().replace(/(^\/+|\/+$)/g,'');
+  const beforePath=(before||'').trim().replace(/(^\/+|\/+$)/g,'');
+  if(!src)return;
+  if(parent===src||parent.startsWith(src+'/'))return toast('不能把父文件夹移动到自己的子文件夹里');
+  const name=src.split('/').pop();
+  const newBase=parent?(parent+'/'+name):name;
+  try{
+    await api('api/folders/move',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Key':S},body:JSON.stringify({path:src,dest:parent,before:beforePath||undefined})});
+    treeRemapAfterMove(src,newBase,parent);
+    toast('已移动');
+    await loadTree();
+    if(T)await loadAlbumFiles(T);
+    else if(curPath)await loadFolderView(curPath);
+  }catch(e){toast('移动失败：'+e.message);await loadTree()}
+}
 
 function selectNode(path,isAlbum){
   curPath=path;expanded[path]=true;renderTree();
@@ -529,9 +742,70 @@ async function saveOrder(){
   try{await api('api/manage/'+encodeURIComponent(slugMap[T]||T)+'/order',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Key':S},body:JSON.stringify({names:files})});toast('排序已保存')}catch(e){toast('失败：'+e.message)}
 }
 
+async function batchMove(){
+  const names=files.filter(x=>sel.has(x));if(!names.length)return toast('请先选择');
+  showFolderPicker(names);
+}
+
+function showFolderPicker(names){
+  let overlay=document.createElement('div');
+  overlay.className='picker-overlay';
+  let box=document.createElement('div');box.className='picker-box';
+  box.innerHTML='<div class="picker-title">移动 '+names.length+' 张图片到…</div>'+
+    '<div class="picker-input"><input type="text" id="pickerNewFolder" placeholder="输入新文件夹路径（如 待整理/2026）"><button class="btn btn-blue btn-sm" id="pickerConfirm">确定</button></div>'+
+    '<div class="picker-tree" id="pickerTree"></div>';
+  let cancelBtn=document.createElement('button');
+  cancelBtn.className='btn btn-sm';cancelBtn.style.cssText='margin-top:12px;width:100%';cancelBtn.textContent='取消';
+  cancelBtn.addEventListener('click',()=>overlay.remove());
+  box.appendChild(cancelBtn);
+  overlay.appendChild(box);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove()});
+  document.body.appendChild(overlay);
+  box.querySelector('#pickerConfirm').addEventListener('click',()=>doMove(overlay,names));
+  renderPickerTree(treeData);
+}
+
+function renderPickerTree(nodes){
+  const box=$('pickerTree');if(!box)return;
+  box.innerHTML='';
+  function walk(nodes,depth){
+    for(const n of nodes){
+      if(n.path===T)continue;
+      const item=document.createElement('div');
+      item.className='picker-item';
+      item.style.paddingLeft=depth*16+'px';
+      item.textContent=(n.is_album?'🖼️ ':'📁 ')+n.name;
+      if(n.image_count>0){const cnt=document.createElement('span');cnt.className='tree-count';cnt.textContent=n.image_count;item.appendChild(cnt)}
+      item.dataset.path=n.path;
+      item.addEventListener('click',()=>{const input=$('pickerNewFolder');if(input)input.value=n.path});
+      box.appendChild(item);
+      if(n.children)walk(n.children,depth+1);
+    }
+  }
+  walk(nodes,0);
+  if(!box.children.length)box.innerHTML='<div style="padding:12px;color:var(--sub)">没有其他文件夹</div>';
+}
+
+async function doMove(overlay,names){
+  const dest=$('pickerNewFolder').value.trim();
+  if(!dest)return toast('请输入或选择目标文件夹');
+  if(!confirm('确定移动 '+names.length+' 张图片到「'+dest+'」？'))return;
+  overlay.remove();
+  try{
+    const r=await api('api/manage/'+encodeURIComponent(slugMap[T]||T)+'/batch-move',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Key':S},body:JSON.stringify({names,dest})});
+    let msg='已移动 '+r.count+' 张到 '+r.dest;
+    if(r.skipped&&r.skipped.length)msg+='（跳过 '+r.skipped.length+' 张）';
+    toast(msg);
+    await loadTree();
+    if(T)await loadAlbumFiles(T);
+  }catch(e){toast('移动失败：'+e.message)}
+}
+
 async function createToken(){
   S=S||$('secret').value.trim();const tk=$('newTokenInput').value.trim();if(!S||!tk)return toast('请填写密码和名称');
   try{await api('api/tokens',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Key':S},body:JSON.stringify({token:tk})});
+    const rememberEl=$('remember');
+    if(rememberEl&&rememberEl.checked)setAdminKeyCookie(S);else clearAdminKeyCookie();
     $('newTokenInput').value='';
     if($('mainSection').style.display==='none'){$('loginSection').style.display='none';$('mainSection').style.display='';$('connBadge').textContent='✅';$('connBadge').style.color='var(--green)'}
     const ab=$('analyticsBtn');if(ab){ab.style.display='';ab.textContent='📊 统计'}

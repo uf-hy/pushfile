@@ -94,6 +94,7 @@ function trigger(url, name) {
 async function downloadAll(e) {
   e.preventDefault();
   if (!files.length) return;
+  if (__androidInApp) return;
   try {
     if (window.showDirectoryPicker) {
       const dir = await window.showDirectoryPicker();
@@ -139,4 +140,47 @@ if (isIOS()) {
   document.getElementById('iosTip').style.display = 'block';
   const btn = document.getElementById('dlAllBtn');
   if (btn) btn.style.display = 'none';
+}
+
+if (__androidInApp) {
+  try {
+    if (sessionStorage.getItem(getInappBarClosedKey()) !== '1') {
+      const bar = document.getElementById('inappBar');
+      if (bar) {
+        bar.style.display = 'flex';
+        document.body.classList.add('has-inapp-bar');
+        requestAnimationFrame(updateInappBarHeight);
+        window.addEventListener('resize', updateInappBarHeight);
+      }
+    }
+  } catch (err) {
+    const bar = document.getElementById('inappBar');
+    if (bar) {
+      bar.style.display = 'flex';
+      document.body.classList.add('has-inapp-bar');
+      requestAnimationFrame(updateInappBarHeight);
+      window.addEventListener('resize', updateInappBarHeight);
+    }
+  }
+
+  const dlAllBtn = document.getElementById('dlAllBtn');
+  if (dlAllBtn) {
+    dlAllBtn.disabled = true;
+    dlAllBtn.title = '请在浏览器中打开后使用批量下载';
+    const tip = document.createElement('div');
+    tip.className = 'inapp-tip';
+    tip.textContent = '请在浏览器中打开后使用批量下载';
+    dlAllBtn.parentNode && dlAllBtn.parentNode.appendChild(tip);
+  }
+
+  document.querySelectorAll('a.card-dl').forEach(a => {
+    a.addEventListener('click', ev => {
+      // Android in-app 下，单张下载统一降级为 location 跳转，以绕开 WebView 对下载行为的兼容问题。
+      const href = a.getAttribute('href') || a.href;
+      if (!href) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      window.location.href = href;
+    });
+  });
 }

@@ -1,11 +1,12 @@
 import re
+import unicodedata
 from fastapi import HTTPException
 from pathlib import Path
 from app.config import UPLOAD_SECRET, BASE_DIR
 
 TOKEN_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 FOLDER_SEGMENT_RE = re.compile(r"^[^/\\.\x00]{1,120}$")
-SAFE_NAME_RE = re.compile(r"^[^/\\]{1,120}$")
+SAFE_NAME_RE = re.compile(r"^[^/\\\x00-\x1f\x7f]{1,120}$")
 
 
 def safe_token(token: str) -> str:
@@ -28,21 +29,25 @@ def safe_path(path: str) -> str:
 
 def resolve_dir(path: str) -> Path:
     d = (BASE_DIR / path).resolve()
-    if not str(d).startswith(str(BASE_DIR)):
+    if not d.is_relative_to(BASE_DIR):
         raise HTTPException(status_code=400, detail="invalid path")
     return d
 
 
 def safe_name(name: str) -> str:
     name = name.strip()
-    if not SAFE_NAME_RE.match(name):
+    # Reject control/non-printable characters (e.g. \n, \t) to avoid header/log injection
+    # and confusing filesystem/UI behavior.
+    if not name.isprintable() or any(unicodedata.category(ch) == "Cc" for ch in name):
+        raise HTTPException(status_code=400, detail="invalid filename")
+    if not SAFE_NAME_RE.match(name) or name in (".", "..") or name.startswith("."):
         raise HTTPException(status_code=400, detail="invalid filename")
     return name
 
 
 def token_dir(token: str) -> Path:
     d = (BASE_DIR / token).resolve()
-    if not str(d).startswith(str(BASE_DIR)):
+    if not d.is_relative_to(BASE_DIR):
         raise HTTPException(status_code=400, detail="invalid path")
     return d
 

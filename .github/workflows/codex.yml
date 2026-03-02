@@ -1,10 +1,10 @@
 # Codex — Issue 触发自动改代码
-# 模型：gpt-5.2 | 思考：high
+# 白名单用户提 Issue 自动触发；其他人需要 owner 打 'codex' label
 name: Codex Agent
 
 on:
   issues:
-    types: [opened]
+    types: [opened, labeled]
 
 permissions:
   contents: write
@@ -12,20 +12,38 @@ permissions:
   issues: write
   actions: write
 
+# 白名单：这些用户提 Issue 直接触发 Codex
+env:
+  TRUSTED_USERS: '["uf-hy"]'
+
 jobs:
   codex:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    if: "!contains(github.event.issue.labels.*.name, 'skip-codex')"
+    timeout-minutes: 90
+    if: >-
+      !contains(github.event.issue.labels.*.name, 'skip-codex') &&
+      (
+        (github.event.action == 'opened' && contains(fromJSON('["uf-hy"]'), github.event.issue.user.login))
+        ||
+        (github.event.action == 'labeled' && github.event.label.name == 'codex')
+      )
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Codex CLI
         run: npm install -g @openai/codex
 
+      - name: Write issue content to file
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const issue = context.payload.issue;
+            const prompt = `根据以下需求修改代码：\n标题：${issue.title}\n内容：${issue.body || ''}`;
+            fs.writeFileSync('/tmp/codex_prompt.txt', prompt);
+
       - name: Run Codex
         env:
-          # Codex v0.101 对自定义中转站需要配置自定义 model_provider，否则不会把 key 带到请求里
           CUSTOM_OPENAI_KEY: ${{ secrets.CODEX_API_KEY }}
         run: |
           codex \
@@ -34,79 +52,19 @@ jobs:
             -c 'model_providers.custom_openai.env_key="CUSTOM_OPENAI_KEY"' \
             -c 'model_provider="custom_openai"' \
             exec --full-auto -m gpt-5.2 \
-            "根据以下需求修改代码：
-            标题：${{ github.event.issue.title }}
-            内容：${{ github.event.issue.body }}"
+            "$(cat /tmp/codex_prompt.txt)"
 
       - name: Create PR
         id: pr
         uses: peter-evans/create-pull-request@v6
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_TOKEN }}
           branch: codex/issue-${{ github.event.issue.number }}
           title: "🤖 Codex: ${{ github.event.issue.title }}"
           body: |
             由 Codex CLI (gpt-5.2, thinking: high) 自动生成
-            对应 Issue #${{ github.event.issue.number }}
+            Closes #${{ github.event.issue.number }}
           commit-message: "feat: codex auto-fix #${{ github.event.issue.number }}"
-          labels: agent-codex
-
-      - name: Trigger Compare if other PR exists
-        if: steps.pr.outputs.pull-request-number
-        uses: actions/github-script@v7
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          script: |
-            const issueNum = ${{ github.event.issue.number }};
-            // Check if OpenCode PR exists
-            const pulls = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              head: `${context.repo.owner}:opencode/issue-${issueNum}`,
-            });
-            if (pulls.data.length > 0) {
-              // Both PRs exist, trigger compare
-              await github.rest.actions.createWorkflowDispatch({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'compare.yml',
-                ref: 'main',
-                inputs: { issue_number: String(issueNum) },
-              });
-              core.info(`Triggered compare for issue #${issueNum}`);
-            } else {
-              core.info('OpenCode PR not found yet, skipping compare');
-            }
-
-  # 超时兜底：30 分钟后如果 Compare 还没触发，单独审核
-  timeout-compare:
-    runs-on: ubuntu-latest
-    needs: codex
-    steps:
-      - name: Wait 30 minutes
-        run: sleep 1800
-
-      - name: Check and trigger compare
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const issueNum = ${{ github.event.issue.number }};
-            // Check if compare already ran (look for review comment)
-            const comments = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNum,
-            });
-            const hasReview = comments.data.some(c => c.body.includes('AI 对比审核报告'));
-            if (!hasReview) {
-              await github.rest.actions.createWorkflowDispatch({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'compare.yml',
-                ref: 'main',
-                inputs: { issue_number: String(issueNum) },
-              });
-              core.info(`Timeout: triggered compare for issue #${issueNum}`);
-            }
+          committer: Codex <codex@users.noreply.github.com>
+          author: Codex <codex@users.noreply.github.com>
+          labels: agent-codex,auto-fix
