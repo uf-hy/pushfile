@@ -6,9 +6,9 @@ import ipaddress
 from collections import Counter, defaultdict, deque
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import List
+from typing import Any, List
 from app.config import BASE_DIR
-from app.auth import TOKEN_RE, token_dir, safe_name, resolve_dir
+from app.auth import TOKEN_RE, token_dir, resolve_dir
 
 ALLOWED_SUFFIX = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 MANIFEST = ".manifest.json"
@@ -44,7 +44,7 @@ def manifest_path(token: str) -> Path:
     return token_dir(token) / MANIFEST
 
 
-def load_manifest(token: str) -> dict:
+def load_manifest(token: str) -> dict[str, Any]:
     p = manifest_path(token)
     if not p.exists():
         return {"order": [], "title": ""}
@@ -61,7 +61,7 @@ def load_manifest(token: str) -> dict:
         return {"order": [], "title": ""}
 
 
-def save_manifest(token: str, data: dict):
+def save_manifest(token: str, data: dict[str, Any]):
     p = manifest_path(token)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -118,7 +118,7 @@ def append_in_order(token: str, name: str):
     update_order(token, arr)
 
 
-def list_tokens_with_counts() -> List[dict]:
+def list_tokens_with_counts() -> List[dict[str, Any]]:
     if not BASE_DIR.exists():
         return []
     out = []
@@ -236,7 +236,7 @@ def remove_subfolder_from_order(parent_dir: Path, folder_name: str):
     save_subfolder_order(parent_dir, base)
 
 
-def build_tree(root: Path | None = None, rel: str = "") -> list:
+def build_tree(root: Path | None = None, rel: str = "") -> list[dict[str, Any]]:
     root = root or BASE_DIR
     if not root.exists():
         return []
@@ -282,7 +282,7 @@ def list_images_by_path(path: str) -> List[str]:
 
 # ── 访问统计 ──
 
-def _load_stats() -> dict:
+def _load_stats() -> dict[str, Any]:
     if STATS_FILE.exists():
         try:
             return json.loads(STATS_FILE.read_text(encoding="utf-8"))
@@ -291,7 +291,7 @@ def _load_stats() -> dict:
     return {}
 
 
-def _save_stats(data: dict):
+def _save_stats(data: dict[str, Any]):
     STATS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -448,7 +448,7 @@ def record_visit(token: str, ip: str, ua: str = "", stats_key: str = ""):
         pass
 
 
-def get_all_stats() -> dict:
+def get_all_stats() -> dict[str, Any]:
     return _load_stats()
 
 
@@ -484,7 +484,7 @@ def _normalize_city(city: str, ip: str) -> str:
     return c
 
 
-def get_analytics(limit: int = 1000, include_local: bool = False) -> dict:
+def get_analytics(limit: int = 1000, include_local: bool = False) -> dict[str, Any]:
     limit = max(1, min(int(limit or 1000), 5000))
 
     recent = deque(maxlen=limit)
@@ -558,7 +558,7 @@ def get_analytics(limit: int = 1000, include_local: bool = False) -> dict:
     }
 
 
-def _load_slugs() -> dict:
+def _load_slugs() -> dict[str, Any]:
     if SLUGS_FILE.exists():
         try:
             return json.loads(SLUGS_FILE.read_text(encoding="utf-8"))
@@ -567,7 +567,7 @@ def _load_slugs() -> dict:
     return {"slug_to_path": {}, "path_to_slug": {}}
 
 
-def _save_slugs(data: dict):
+def _save_slugs(data: dict[str, Any]):
     SLUGS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -611,5 +611,5 @@ def resolve_slug(slug: str) -> str | None:
     return data["slug_to_path"].get(slug)
 
 
-def get_all_slugs() -> dict:
+def get_all_slugs() -> dict[str, Any]:
     return _load_slugs()
