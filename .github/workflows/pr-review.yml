@@ -13,40 +13,103 @@ jobs:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
-      - name: Build read-only review from PR diff
+      - name: Build review prompt from PR diff
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff || true
-          head -n 2000 /tmp/pr.diff > /tmp/pr.diff.short
+          gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
+          head -n 1800 /tmp/pr.diff > /tmp/pr.diff.short
 
-          URL_KEY_HITS=$(grep -Eo '\?(key|token)=' /tmp/pr.diff.short | wc -l | tr -d ' ')
-          PATH_PREFIX_HITS=$(grep -Eo 'startswith\(str\(' /tmp/pr.diff.short | wc -l | tr -d ' ')
-          FULL_AUTO_HITS=$(grep -Eo 'exec --full-auto' /tmp/pr.diff.short | wc -l | tr -d ' ')
-          WRITE_PERM_HITS=$(grep -Eo 'contents:\s*write' /tmp/pr.diff.short | wc -l | tr -d ' ')
+          gh pr view ${{ github.event.pull_request.number }} --json title,body --jq '.title' > /tmp/pr.title
+          gh pr view ${{ github.event.pull_request.number }} --json title,body --jq '.body // ""' > /tmp/pr.body
 
-          cat > /tmp/review_result.md <<EOF
-          ## 审查模式
+          cat > /tmp/review.prompt <<'EOF'
+          你是资深代码审查员。请基于给定 PR 信息输出中文审查结果。
 
-          本工作流运行在 GitHub Actions 沙盒中，采用**最小权限只读审查**：
-          - 不使用仓库外部 API 密钥
-          - 不执行自动改代码/自动推送
-          - 仅基于 PR diff 进行静态规则检查并评论
+          要求：
+          1) 按 P0/P1/P2 分级列出问题（没有就写“未发现”）。
+          2) 每条问题包含：文件路径、风险说明、修复建议。
+          3) 给出测试覆盖建议。
+          4) 最后给出结论：允许合并 / 需修复后合并 / 阻断合并。
+          5) 只基于给定信息，不要臆测仓库外内容。
 
-          ## 规则扫描结果（基于本次 diff）
-
-          - URL 凭证暴露模式（?key= / ?token=）：${URL_KEY_HITS}
-          - 不安全路径前缀判断（startswith(str(...))）：${PATH_PREFIX_HITS}
-          - 高风险自动执行模式（exec --full-auto）：${FULL_AUTO_HITS}
-          - 过大写权限声明（contents: write）：${WRITE_PERM_HITS}
-
-          ## 建议
-
-          1. 凭证统一通过 Header 传递（如 \\`X-Upload-Key\\`），避免 query 参数泄露。
-          2. 路径 containment 使用 \\`Path.resolve() + is_relative_to()\\`。
-          3. PR 审查流程保持只读，不启用自动执行和自动改码。
-          4. Workflow 权限按最小权限收敛，PR 场景优先 \\`contents: read\\`。
+          额外安全关注：
+          - 凭证泄露（query 参数、日志、Referer）
+          - 路径穿越/不安全路径校验
+          - 过大 workflow 权限
+          - 会导致 CI 或线上不可用的改动
           EOF
+
+          {
+            echo ""
+            echo "PR 标题："
+            cat /tmp/pr.title
+            echo ""
+            echo "PR 描述："
+            cat /tmp/pr.body
+            echo ""
+            echo "代码变更（diff）："
+            cat /tmp/pr.diff.short
+          } >> /tmp/review.prompt
+
+      - name: Run AI Review (read-only)
+        env:
+          CUSTOM_OPENAI_KEY: ${{ secrets.CODEX_API_KEY }}
+          CODEX_API_BASE: ${{ secrets.CODEX_API_BASE }}
+        run: |
+          if [ -z "${CUSTOM_OPENAI_KEY}" ] || [ -z "${CODEX_API_BASE}" ]; then
+            echo "未配置 CODEX_API_KEY 或 CODEX_API_BASE，跳过 AI 审查" > /tmp/review_result.md
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          base = os.environ["CODEX_API_BASE"].rstrip("/")
+          url = base + "/chat/completions"
+          key = os.environ["CUSTOM_OPENAI_KEY"]
+          prompt = open('/tmp/review.prompt', 'r', encoding='utf-8').read()
+
+          payload = {
+              "model": "gpt-5.2",
+              "temperature": 0.1,
+              "messages": [
+                  {"role": "system", "content": "你是严格、简洁、可执行的代码审查员。"},
+                  {"role": "user", "content": prompt},
+              ],
+          }
+
+          req = urllib.request.Request(
+              url,
+              data=json.dumps(payload).encode('utf-8'),
+              headers={
+                  "Content-Type": "application/json",
+                  "Authorization": f"Bearer {key}",
+              },
+              method="POST",
+          )
+
+          try:
+              with urllib.request.urlopen(req, timeout=180) as resp:
+                  body = json.loads(resp.read().decode('utf-8'))
+              content = body["choices"][0]["message"]["content"]
+              if isinstance(content, list):
+                  out = "\n".join(
+                      x.get("text", "") if isinstance(x, dict) else str(x)
+                      for x in content
+                  ).strip()
+              else:
+                  out = str(content).strip()
+              if not out:
+                  out = "审查执行完成，但未返回内容。"
+          except Exception as e:
+              out = f"审查执行失败：{e}"
+
+          with open('/tmp/review_result.md', 'w', encoding='utf-8') as f:
+              f.write(out)
+          PY
 
       - name: Comment review result
         uses: actions/github-script@v7
