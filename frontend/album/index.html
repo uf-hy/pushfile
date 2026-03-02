@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{ title }}</title>
-<link rel="stylesheet" href="{{ base }}/static/album/style.css">
+<link rel="stylesheet" href="{{ base }}/static/album/style.css?v=20260301a">
 </head>
 <body>
 <div class="inapp-bar" id="inappBar" style="display:none">
@@ -20,7 +20,7 @@
     <div class="actions" id="actions">
       <button class="btn btn-primary" id="dlAllBtn" onclick="downloadAll(event)">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 2v9m0 0l-3-3m3 3l3-3M2 13h12"/></svg>
-        下载全部
+        下载图片
       </button>
     </div>
     <div class="ios-tip" id="iosTip">
@@ -30,8 +30,8 @@
   <div class="gallery" id="gallery">
     {% for file in files %}
     <div class="card" onclick="openLb({{ loop.index0 }})">
-      <div class="card-img"><img src="{{ base }}/d/{{ token }}/{{ file }}" alt="{{ file }}" loading="lazy"></div>
-      <div class="card-footer"><span class="card-name">{{ file }}</span><a class="card-dl" href="{{ base }}/f/{{ token }}/{{ file }}" onclick="event.stopPropagation()">下载</a></div>
+      <div class="card-img"><img src="{{ base }}/v/{{ token|urlencode }}/{{ file|urlencode }}?kind=thumb-avif&amp;src={{ file|urlencode }}" alt="{{ file }}" loading="lazy"></div>
+      <div class="card-footer"><span class="card-name">{{ file.rsplit('.', 1)[0] }}</span><a class="card-dl" href="{{ base }}/f/{{ token }}/{{ file|urlencode }}" onclick="event.stopPropagation()">下载</a></div>
     </div>
     {% endfor %}
   </div>
@@ -39,15 +39,14 @@
   <div class="empty">这个相册还没有照片</div>
   {% endif %}
 </div>
-<!-- lightbox -->
 <div class="lb" id="lb" onclick="closeLb(event)">
   <button class="lb-close" onclick="closeLb()">&times;</button>
   <button class="lb-nav lb-prev" onclick="navLb(-1,event)">&lsaquo;</button>
   <button class="lb-nav lb-next" onclick="navLb(1,event)">&rsaquo;</button>
   <img id="lbImg" src="">
+  <div class="lb-save-tip" id="lbSaveTip">可长按保存</div>
   <div class="lb-info" id="lbInfo"></div>
 </div>
-<!-- progress -->
 <div class="overlay" id="ov">
   <div class="modal">
     <h3 id="ovTitle">正在下载</h3>
@@ -59,9 +58,8 @@
 <script>
 window.albumFiles = {{ files_json|safe }};
 window.albumToken = '{{ token }}';
-window.albumDomain = '{{ domain }}';
 window.__BASE__ = '{{ base }}';
 </script>
-<script src="{{ base }}/static/album/app.js"></script>
+<script src="{{ base }}/static/album/app.js?v=20260301a"></script>
 </body>
 </html>

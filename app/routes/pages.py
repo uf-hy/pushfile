@@ -7,13 +7,26 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 from app.auth import safe_token
 from app.storage import list_images, get_token_title, record_visit, resolve_slug, list_images_by_path
-from app.config import FRONTEND_DIR, SITE_DOMAIN, MAX_MB, BASE_PATH
+from app.config import FRONTEND_DIR, SITE_DOMAIN, MAX_MB, BASE_PATH, APP_VERSION, APP_BUILD_TIME
 from app.security import SlidingWindowRateLimiter
 
 router = APIRouter(tags=["pages"])
 templates = Jinja2Templates(directory=str(FRONTEND_DIR))
 
-_common = {"domain": SITE_DOMAIN, "max_mb": MAX_MB, "base": BASE_PATH}
+_common = {
+    "domain": SITE_DOMAIN,
+    "max_mb": MAX_MB,
+    "base": BASE_PATH,
+    "app_version": APP_VERSION,
+    "app_build_time": APP_BUILD_TIME,
+}
+
+
+def _record_visit_compat(request: Request, token: str) -> None:
+    try:
+        record_visit(token, _client_ip(request), request.headers.get("user-agent") or "")
+    except Exception:
+        pass
 
 # Rate limiter for 404 on /d/{token} — reuses SlidingWindowRateLimiter (has max_keys + cleanup)
 _d_404_limiter = SlidingWindowRateLimiter(limit=30, window_s=60.0)
@@ -90,6 +103,11 @@ def manage_page(request: Request):
     )
 
 
+@router.get("/album/{token}", response_class=HTMLResponse)
+def album(request: Request, token: str):
+    return _render_album(request, token)
+
+
 def _render_album(request: Request, token: str):
     """Shared album renderer for both /album/{token} and /d/{token}."""
     token = safe_token(token)
@@ -97,7 +115,7 @@ def _render_album(request: Request, token: str):
     if real_path:
         files = list_images_by_path(real_path)
         display_name = real_path.split("/")[-1]
-        record_visit(real_path)
+        _record_visit_compat(request, token)
         return templates.TemplateResponse(
             "album/index.html",
             {
@@ -115,7 +133,7 @@ def _render_album(request: Request, token: str):
     if not files:
         raise HTTPException(status_code=404, detail="album not found")
     title = get_token_title(token) or token
-    record_visit(token)
+    _record_visit_compat(request, token)
     return templates.TemplateResponse(
         "album/index.html",
         {
@@ -130,14 +148,8 @@ def _render_album(request: Request, token: str):
     )
 
 
-@router.get("/album/{token}", response_class=HTMLResponse)
-def album(request: Request, token: str):
-    return _render_album(request, token)
-
-
 @router.get("/d/{token}", response_class=HTMLResponse)
-def album_short(request: Request, token: str):
-    """Short URL for album — no Caddy rewrite needed."""
+def album_shortlink(request: Request, token: str):
     try:
         return _render_album(request, token)
     except HTTPException as e:

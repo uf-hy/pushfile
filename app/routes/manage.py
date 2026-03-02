@@ -21,6 +21,7 @@ from app.storage import (
     remove_in_order,
     ALLOWED_SUFFIX,
 )
+from app.image_variants import remove_variants_for_source
 
 router = APIRouter(prefix="/api/manage", tags=["manage"])
 
@@ -69,9 +70,9 @@ def api_manage_rename(
     token = safe_token(token)
     old_name = safe_name(payload.oldName)
     new_name = safe_name(payload.newName)
-    d = token_dir(token)
+    d = token_dir(token).resolve()
     src = (d / old_name).resolve()
-    if not str(src).startswith(str(d)) or not src.exists() or not src.is_file():
+    if not src.is_relative_to(d) or not src.exists() or not src.is_file():
         raise HTTPException(status_code=404, detail="source file not found")
     old_ext = src.suffix.lower()
     if old_ext not in ALLOWED_SUFFIX:
@@ -80,10 +81,11 @@ def api_manage_rename(
     if Path(dst_name).suffix.lower() not in ALLOWED_SUFFIX:
         raise HTTPException(status_code=400, detail="invalid extension")
     dst = (d / dst_name).resolve()
-    if not str(dst).startswith(str(d)):
+    if not dst.is_relative_to(d):
         raise HTTPException(status_code=400, detail="invalid destination")
     if dst.exists():
         raise HTTPException(status_code=409, detail="target filename exists")
+    remove_variants_for_source(src)
     src.rename(dst)
     rename_in_order(token, old_name, dst.name)
     return {"ok": True, "old": old_name, "new": dst.name}
@@ -98,12 +100,13 @@ def api_manage_delete(
     auth_header_key(x_upload_key)
     token = safe_token(token)
     name = safe_name(payload.name)
-    d = token_dir(token)
+    d = token_dir(token).resolve()
     f = (d / name).resolve()
-    if not str(f).startswith(str(d)) or not f.exists() or not f.is_file():
+    if not f.is_relative_to(d) or not f.exists() or not f.is_file():
         raise HTTPException(status_code=404, detail="file not found")
     if f.suffix.lower() not in ALLOWED_SUFFIX:
         raise HTTPException(status_code=400, detail="file type not allowed")
+    remove_variants_for_source(f)
     f.unlink()
     remove_in_order(token, name)
     return {"ok": True, "deleted": name}
@@ -118,16 +121,17 @@ def api_manage_batch_delete(
     auth_header_key(x_upload_key)
     token = safe_token(token)
     names = [safe_name(x) for x in payload.names]
-    d = token_dir(token)
+    d = token_dir(token).resolve()
     deleted = []
     for name in names:
         f = (d / name).resolve()
         if (
-            str(f).startswith(str(d))
+            f.is_relative_to(d)
             and f.exists()
             and f.is_file()
             and f.suffix.lower() in ALLOWED_SUFFIX
         ):
+            remove_variants_for_source(f)
             f.unlink()
             deleted.append(name)
             remove_in_order(token, name)
@@ -167,6 +171,7 @@ def api_manage_batch_move(
         if src.suffix.lower() not in ALLOWED_SUFFIX:
             skipped.append({"name": name, "reason": "type not allowed"})
             continue
+        remove_variants_for_source(src)
         dst = dst_dir / name
         final_name = name
         if dst.exists():
@@ -239,5 +244,6 @@ def api_manage_batch_rename(
     for old in selected:
         dst = (d / mapping[old]).resolve()
         temp_map[old].rename(dst)
+        remove_variants_for_source(d / old)
         rename_in_order(token, old, mapping[old])
     return {"ok": True, "renamed": [{"old": k, "new": v} for k, v in mapping.items()]}

@@ -40,6 +40,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .lb-nav{position:fixed;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:101}
 .lb-prev{left:16px}
 .lb-next{right:16px}
+.lb-save-tip{position:fixed;left:50%;transform:translateX(-50%);bottom:56px;padding:8px 14px;border-radius:999px;background:rgba(255,255,255,.16);color:#fff;font-size:12px;z-index:101}
 .lb-info{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.7);font-size:13px;z-index:101}
 /* progress overlay */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:200;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
@@ -56,6 +57,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
   .hero h1{font-size:22px}
   .gallery{grid-template-columns:repeat(2,1fr);gap:10px}
   .card-footer{padding:8px 10px}
+  .lb-save-tip{bottom:66px;font-size:11px;padding:7px 12px}
 }
 @media(prefers-color-scheme:dark){
   :root{--bg:#000;--card:#1c1c1e;--text:#f5f5f7;--sub:#98989d;--line:#38383a}

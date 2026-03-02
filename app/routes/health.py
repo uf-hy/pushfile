@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 from fastapi import APIRouter
+from app.config import APP_VERSION, APP_BUILD_TIME
 
 router = APIRouter()
 
@@ -22,4 +23,4 @@ async def health():
         checks["storage"] = f"error: {e}"
         return {"status": "unhealthy", "checks": checks}
 
-    return {"status": "ok", "checks": checks}
+    return {"status": "ok", "checks": checks, "version": APP_VERSION, "buildTime": APP_BUILD_TIME}

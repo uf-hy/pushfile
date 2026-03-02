@@ -1,10 +1,12 @@
-let S='',T='',files=[],sel=new Set(),dragN='',sheetTarget='',treeData=[],curPath='',expanded={},statsData={},slugMap={},treeDragPath='',treeDropEl=null,treeDropMode='';
+let S='',T='',files=[],sel=new Set(),dragN='',sheetTarget='',treeData=[],curPath='',expanded={},statsData={},slugMap={};
+let importDraft={type:'',zipFile:null,folderEntries:[],sourceName:'',preferredDest:''};
+let showAnalytics=false,analyticsData=null;
 const $=id=>document.getElementById(id);
 const DOMAIN=window.__DOMAIN__||'photo.xaihub.de';
 const BASE=window.__BASE__||'';
 const MAX_MB=window.__MAX_MB__||25;
-const ADMIN_KEY_COOKIE='pf_admin_key';
-const ADMIN_KEY_MAX_AGE=518400; // 144 hours
+const APP_VERSION=window.__APP_VERSION__||'dev';
+const APP_BUILD_TIME=window.__APP_BUILD_TIME__||'local';
 
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2000)}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
@@ -46,24 +48,9 @@ async function connect(key,opts){
     await api('api/tokens?key='+encodeURIComponent(S));
     $('connBadge').textContent='✅ 已连接';$('connBadge').style.color='var(--green)';
     $('loginSection').style.display='none';$('mainSection').style.display='';
-    if(rememberEl&&rememberEl.checked)setAdminKeyCookie(S);else clearAdminKeyCookie();
-    await loadTree();
-    if(toastSuccess)toast('连接成功');
-    return true;
-  }catch(e){}
-  if(isAuto){
-    clearAdminKeyCookie();
-    S='';
-    if(rememberEl)rememberEl.checked=false;
-    if(inputEl)inputEl.value='';
-    $('connBadge').textContent='未连接';$('connBadge').style.color='var(--sub)';
-    $('loginSection').style.display='';$('mainSection').style.display='none';
-    if(toastFailure)toast('自动连接失败，请重新输入密码');
-    return false;
-  }
-  if(toastFailure)toast('密码错误');
-  S='';
-  return false;
+    const ab=$('analyticsBtn');if(ab){ab.style.display='';ab.textContent='📊 统计'}
+    await loadTree();toast('连接成功');
+  }catch(e){const ab=$('analyticsBtn');if(ab)ab.style.display='none';closeAnalytics(true);toast('密码错误');S=''}
 }
 
 async function loadTree(){
@@ -75,6 +62,66 @@ async function loadTree(){
 }
 
 function buildSlugMap(nodes){for(const n of nodes){if(n.slug)slugMap[n.path]=n.slug;if(n.children)buildSlugMap(n.children)}}
+
+function toggleAnalytics(){if(showAnalytics)closeAnalytics();else openAnalytics()}
+
+function closeAnalytics(silent){
+  showAnalytics=false;
+  analyticsData=null;
+  const panel=$('analyticsPanel');if(panel)panel.style.display='none';
+  const admin=$('adminPanel');if(admin)admin.style.display='';
+  const btn=$('analyticsBtn');if(btn&&btn.style.display!=='none')btn.textContent='📊 统计';
+  if(!silent)toast('已返回管理');
+}
+
+async function openAnalytics(){
+  if(!S)return toast('请先连接');
+  showAnalytics=true;
+  const panel=$('analyticsPanel');
+  const admin=$('adminPanel');
+  if(!panel)return;
+  panel.style.display='';
+  if(admin)admin.style.display='none';
+  const btn=$('analyticsBtn');if(btn)btn.textContent='⬅ 返回';
+  panel.innerHTML='<div class="group"><div class="group-label">统计分析</div><div class="group-box"><div class="row"><span class="row-label">加载中</span><span class="row-value">请稍候…</span></div></div></div>';
+  try{
+    analyticsData=await api('api/analytics',{headers:{'X-Upload-Key':S}});
+    renderAnalytics(analyticsData);
+  }catch(e){
+    panel.innerHTML='<div class="group"><div class="group-label">统计分析</div><div class="group-box"><div class="row"><span class="row-label">错误</span><span class="row-value">'+esc(e.message)+'</span></div></div></div>';
+  }
+}
+
+function renderAnalytics(d){
+  const panel=$('analyticsPanel');if(!panel)return;
+  const total=Number(d.total_visit_count||0)||0;
+  const today=Number(d.today_visit_count||0)||0;
+  const uniq=Number(d.unique_ip_count||0)||0;
+  const byCity=d.by_city||{};
+  const cityTop=Object.entries(byCity).sort((a,b)=>Number(b[1]||0)-Number(a[1]||0)).slice(0,8);
+  const rows=cityTop.map(([k,v])=>'<div class="row"><span class="row-label">'+esc(k||'未知')+'</span><span class="row-value">'+(Number(v)||0)+'</span></div>').join('')||'<div class="row"><span class="row-label">暂无</span><span class="row-value">0</span></div>';
+  panel.innerHTML='<div class="group"><div class="group-label">统计概览</div><div class="ana-cards">'+
+    '<div class="ana-card"><div class="ana-num">'+today+'</div><div class="ana-lbl">今日访问</div></div>'+
+    '<div class="ana-card"><div class="ana-num">'+total+'</div><div class="ana-lbl">总访问</div></div>'+
+    '<div class="ana-card"><div class="ana-num">'+uniq+'</div><div class="ana-lbl">独立 IP</div></div>'+
+    '<div class="ana-card"><div class="ana-num">'+Object.keys(d.by_token||{}).length+'</div><div class="ana-lbl">相册数</div></div>'+
+    '</div></div>'+
+    '<div class="group"><div class="group-label">城市分布（TOP 8）</div><div class="group-box">'+rows+'</div></div>';
+}
+
+function collectFolderPaths(nodes,prefix=''){
+  let out=[];
+  for(const n of nodes){
+    const current=prefix?(prefix+'/'+n.name):n.name;
+    out.push(current);
+    if(n.children&&n.children.length)out=out.concat(collectFolderPaths(n.children,current));
+  }
+  return out;
+}
+
+function currentImportPath(){
+  return T||curPath||'';
+}
 
 function renderTree(){
   const box=$('treeBox');
@@ -295,11 +342,14 @@ function selectNode(path,isAlbum){
 
 async function loadFolderView(path){
   const d=await api('api/folders/list?path='+encodeURIComponent(path)+'&key='+encodeURIComponent(S));
+  T=path;
+  files=(d.files||[]).slice();
+  sel.clear();
   const c=$('contentArea');
   let h=renderBreadcrumb(path);
   h+='<div class="group"><div class="group-label">'+esc(path.split('/').pop())+'</div><div class="group-box">';
-  if(d.subfolders&&d.subfolders.length)for(const sf of d.subfolders)h+='<div class="row row-tap" onclick="selectNode(\''+esc(path+'/'+sf)+'\',false)"><span class="tree-icon">📁</span><span style="flex:1">'+esc(sf)+'</span><span class="row-chevron">›</span></div>';
-  if(d.files&&d.files.length){T=path;files=d.files.slice();sel.clear();h+='<div class="row"><span style="color:var(--sub)">'+d.files.length+' 张图片</span></div>';}
+  if(d.subfolders&&d.subfolders.length)h+='<div class="row"><span style="color:var(--sub)">子文件夹请在上方目录树中选择（共 '+d.subfolders.length+' 个）</span></div>';
+  if(d.files&&d.files.length){h+='<div class="row"><span style="color:var(--sub)">'+d.files.length+' 张图片</span></div>';}
   if((!d.subfolders||!d.subfolders.length)&&(!d.files||!d.files.length))h+='<div class="row"><span style="color:var(--sub)">空文件夹</span></div>';
   h+='<div class="row row-tap" onclick="deleteFolder(\''+esc(path)+'\')"><span style="color:var(--danger)">删除此文件夹</span></div>';
   h+='</div></div>';
@@ -353,7 +403,7 @@ function renderPhotos(){
     const imgBase=slugMap[T]||T;
     const d=document.createElement('div');d.className='photo'+(sel.has(name)?' selected':'');d.draggable=true;d.dataset.name=name;
     d.innerHTML='<div class="photo-sel'+(sel.has(name)?' on':'')+'" onclick="toggleSel(\''+esc(name)+'\',event)">'+(sel.has(name)?'✓':'')+'</div>'+
-      '<img src="/d/'+encodeURIComponent(imgBase)+'/'+encodeURIComponent(name)+'" loading="lazy"><div class="photo-name">'+esc(name)+'</div>';
+      '<img src="/v/'+encodeURIComponent(imgBase)+'/'+encodeURIComponent(name)+'?kind=thumb-avif&src='+encodeURIComponent(name)+'" loading="lazy"><div class="photo-name">'+esc(name)+'</div>';
     d.addEventListener('click',e=>{if(e.target.closest('.photo-sel'))return;openSheet(name)});
     d.addEventListener('dragstart',()=>{dragN=name;d.classList.add('dragging')});
     d.addEventListener('dragend',()=>{dragN='';d.classList.remove('dragging')});
@@ -365,7 +415,7 @@ function renderPhotos(){
 }
 
 function toggleSel(name,e){e.stopPropagation();sel.has(name)?sel.delete(name):sel.add(name);renderPhotos()}
-function selectAll(){files.forEach(n=>sel.add(n));renderPhotos()}
+function selectAll(){files.forEach(n=>{sel.add(n)});renderPhotos()}
 function updateBatch(){const n=sel.size;$('batchCount').textContent=n+' 已选';$('batchBar').classList.toggle('show',n>0)}
 function openSheet(name){sheetTarget=name;$('sheetBg').classList.add('show')}
 function closeSheet(){$('sheetBg').classList.remove('show');sheetTarget=''}
@@ -406,26 +456,268 @@ async function handleUpload(fileList){
   await loadTree();await loadAlbumFiles(T);
 }
 
-function handleZipImport(fileList){
-  if(!fileList||!fileList.length)return;const f=fileList[0];
+function normalizeRelPath(p){
+  return (p||'').replace(/\\/g,'/').replace(/^\/+/, '').trim();
+}
+
+function sourceBaseName(name){
+  if(!name)return 'new-import';
+  return name.replace(/\.[^.]+$/, '').replace(/[\\/]/g,'').trim()||'new-import';
+}
+
+function sanitizeFolderName(name){
+  return (name||'new-import').replace(/[\\/]/g,'').trim()||'new-import';
+}
+
+function fileFromEntry(entry){
+  return new Promise((resolve,reject)=>entry.file(resolve,reject));
+}
+
+function readAllEntries(reader){
+  return new Promise((resolve,reject)=>{
+    const all=[];
+    const step=()=>reader.readEntries(entries=>{
+      if(!entries.length)return resolve(all);
+      all.push(...entries);
+      step();
+    },reject);
+    step();
+  });
+}
+
+async function collectFilesFromEntry(entry,prefix=''){
+  if(!entry)return[];
+  if(entry.isFile){
+    const file=await fileFromEntry(entry);
+    return [{file,relativePath:normalizeRelPath(prefix+file.name)}];
+  }
+  if(entry.isDirectory){
+    const entries=await readAllEntries(entry.createReader());
+    const out=[];
+    for(const child of entries){
+      const children=await collectFilesFromEntry(child,prefix+entry.name+'/');
+      out.push(...children);
+    }
+    return out;
+  }
+  return [];
+}
+
+function isImageName(name){
+  return /\.(jpe?g|png|gif|webp)$/i.test(name||'');
+}
+
+function setZipProgress(text,pct,show=true){
+  const prog=$('zipProg');
+  prog.style.display=show?'block':'none';
+  $('zipTxt').textContent=text||'';
+  $('zipFill').style.width=(pct||0)+'%';
+}
+
+function refreshAfterImport(){
+  if(curPath){
+    const node=pathToNode(curPath,treeData);
+    if(node&&node.is_album)return loadAlbumFiles(curPath);
+    return loadFolderView(curPath);
+  }
+  return Promise.resolve();
+}
+
+function pathToNode(path,nodes){
+  for(const n of nodes){
+    if(n.path===path)return n;
+    if(n.children&&n.children.length){
+      const hit=pathToNode(path,n.children);
+      if(hit)return hit;
+    }
+  }
+  return null;
+}
+
+function openImportChooser(preferredPath){
+  importDraft.preferredDest=preferredPath||currentImportPath();
+  $('zipInput').value='';
+  $('zipInput').click();
+}
+
+function openFolderPicker(preferredPath){
+  importDraft.preferredDest=preferredPath||currentImportPath();
+  $('folderInput').value='';
+  $('folderInput').click();
+}
+
+function prepareZipImport(fileList,preferredDest){
+  if(!fileList||!fileList.length)return;
+  const f=fileList[0];
   if(!f.name.toLowerCase().endsWith('.zip'))return toast('请选择 .zip 文件');
-  const prog=$('zipProg');prog.style.display='block';$('zipTxt').textContent='上传中… 0%';$('zipFill').style.width='0%';
-  const fd=new FormData();fd.append('file',f);
-  const xhr=new XMLHttpRequest();
-  xhr.open('POST',BASE+'/api/upload/zip-import');
-  xhr.setRequestHeader('X-Upload-Key',S);
-  xhr.upload.onprogress=function(e){
-    if(e.lengthComputable){const pct=Math.round(e.loaded/e.total*90);$('zipFill').style.width=pct+'%';$('zipTxt').textContent='上传中… '+pct+'%'}
+  importDraft={
+    type:'zip',
+    zipFile:f,
+    folderEntries:[],
+    sourceName:f.name,
+    preferredDest:preferredDest||importDraft.preferredDest||currentImportPath()
   };
-  xhr.onload=async function(){
-    try{const j=JSON.parse(xhr.responseText);
-      if(xhr.status>=400)throw new Error(j.detail||'fail');
-      $('zipFill').style.width='100%';$('zipTxt').textContent='导入完成 ✅ 共 '+j.imported+' 张图片';
-      await loadTree();setTimeout(()=>{prog.style.display='none';$('zipFill').style.width='0%'},2000);
-    }catch(e){$('zipTxt').textContent='导入失败：'+e.message;setTimeout(()=>{prog.style.display='none';$('zipFill').style.width='0%'},3000)}
+  openImportModal();
+}
+
+function prepareFolderImport(fileList,preferredDest){
+  if(!fileList||!fileList.length)return;
+  const entries=[];
+  for(const file of Array.from(fileList)){
+    const relativePath=normalizeRelPath(file.webkitRelativePath||file.name);
+    entries.push({file,relativePath});
+  }
+  const top=entries[0]?.relativePath?.split('/')[0]||'new-folder';
+  importDraft={
+    type:'folder',
+    zipFile:null,
+    folderEntries:entries,
+    sourceName:top,
+    preferredDest:preferredDest||importDraft.preferredDest||currentImportPath()
   };
-  xhr.onerror=function(){$('zipTxt').textContent='网络错误';setTimeout(()=>{prog.style.display='none';$('zipFill').style.width='0%'},3000)};
-  xhr.send(fd);
+  openImportModal();
+}
+
+function fillDestinationOptions(){
+  const list=$('folderPathOptions');
+  if(!list)return;
+  const options=collectFolderPaths(treeData);
+  list.innerHTML=options.map(p=>'<option value="'+esc(p)+'"></option>').join('');
+}
+
+function openImportModal(){
+  fillDestinationOptions();
+  $('importSourceLabel').textContent=importDraft.sourceName||'-';
+  $('importNameInput').value=sanitizeFolderName(sourceBaseName(importDraft.sourceName));
+  $('importDestInput').value=importDraft.preferredDest||currentImportPath()||'';
+  $('importModalBg').classList.add('show');
+}
+
+function closeImportModal(){
+  $('importModalBg').classList.remove('show');
+}
+
+function focusImportDestination(){
+  const input=$('importDestInput');
+  input.focus();
+  input.select();
+}
+
+function uploadZipWithOptions(file,destination,folderName){
+  return new Promise(resolve=>{
+    setZipProgress('上传中… 0%',0,true);
+    const fd=new FormData();
+    fd.append('file',file);
+    fd.append('destination',destination||'');
+    fd.append('folder_name',folderName||'');
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST',BASE+'/api/upload/zip-import');
+    xhr.setRequestHeader('X-Upload-Key',S);
+    xhr.upload.onprogress=function(e){
+      if(e.lengthComputable){const pct=Math.round(e.loaded/e.total*90);setZipProgress('上传中… '+pct+'%',pct,true)}
+    };
+    xhr.onload=async function(){
+      try{
+        const j=JSON.parse(xhr.responseText);
+        if(xhr.status>=400)throw new Error(j.detail||'fail');
+        setZipProgress('导入完成 ✅ 共 '+j.imported+' 张图片',100,true);
+        await loadTree();
+        await refreshAfterImport();
+        setTimeout(()=>setZipProgress('',0,false),2000);
+      }catch(e){
+        setZipProgress('导入失败：'+e.message,0,true);
+        setTimeout(()=>setZipProgress('',0,false),3000);
+      }
+      resolve();
+    };
+    xhr.onerror=function(){setZipProgress('网络错误',0,true);setTimeout(()=>setZipProgress('',0,false),3000);resolve()};
+    xhr.send(fd);
+  });
+}
+
+function uploadFolderWithOptions(entries,destination,folderName){
+  const valid=(entries||[])
+    .map(x=>({file:x.file,relativePath:normalizeRelPath(x.relativePath)}))
+    .filter(x=>x.file&&x.relativePath&&x.relativePath.includes('/')&&isImageName(x.file.name));
+  if(!valid.length){toast('文件夹内没有可导入的图片');return Promise.resolve()}
+
+  return new Promise(resolve=>{
+    setZipProgress('文件夹导入中… 0%',0,true);
+    const fd=new FormData();
+    valid.forEach(({file,relativePath})=>{fd.append('files',file,file.name);fd.append('paths',relativePath)});
+    fd.append('destination',destination||'');
+    fd.append('folder_name',folderName||'');
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST',BASE+'/api/upload/folder-import');
+    xhr.setRequestHeader('X-Upload-Key',S);
+    xhr.upload.onprogress=function(e){
+      if(e.lengthComputable){const pct=Math.round(e.loaded/e.total*90);setZipProgress('文件夹导入中… '+pct+'%',pct,true)}
+    };
+    xhr.onload=async function(){
+      try{
+        const j=JSON.parse(xhr.responseText);
+        if(xhr.status>=400)throw new Error(j.detail||'fail');
+        setZipProgress('导入完成 ✅ 共 '+j.imported+' 张图片',100,true);
+        await loadTree();
+        await refreshAfterImport();
+        setTimeout(()=>setZipProgress('',0,false),2000);
+      }catch(e){
+        setZipProgress('导入失败：'+e.message,0,true);
+        setTimeout(()=>setZipProgress('',0,false),3000);
+      }
+      resolve();
+    };
+    xhr.onerror=function(){setZipProgress('网络错误',0,true);setTimeout(()=>setZipProgress('',0,false),3000);resolve()};
+    xhr.send(fd);
+  });
+}
+
+async function confirmImportUpload(){
+  const destination=normalizeRelPath($('importDestInput').value||'');
+  const folderName=sanitizeFolderName($('importNameInput').value||sourceBaseName(importDraft.sourceName));
+  closeImportModal();
+  if(importDraft.type==='zip'&&importDraft.zipFile){
+    await uploadZipWithOptions(importDraft.zipFile,destination,folderName);
+    return;
+  }
+  if(importDraft.type==='folder'&&importDraft.folderEntries.length){
+    await uploadFolderWithOptions(importDraft.folderEntries,destination,folderName);
+    return;
+  }
+  toast('请先选择 ZIP 或文件夹');
+}
+
+function handleZipImport(fileList){
+  prepareZipImport(fileList,importDraft.preferredDest||currentImportPath());
+}
+
+function handleFolderImport(fileList){
+  prepareFolderImport(fileList,importDraft.preferredDest||currentImportPath());
+}
+
+async function handleZipZoneDrop(dataTransfer){
+  const preferred=currentImportPath();
+  const items=Array.from(dataTransfer?.items||[]);
+  const folderEntries=[];
+  for(const item of items){
+    if(item.kind!=='file'||typeof item.webkitGetAsEntry!=='function')continue;
+    const entry=item.webkitGetAsEntry();
+    if(!entry)continue;
+    const files=await collectFilesFromEntry(entry);
+    folderEntries.push(...files);
+  }
+  if(folderEntries.some(x=>x.relativePath.includes('/'))){
+    importDraft.preferredDest=preferred;
+    importDraft={...importDraft,type:'folder',zipFile:null,folderEntries,sourceName:folderEntries[0].relativePath.split('/')[0]||'new-folder',preferredDest:preferred};
+    openImportModal();
+    return;
+  }
+  const dropped=dataTransfer?.files;
+  if(dropped&&dropped.length===1&&dropped[0].name.toLowerCase().endsWith('.zip')){
+    prepareZipImport(dropped,preferred);
+    return;
+  }
+  if(dropped&&dropped.length)return toast('请拖入 ZIP 或文件夹');
 }
 
 async function createFolder(){
@@ -516,20 +808,29 @@ async function createToken(){
     if(rememberEl&&rememberEl.checked)setAdminKeyCookie(S);else clearAdminKeyCookie();
     $('newTokenInput').value='';
     if($('mainSection').style.display==='none'){$('loginSection').style.display='none';$('mainSection').style.display='';$('connBadge').textContent='✅';$('connBadge').style.color='var(--green)'}
+    const ab=$('analyticsBtn');if(ab){ab.style.display='';ab.textContent='📊 统计'}
     await loadTree();toast('已创建 '+tk)}catch(e){toast('创建失败：'+e.message)}
 }
 
 $('secret').addEventListener('keydown',e=>{if(e.key==='Enter')connect()});
-const zz=$('zipZone');
-if(zz){zz.addEventListener('dragover',e=>{e.preventDefault();zz.classList.add('dragover')});zz.addEventListener('dragleave',()=>zz.classList.remove('dragover'));zz.addEventListener('drop',e=>{e.preventDefault();zz.classList.remove('dragover');handleZipImport(e.dataTransfer.files)})}
 
-function initAutoConnect(){
-  const saved=getCookie(ADMIN_KEY_COOKIE);
-  if(!saved)return;
-  const input=$('secret');if(input)input.value=saved;
-  const remember=$('remember');if(remember)remember.checked=true;
-  $('connBadge').textContent='⏳ 连接中';$('connBadge').style.color='var(--sub)';
-  connect(saved,{auto:true,toastSuccess:false,toastFailure:true});
+async function hydrateBuildMeta(){
+  let version=APP_VERSION;
+  let buildTime=APP_BUILD_TIME;
+  if(!version||version==='dev'||!buildTime||buildTime==='local'){
+    try{
+      const r=await fetch(BASE+'/health');
+      const j=await r.json();
+      if(j&&j.version)version=j.version;
+      if(j&&j.buildTime)buildTime=j.buildTime;
+    }catch(_){ }
+  }
+  if(!version||version==='dev')version='unknown';
+  if(!buildTime||buildTime==='local')buildTime='unknown';
+  const vb=$('versionBadge');if(vb)vb.textContent='v'+version;
+  const bm=$('buildMeta');if(bm)bm.textContent=buildTime+' 构建';
 }
 
-initAutoConnect();
+hydrateBuildMeta();
+const zz=$('zipZone');
+if(zz){zz.addEventListener('dragover',e=>{e.preventDefault();zz.classList.add('dragover')});zz.addEventListener('dragleave',()=>zz.classList.remove('dragover'));zz.addEventListener('drop',async e=>{e.preventDefault();zz.classList.remove('dragover');await handleZipZoneDrop(e.dataTransfer)})}

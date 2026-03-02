@@ -1,96 +1,31 @@
 const files = window.albumFiles || [];
 const token = window.albumToken || '';
-const domain = window.albumDomain || '';
-const BASE = window.__BASE__ || '';
+const base = window.__BASE__ || '';
 let lbIdx = 0;
 
 function isIOS() {
   return /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
-// UA 检测仅用于 UX 提示/降级，不作为安全判断或权限控制依据。
-function detectInAppBrowser(ua = navigator.userAgent) {
-  const isXhs = /XiaoHongShu|discover\//i.test(ua);
-  const isWechat = /MicroMessenger/i.test(ua);
-  const isWeibo = /Weibo/i.test(ua);
-  // Issue #31 要求：/QQ\//i 命中即视为 QQ in-app。
-  const isQQ = /QQ\//i.test(ua);
-  const isDingTalk = /DingTalk/i.test(ua);
-  const isAndroid = /Android/i.test(ua);
-  const inApp = isXhs || isWechat || isWeibo || isQQ || isDingTalk;
-  return {isXhs, isWechat, isWeibo, isQQ, isDingTalk, isAndroid, inApp};
+function displayName(name) {
+  const i = name.lastIndexOf('.');
+  return i > 0 ? name.slice(0, i) : name;
 }
 
-const __inappEnv = detectInAppBrowser();
-const __androidInApp = __inappEnv.isAndroid && __inappEnv.inApp;
-
-let __inappCopyTimer = 0;
-function showInappCopyStatus(msg) {
-  const el = document.getElementById('inappCopyStatus');
-  if (!el) return;
-  el.textContent = msg || '';
-  requestAnimationFrame(updateInappBarHeight);
-  if (__inappCopyTimer) clearTimeout(__inappCopyTimer);
-  if (msg) __inappCopyTimer = setTimeout(() => (el.textContent = ''), 1500);
+function toJpgName(name) {
+  return `${displayName(name)}.jpg`;
 }
 
-async function copyLink() {
-  const text = window.location.href;
-  let ok = false;
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(text);
-      ok = true;
-    }
-  } catch (err) {
-    console.warn(err);
-  }
-  if (ok) {
-    showInappCopyStatus('已复制');
-    return true;
-  }
-  try {
-    const el = document.createElement('textarea');
-    el.value = text;
-    el.setAttribute('readonly', 'readonly');
-    el.style.position = 'fixed';
-    el.style.opacity = '0';
-    el.style.left = '-9999px';
-    document.body.appendChild(el);
-    el.select();
-    el.setSelectionRange(0, el.value.length);
-    ok = document.execCommand('copy');
-    el.remove();
-    showInappCopyStatus(ok ? '已复制' : '复制失败');
-    return ok;
-  } catch (err) {
-    console.warn(err);
-    showInappCopyStatus('复制失败');
-    return false;
-  }
+function downloadUrl(name) {
+  return `${base}/f/${encodeURIComponent(token)}/${encodeURIComponent(name)}`;
 }
 
-function updateInappBarHeight() {
-  const bar = document.getElementById('inappBar');
-  if (!bar || bar.style.display === 'none') return;
-  document.documentElement.style.setProperty('--inapp-bar-h', bar.offsetHeight + 'px');
+function viewUrl(name) {
+  return `${base}/v/${encodeURIComponent(token)}/${encodeURIComponent(toJpgName(name))}?kind=view-jpg&src=${encodeURIComponent(name)}`;
 }
 
-function getInappBarClosedKey() {
-  return 'pf_inapp_bar_closed:' + (token || '');
-}
-
-function closeInappBar() {
-  const bar = document.getElementById('inappBar');
-  if (bar) bar.style.display = 'none';
-  document.body.classList.remove('has-inapp-bar');
-  document.documentElement.style.removeProperty('--inapp-bar-h');
-  window.removeEventListener('resize', updateInappBarHeight);
-  try {
-    sessionStorage.setItem(getInappBarClosedKey(), '1');
-  } catch (err) {
-    // ignore
-  }
+function rawUrl(name) {
+  return `${base}/d/${encodeURIComponent(token)}/${encodeURIComponent(name)}`;
 }
 
 function openLb(i) {
@@ -114,8 +49,14 @@ function navLb(d, e) {
 }
 
 function updLb() {
-  document.getElementById('lbImg').src = BASE + '/d/' + token + '/' + files[lbIdx];
-  document.getElementById('lbInfo').textContent = (lbIdx + 1) + ' / ' + files.length + '  ·  ' + files[lbIdx];
+  const name = files[lbIdx];
+  const img = document.getElementById('lbImg');
+  img.onerror = function () {
+    img.onerror = null;
+    img.src = rawUrl(name);
+  };
+  img.src = viewUrl(name);
+  document.getElementById('lbInfo').textContent = displayName(name);
 }
 
 document.addEventListener('keydown', e => {
@@ -127,10 +68,10 @@ document.addEventListener('keydown', e => {
 
 function setP(done, total, name) {
   const p = total ? Math.floor(done / total * 100) : 0;
-  document.getElementById('ovFill').style.width = p + '%';
-  document.getElementById('ovLeft').textContent = done + '/' + total;
-  document.getElementById('ovRight').textContent = p + '%';
-  document.getElementById('ovDesc').textContent = name ? '正在下载：' + name : '准备中…';
+  document.getElementById('ovFill').style.width = `${p}%`;
+  document.getElementById('ovLeft').textContent = `${done}/${total}`;
+  document.getElementById('ovRight').textContent = `${p}%`;
+  document.getElementById('ovDesc').textContent = name ? `正在下载：${name}` : '准备中…';
 }
 
 function showOv() {
@@ -159,10 +100,11 @@ async function downloadAll(e) {
       const dir = await window.showDirectoryPicker();
       showOv();
       for (let i = 0; i < files.length; i++) {
-        setP(i, files.length, files[i]);
-        const r = await fetch(BASE + '/d/' + token + '/' + files[i]);
+        const src = files[i];
+        setP(i, files.length, src);
+        const r = await fetch(downloadUrl(src));
         if (!r.ok) continue;
-        const fh = await dir.getFileHandle(files[i], {create: true});
+        const fh = await dir.getFileHandle(toJpgName(src), {create: true});
         const ws = await fh.createWritable();
         const rd = r.body.getReader();
         while (true) {
@@ -171,7 +113,7 @@ async function downloadAll(e) {
           await ws.write(value);
         }
         await ws.close();
-        setP(i + 1, files.length, files[i]);
+        setP(i + 1, files.length, src);
       }
       document.getElementById('ovTitle').textContent = '下载完成';
       document.getElementById('ovDesc').textContent = '所有图片已保存';
@@ -183,10 +125,11 @@ async function downloadAll(e) {
   }
   showOv();
   for (let i = 0; i < files.length; i++) {
-    setP(i, files.length, files[i]);
-    trigger(BASE + '/f/' + token + '/' + files[i], files[i]);
+    const src = files[i];
+    setP(i, files.length, src);
+    trigger(downloadUrl(src), toJpgName(src));
     await new Promise(r => setTimeout(r, 350));
-    setP(i + 1, files.length, files[i]);
+    setP(i + 1, files.length, src);
   }
   document.getElementById('ovTitle').textContent = '已触发下载';
   document.getElementById('ovDesc').textContent = '浏览器将逐个保存图片';
@@ -195,7 +138,8 @@ async function downloadAll(e) {
 
 if (isIOS()) {
   document.getElementById('iosTip').style.display = 'block';
-  document.getElementById('dlAllBtn').style.display = 'none';
+  const btn = document.getElementById('dlAllBtn');
+  if (btn) btn.style.display = 'none';
 }
 
 if (__androidInApp) {
