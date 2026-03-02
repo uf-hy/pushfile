@@ -13,45 +13,40 @@ jobs:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Codex CLI
-        run: npm install -g @openai/codex
-
-      - name: Build review prompt from PR diff
+      - name: Build read-only review from PR diff
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
-          head -n 1200 /tmp/pr.diff > /tmp/pr.diff.short
-          cat > /tmp/review.prompt <<'EOF'
-          你是资深代码审查员。请基于以下 PR diff 输出中文审查结论：
-          1) 必须按 P0/P1/P2 分级输出问题清单：
-             - P0: 会导致线上不可用/数据错误/安全问题，必须阻断合并
-             - P1: 重要功能缺陷或明显回归风险，建议修复后合并
-             - P2: 体验或代码质量优化项，可后续迭代
-          2) 给出每个问题的文件路径和简短修复建议
-          3) 给出测试覆盖建议
-          4) 最终结论：允许合并 / 需修复后合并 / 阻断合并
-          输出简洁，适合直接贴到 PR 评论。
+          gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff || true
+          head -n 2000 /tmp/pr.diff > /tmp/pr.diff.short
+
+          URL_KEY_HITS=$(grep -Eo '\?(key|token)=' /tmp/pr.diff.short | wc -l | tr -d ' ')
+          PATH_PREFIX_HITS=$(grep -Eo 'startswith\(str\(' /tmp/pr.diff.short | wc -l | tr -d ' ')
+          FULL_AUTO_HITS=$(grep -Eo 'exec --full-auto' /tmp/pr.diff.short | wc -l | tr -d ' ')
+          WRITE_PERM_HITS=$(grep -Eo 'contents:\s*write' /tmp/pr.diff.short | wc -l | tr -d ' ')
+
+          cat > /tmp/review_result.md <<EOF
+          ## 审查模式
+
+          本工作流运行在 GitHub Actions 沙盒中，采用**最小权限只读审查**：
+          - 不使用仓库外部 API 密钥
+          - 不执行自动改代码/自动推送
+          - 仅基于 PR diff 进行静态规则检查并评论
+
+          ## 规则扫描结果（基于本次 diff）
+
+          - URL 凭证暴露模式（?key= / ?token=）：${URL_KEY_HITS}
+          - 不安全路径前缀判断（startswith(str(...))）：${PATH_PREFIX_HITS}
+          - 高风险自动执行模式（exec --full-auto）：${FULL_AUTO_HITS}
+          - 过大写权限声明（contents: write）：${WRITE_PERM_HITS}
+
+          ## 建议
+
+          1. 凭证统一通过 Header 传递（如 \\`X-Upload-Key\\`），避免 query 参数泄露。
+          2. 路径 containment 使用 \\`Path.resolve() + is_relative_to()\\`。
+          3. PR 审查流程保持只读，不启用自动执行和自动改码。
+          4. Workflow 权限按最小权限收敛，PR 场景优先 \\`contents: read\\`。
           EOF
-          cat /tmp/pr.diff.short >> /tmp/review.prompt
-
-      - name: Run AI Review
-        env:
-          CUSTOM_OPENAI_KEY: ${{ secrets.CODEX_API_KEY }}
-        run: |
-          if [ -z "${CUSTOM_OPENAI_KEY}" ]; then
-            echo "未配置 CODEX_API_KEY，跳过 AI 审查" > /tmp/review_result.md
-            exit 0
-          fi
-
-          codex \
-            -c 'model_providers.custom_openai.name="Custom OpenAI"' \
-            -c 'model_providers.custom_openai.base_url="${{ secrets.CODEX_API_BASE }}"' \
-            -c 'model_providers.custom_openai.env_key="CUSTOM_OPENAI_KEY"' \
-            -c 'model_provider="custom_openai"' \
-            exec --full-auto -m gpt-5.2 "$(cat /tmp/review.prompt)" > /tmp/review_result.md
 
       - name: Comment review result
         uses: actions/github-script@v7
