@@ -23,6 +23,8 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .btn-row{display:flex;gap:8px;width:100%}
 .btn{display:flex;align-items:center;justify-content:center;gap:6px;padding:12px 20px;border-radius:var(--r);font-size:15px;font-weight:500;border:none;cursor:pointer;width:100%;min-height:48px;transition:opacity .15s}
 .btn:active{opacity:.7}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn:disabled:active{opacity:.45}
 .btn-blue{background:var(--accent);color:#fff}
 .btn-gray{background:#e5e5ea;color:var(--text)}
 .btn-red{background:var(--danger);color:#fff}

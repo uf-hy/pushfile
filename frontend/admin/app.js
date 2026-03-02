@@ -88,6 +88,7 @@ function closeAnalytics(silent){
   const panel=$('analyticsPanel');if(panel)panel.style.display='none';
   const admin=$('adminPanel');if(admin)admin.style.display='';
   const btn=$('analyticsBtn');if(btn&&btn.style.display!=='none')btn.textContent='📊 统计';
+  updateBatch();
   if(!silent)toast('已返回管理');
 }
 
@@ -98,6 +99,7 @@ async function openAnalytics(){
   if(!panel)return;
   if(panel)panel.style.display='';if(admin)admin.style.display='none';
   const btn=$('analyticsBtn');if(btn)btn.textContent='⬅ 返回';
+  updateBatch();
   try{
     panel.innerHTML='<div class="group"><div class="group-label">统计分析</div><div class="group-box"><div class="row"><span class="row-label">加载中</span><span class="row-value">请稍候…</span></div></div></div>';
     analyticsData=await api('api/analytics?key='+encodeURIComponent(S));
@@ -414,12 +416,18 @@ async function loadAlbumFiles(path){
 }
 
 function renderBreadcrumb(path){
-  const parts=path.split('/');let h='<div class="breadcrumb"><span onclick="curPath=\'\';renderTree();$(\'contentArea\').innerHTML=\'\'">根目录</span>';
+  const parts=path.split('/');let h='<div class="breadcrumb"><span onclick="curPath=\'\';renderTree();clearContentView()">根目录</span>';
   let acc='';
   for(let i=0;i<parts.length;i++){acc+=(i?'/':'')+parts[i];const p=acc;h+='<span class="sep">/</span>';
     if(i===parts.length-1)h+='<span style="color:var(--text);cursor:default">'+esc(parts[i])+'</span>';
     else h+='<span onclick="selectNode(\''+esc(p)+'\',false)">'+esc(parts[i])+'</span>';}
   return h+'</div>';
+}
+
+function clearContentView(){
+  T='';files=[];sel.clear();
+  const c=$('contentArea');if(c)c.innerHTML='';
+  updateBatch();
 }
 
 function renderAlbumContent(){
@@ -466,7 +474,20 @@ function renderPhotos(){
 
 function toggleSel(name,e){e.stopPropagation();sel.has(name)?sel.delete(name):sel.add(name);renderPhotos()}
 function selectAll(){files.forEach(n=>sel.add(n));renderPhotos()}
-function updateBatch(){const n=sel.size;$('batchCount').textContent=n+' 已选';$('batchBar').classList.toggle('show',n>0)}
+function updateBatch(){
+  const n=sel.size;
+  const countEl=$('batchCount');if(countEl)countEl.textContent=n+' 已选';
+  const bar=$('batchBar');
+  const show=!!(!showAnalytics&&$('photoGrid')&&files&&files.length);
+  if(bar)bar.classList.toggle('show',show);
+
+  const needSel=n<=0;
+  const cancelBtn=$('batchCancelBtn');if(cancelBtn)cancelBtn.disabled=!show||needSel;
+  const delBtn=$('batchDeleteBtn');if(delBtn)delBtn.disabled=!show||needSel;
+  const moveBtn=$('batchMoveBtn');if(moveBtn)moveBtn.disabled=!show||needSel;
+  const allBtn=$('batchSelectAllBtn');if(allBtn)allBtn.disabled=!show||!files||!files.length;
+  const orderBtn=$('batchSaveOrderBtn');if(orderBtn)orderBtn.disabled=!show;
+}
 function openSheet(name){sheetTarget=name;$('sheetBg').classList.add('show')}
 function closeSheet(){$('sheetBg').classList.remove('show');sheetTarget=''}
 
@@ -538,7 +559,7 @@ async function createFolder(){
 async function deleteFolder(path){
   if(!confirm('⚠️ 删除「'+path+'」及其所有内容？不可恢复！'))return;
   try{await api('api/folders/delete',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Key':S},body:JSON.stringify({path})});
-    toast('已删除');curPath='';T='';$('contentArea').innerHTML='';await loadTree()}catch(e){toast('删除失败：'+e.message)}
+    toast('已删除');curPath='';clearContentView();await loadTree()}catch(e){toast('删除失败：'+e.message)}
 }
 
 async function batchDelete(){
