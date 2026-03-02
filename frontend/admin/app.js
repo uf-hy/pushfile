@@ -85,7 +85,7 @@ async function openAnalytics(){
   const btn=$('analyticsBtn');if(btn)btn.textContent='⬅ 返回';
   panel.innerHTML='<div class="group"><div class="group-label">统计分析</div><div class="group-box"><div class="row"><span class="row-label">加载中</span><span class="row-value">请稍候…</span></div></div></div>';
   try{
-    analyticsData=await api('api/analytics?key='+encodeURIComponent(S));
+    analyticsData=await api('api/analytics',{headers:{'X-Upload-Key':S}});
     renderAnalytics(analyticsData);
   }catch(e){
     panel.innerHTML='<div class="group"><div class="group-label">统计分析</div><div class="group-box"><div class="row"><span class="row-label">错误</span><span class="row-value">'+esc(e.message)+'</span></div></div></div>';

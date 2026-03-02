@@ -53,7 +53,7 @@ def api_tokens_remove(
     arc_root.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     target = (arc_root / f"{token}-{ts}").resolve()
-    if not str(target).startswith(str(arc_root)):
+    if not target.is_relative_to(arc_root):
         raise HTTPException(status_code=400, detail="invalid archive target")
     shutil.move(str(d), str(target))
     return {"ok": True, "mode": "archive", "token": token, "archivedTo": target.name}
