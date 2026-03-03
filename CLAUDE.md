@@ -3,22 +3,44 @@
 ## 1) 沟通偏好
 - 你通常使用语音输入，文本可能有口语化、省略、错别字。
 - 处理需求时应先提炼真实意图，再执行，不要机械按字面理解。
-- 发现“能直接修”的问题要主动修复，不要等下一句催促。
+- 发现"能直接修"的问题要主动修复，不要等下一句催促。
 
-## 2) 强制开发流程（必须遵守）
-1. 新建分支开发（禁止在生产容器热改）。
-2. 本地自测（至少：关键接口、页面可访问、基础回归）。
-3. 推送分支并创建 PR。
-4. 等 CI 全绿 + AI 审核完成。
-5. 代码评审通过后合并。
-6. 由 GitHub Actions 执行部署（production 分支触发），禁止手工 `docker cp` 改生产。
-7. 部署后做线上回归：`/manage`、`/d/{token}`、上传链路、关键图片接口。
+## 2) 开发流程（Staging → Production）
+
+### 架构说明
+- **Production 环境**：`/root/code/photo`（production 分支）→ photo.xaihub.de
+- **Staging 环境**：`/root/code/photo-staging`（staging 分支）→ phototest.xaihub.de
+- 两个目录共享同一个 Git 仓库（使用 git worktree）
+
+### 开发步骤
+1. 在 staging 目录改代码：
+   ```bash
+   cd /root/code/photo-staging
+   # 改代码...
+   ```
+2. 保存后刷新 phototest.xaihub.de 看效果（已开启 --reload 自动重载）
+3. 测试满意后提交：
+   ```bash
+   git add .
+   git commit -m "feat: 我的新功能"
+   git push origin staging
+   ```
+4. 在 GitHub 创建 PR：staging → production
+5. 合并后自动触发部署（或手动执行 `deploy-prod`）
+
+### 部署命令
+- `deploy-prod` — 拉取 production 分支并重启生产服务
+- `deploy-staging` — 拉取 staging 分支（一般不需要，--reload 自动生效）
+- `rollback-prod [commit]` — 回滚生产到指定版本（不传则回退上一个）
 
 ## 3) 紧急故障处理（P0）
-- 第一优先：恢复可用（回滚到最近稳定镜像）。
-- **回滚前强制快照**：任何回滚/重建/覆盖前，必须先执行一次本地 checkpoint commit（或至少生成可恢复补丁 + 文件快照），严禁未留痕直接回滚。
-- 恢复后必须补 PR，把“临时修复”变成“可追踪代码变更”。
-- 不允许长期保留只在容器里的“漂移代码”。
+- 第一优先：恢复可用。
+- **回滚命令**：
+  ```bash
+  rollback-prod          # 回退到上一个版本
+  rollback-prod abc1234  # 回退到指定 commit
+  ```
+- 恢复后必须补 PR，把"临时修复"变成"可追踪代码变更"。
 
 ## 4) 版本号与构建时间规范
 - 使用语义化版本：`major.minor.patch`
@@ -28,9 +50,13 @@
 - 展示格式：
   - 版本：`vX.Y.Z`
   - 构建时间：`MM-DD HH:mm`
-- 不显示时区后缀，不使用“local/dev”作为对外展示文案。
+- 不显示时区后缀，不使用"local/dev"作为对外展示文案。
 
-## 5) 发布与回滚原则
-- 生产镜像必须来自 GHCR（由 Actions 构建产物）。
-- 部署使用 `deploy.yml`；回滚使用 `rollback.yml`。
-- 若流程被绕过，视为发布事故，必须补齐 PR 与记录。
+## 5) Git 存档 Tag
+- 当前稳定版本：`v1.1.0-prod-stable`
+- 恢复命令：
+  ```bash
+  cd /root/code/photo
+  git reset --hard v1.1.0-prod-stable
+  systemctl restart photo-prod
+  ```
