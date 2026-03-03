@@ -1,23 +1,14 @@
-# 生产部署 — Docker 镜像拉取 + 健康检查 + 自动回滚
+# 生产部署 — Git pull + 健康检查
 name: Production Deploy
 
 on:
   push:
     branches: [production]
   workflow_dispatch:
-    inputs:
-      image_tag:
-        description: '镜像标签（默认 production）'
-        required: false
-        default: 'production'
 
 permissions:
   contents: write
   issues: write
-
-env:
-  IMAGE: ghcr.io/uf-hy/pushfile
-  CONTAINER: pushfile-prod
 
 jobs:
   deploy:
@@ -31,7 +22,7 @@ jobs:
           key: ${{ secrets.PROD_SERVER_SSH_KEY }}
           port: ${{ secrets.PROD_SERVER_SSH_PORT }}
           script: |
-            deploy ${{ github.event.inputs.image_tag || 'production' }}
+            deploy-prod
 
       - name: Notify on failure
         if: failure()
