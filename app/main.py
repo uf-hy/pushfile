@@ -3,12 +3,39 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import PlainTextResponse
 from app.routes import tokens, manage, upload, pages, folders, stats, health, files, api
-from app.config import FRONTEND_DIR
+from app.config import BASE_PATH, FRONTEND_DIR
+
+
+class StripBasePathMiddleware:
+    def __init__(self, app, base_path: str):
+        self.app = app
+        self.base_path = (base_path or "").rstrip("/")
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") in {"http", "websocket"} and self.base_path:
+            prefix = self.base_path + "/"
+            path = scope.get("path") or ""
+            if path.startswith(prefix):
+                new_scope = dict(scope)
+                new_path = path[len(self.base_path) :]
+                new_scope["path"] = new_path if new_path else "/"
+                raw_path = scope.get("raw_path")
+                if isinstance(raw_path, (bytes, bytearray)):
+                    bp = self.base_path.encode("utf-8")
+                    if raw_path.startswith(bp + b"/"):
+                        new_scope["raw_path"] = raw_path[len(bp) :]
+                return await self.app(new_scope, receive, send)
+
+        return await self.app(scope, receive, send)
+
 
 mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 
 app = FastAPI(title="photo-uploader-b", docs_url=None, redoc_url=None, openapi_url=None)
+
+if BASE_PATH:
+    app.add_middleware(StripBasePathMiddleware, base_path=BASE_PATH)
 
 
 @app.middleware("http")
