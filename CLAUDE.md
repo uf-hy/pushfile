@@ -35,6 +35,14 @@
 
 ## 3) 紧急故障处理（P0）
 - 第一优先：恢复可用。
+- **回滚前必须先存档**：任何回滚操作前，必须先把当前状态提交或打 tag，防止误删未保存的工作。
+  ```bash
+  # 回滚前先存档
+  git add -A
+  git commit -m "chore: pre-rollback snapshot"
+  # 或者打 tag
+  git tag -a backup-$(date +%Y%m%d-%H%M%S) -m "回滚前备份"
+  ```
 - **回滚命令**：
   ```bash
   rollback-prod          # 回退到上一个版本
