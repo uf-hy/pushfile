@@ -198,15 +198,16 @@ jobs:
             echo "$DIFF"
           } >> /tmp/review_prompt.txt
 
+          echo "" >> /tmp/review_prompt.txt
+          echo "请用中文直接输出审核结果，格式清晰。" >> /tmp/review_prompt.txt
+
           codex \
             -c 'model_providers.custom_openai.name="Custom OpenAI"' \
             -c "model_providers.custom_openai.base_url=\"${{ secrets.CODEX_API_BASE }}\"" \
             -c 'model_providers.custom_openai.env_key="CUSTOM_OPENAI_KEY"' \
             -c 'model_provider="custom_openai"' \
             exec --full-auto -m gpt-5.2 \
-            "$(cat /tmp/review_prompt.txt)
-
-          请用中文直接输出审核结果，格式清晰。" | tee /tmp/review_result.md
+            "$(cat /tmp/review_prompt.txt)" | tee /tmp/review_result.md
 
           [ -s /tmp/review_result.md ] || echo "审核执行完成但未生成报告" > /tmp/review_result.md
 
