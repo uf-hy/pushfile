@@ -257,6 +257,11 @@ jobs:
               const conclusionText = conclusionIdx >= 0 ? review.slice(conclusionIdx) : review.slice(-200);
               passed = conclusionText.includes('✅') && !conclusionText.includes('⚠️') && !conclusionText.includes('❌');
               needsFix = conclusionText.includes('⚠️') || conclusionText.includes('❌');
+              // 兜底：两个都没匹配到，默认需要人工检查（比漏通知更安全）
+              if (!passed && !needsFix) {
+                needsFix = true;
+                console.log('Warning: 无法解析审核结论，默认标记为需要修改');
+              }
             }
 
             const labels = context.payload.pull_request.labels.map(l => l.name);
@@ -313,29 +318,22 @@ jobs:
           PR_TITLE="${{ steps.comment.outputs.pr_title }}"
           PR_URL="https://github.com/uf-hy/pushfile/pull/${PR_NUM}"
           TOTAL_ROUNDS="${{ steps.comment.outputs.total_rounds }}"
+          BRANCH="${{ github.event.pull_request.head.ref }}"
 
           # 1) Notification bot: text message
+          NOTIFY_TEXT=$(printf '✅ PR #%s 审核通过（经过 %s 轮审核）\n%s\n\n等待确认合并' "$PR_NUM" "$TOTAL_ROUNDS" "$PR_TITLE")
+          PAYLOAD=$(jq -n --arg cid "${{ secrets.TELEGRAM_CHAT_ID }}" --arg text "$NOTIFY_TEXT" \
+            '{chat_id: $cid, text: $text, disable_notification: false}')
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_NOTIFY_TOKEN }}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-              \"text\": \"✅ PR #${PR_NUM} 审核通过（经过 ${TOTAL_ROUNDS} 轮审核）\\n${PR_TITLE}\\n\\n等待确认合并\",
-              \"disable_notification\": false
-            }"
+            -H "Content-Type: application/json" -d "$PAYLOAD"
 
-          # 2) fufu bot: action buttons (包含完整上下文，确保任何会话都能直接操作)
+          # 2) fufu bot: action buttons
+          BOT_TEXT=$(printf '📦 pushfile — PR #%s 审核通过\n标题: %s\n轮次: %s\n链接: %s\n仓库: uf-hy/pushfile\n分支: %s\n\n操作说明:\n• pf_merge_N → squash 合并 PR\n• 合并后自动 bump 版本 + 构建镜像\n• 推 production 分支触发自动部署' "$PR_NUM" "$PR_TITLE" "$TOTAL_ROUNDS" "$PR_URL" "$BRANCH")
+          PAYLOAD=$(jq -n --arg cid "${{ secrets.TELEGRAM_CHAT_ID }}" --arg text "$BOT_TEXT" \
+            --arg merge_cb "pf_merge_${PR_NUM}" --arg pr_url "$PR_URL" \
+            '{chat_id: $cid, text: $text, reply_markup: {inline_keyboard: [[{text: "✅ 合并", callback_data: $merge_cb}, {text: "👀 查看", url: $pr_url}]]}}')
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-              \"text\": \"📦 pushfile — PR #${PR_NUM} 审核通过\\n标题: ${PR_TITLE}\\n轮次: ${TOTAL_ROUNDS}\\n链接: ${PR_URL}\\n仓库: uf-hy/pushfile\\n分支: ${{ github.event.pull_request.head.ref }}\\n\\n操作说明:\\n• pf_merge_N → squash 合并 PR\\n• 合并后自动 bump 版本 + 构建镜像\\n• 推 production 分支触发自动部署\",
-              \"reply_markup\": {
-                \"inline_keyboard\": [[
-                  {\"text\": \"✅ 合并\", \"callback_data\": \"pf_merge_${PR_NUM}\"},
-                  {\"text\": \"👀 查看\", \"url\": \"${PR_URL}\"}
-                ]]
-              }
-            }"
+            -H "Content-Type: application/json" -d "$PAYLOAD"
 
       - name: Notify — max rounds reached
         if: steps.comment.outputs.notify_type == 'max_reached'
@@ -344,35 +342,23 @@ jobs:
           PR_TITLE="${{ steps.comment.outputs.pr_title }}"
           PR_URL="https://github.com/uf-hy/pushfile/pull/${PR_NUM}"
           ROUND="${{ steps.comment.outputs.round }}"
+          BRANCH="${{ github.event.pull_request.head.ref }}"
 
           # 1) Notification bot: text message
+          NOTIFY_TEXT=$(printf '❌ PR #%s %s轮修复仍未通过\n%s\n\n需要人工介入' "$PR_NUM" "$ROUND" "$PR_TITLE")
+          PAYLOAD=$(jq -n --arg cid "${{ secrets.TELEGRAM_CHAT_ID }}" --arg text "$NOTIFY_TEXT" \
+            '{chat_id: $cid, text: $text, disable_notification: false}')
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_NOTIFY_TOKEN }}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-              \"text\": \"❌ PR #${PR_NUM} ${ROUND}轮修复仍未通过\\n${PR_TITLE}\\n\\n需要人工介入\",
-              \"disable_notification\": false
-            }"
+            -H "Content-Type: application/json" -d "$PAYLOAD"
 
-          # 2) fufu bot: action buttons (包含完整上下文，确保任何会话都能直接操作)
+          # 2) fufu bot: action buttons
+          BOT_TEXT=$(printf '📦 pushfile — PR #%s 审核未通过\n标题: %s\n轮次: %s\n链接: %s\n仓库: uf-hy/pushfile\n分支: %s\n\n操作说明:\n• pf_retry_h_N → 触发 retry.yml (thinking: high)\n• pf_retry_xh_N → 触发 retry.yml (thinking: xhigh)\n• pf_close_N → 关闭 PR\n• retry 方法: POST dispatch retry.yml, inputs: pr_number + thinking_level' "$PR_NUM" "$PR_TITLE" "$ROUND" "$PR_URL" "$BRANCH")
+          PAYLOAD=$(jq -n --arg cid "${{ secrets.TELEGRAM_CHAT_ID }}" --arg text "$BOT_TEXT" \
+            --arg retry_h "pf_retry_h_${PR_NUM}" --arg retry_xh "pf_retry_xh_${PR_NUM}" \
+            --arg close_cb "pf_close_${PR_NUM}" --arg pr_url "$PR_URL" \
+            '{chat_id: $cid, text: $text, reply_markup: {inline_keyboard: [[{text: "🔄 再试 (high)", callback_data: $retry_h}, {text: "🧠 xhigh 再试", callback_data: $retry_xh}], [{text: "❌ 关闭 PR", callback_data: $close_cb}, {text: "👀 查看", url: $pr_url}]]}}')
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-              \"text\": \"📦 pushfile — PR #${PR_NUM} 审核未通过\\n标题: ${PR_TITLE}\\n轮次: ${ROUND}\\n链接: ${PR_URL}\\n仓库: uf-hy/pushfile\\n分支: ${{ github.event.pull_request.head.ref }}\\n\\n操作说明:\\n• pf_retry_h_N → 触发 retry.yml (thinking: high)\\n• pf_retry_xh_N → 触发 retry.yml (thinking: xhigh)\\n• pf_close_N → 关闭 PR\\n• retry 方法: POST dispatch retry.yml, inputs: pr_number + thinking_level\",
-              \"reply_markup\": {
-                \"inline_keyboard\": [
-                  [
-                    {\"text\": \"🔄 再试 (high)\", \"callback_data\": \"pf_retry_h_${PR_NUM}\"},
-                    {\"text\": \"🧠 xhigh 再试\", \"callback_data\": \"pf_retry_xh_${PR_NUM}\"}
-                  ],
-                  [
-                    {\"text\": \"❌ 关闭 PR\", \"callback_data\": \"pf_close_${PR_NUM}\"},
-                    {\"text\": \"👀 查看\", \"url\": \"${PR_URL}\"}
-                  ]
-                ]
-              }
-            }"
+            -H "Content-Type: application/json" -d "$PAYLOAD"
 
       - name: Notify — needs review (no auto-fix)
         if: steps.comment.outputs.notify_type == 'no_label'
@@ -383,26 +369,19 @@ jobs:
           ROUND="${{ steps.comment.outputs.round }}"
 
           # 1) Notification bot: text message
+          NOTIFY_TEXT=$(printf '⚠️ PR #%s 审核未通过\n%s\n\n需要人工处理（无 auto-fix 标签）' "$PR_NUM" "$PR_TITLE")
+          PAYLOAD=$(jq -n --arg cid "${{ secrets.TELEGRAM_CHAT_ID }}" --arg text "$NOTIFY_TEXT" \
+            '{chat_id: $cid, text: $text, disable_notification: false}')
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_NOTIFY_TOKEN }}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-              \"text\": \"⚠️ PR #${PR_NUM} 审核未通过\\n${PR_TITLE}\\n\\n需要人工处理（无 auto-fix 标签）\",
-              \"disable_notification\": false
-            }"
+            -H "Content-Type: application/json" -d "$PAYLOAD"
 
           # 2) fufu bot: action buttons
+          BOT_TEXT=$(printf '📦 pushfile — PR #%s 审核未通过\n标题: %s\n轮次: %s\n链接: %s\n仓库: uf-hy/pushfile\n分支: %s\n\n提示: 添加 auto-fix label 可触发自动修复' "$PR_NUM" "$PR_TITLE" "$ROUND" "$PR_URL" "${{ github.event.pull_request.head.ref }}")
+          PAYLOAD=$(jq -n --arg cid "${{ secrets.TELEGRAM_CHAT_ID }}" --arg text "$BOT_TEXT" \
+            --arg pr_url "$PR_URL" \
+            '{chat_id: $cid, text: $text, reply_markup: {inline_keyboard: [[{text: "👀 查看 PR", url: $pr_url}]]}}')
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-              \"text\": \"📦 pushfile — PR #${PR_NUM} 审核未通过\\n标题: ${PR_TITLE}\\n轮次: ${ROUND}\\n链接: ${PR_URL}\\n仓库: uf-hy/pushfile\\n分支: ${{ github.event.pull_request.head.ref }}\\n\\n提示: 添加 auto-fix label 可触发自动修复\",
-              \"reply_markup\": {
-                \"inline_keyboard\": [[
-                  {\"text\": \"👀 查看 PR\", \"url\": \"${PR_URL}\"}
-                ]]
-              }
-            }"
+            -H "Content-Type: application/json" -d "$PAYLOAD"
 
       # === Auto-fix: only for AI agent PRs, max 3 rounds ===
 
