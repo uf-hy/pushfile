@@ -5,10 +5,10 @@
 - 处理需求时应先提炼真实意图，再执行，不要机械按字面理解。
 - 发现"能直接修"的问题要主动修复，不要等下一句催促。
 
-## 2) 开发流程（Staging → Production）
+## 2) 开发流程（Staging → Main）
 
 ### 架构说明
-- **Production 环境**：`/root/code/photo`（production 分支）→ photo.xaihub.de
+- **Production 环境**：`/root/code/photo`（main 分支）→ photo.xaihub.de
 - **Staging 环境**：`/root/code/photo-staging`（staging 分支）→ phototest.xaihub.de
 - 两个目录共享同一个 Git 仓库（使用 git worktree）
 
@@ -25,11 +25,11 @@
    git commit -m "feat: 我的新功能"
    git push origin staging
    ```
-4. 在 GitHub 创建 PR：staging → production
-5. 合并后自动触发部署（或手动执行 `deploy-prod`）
+4. 在 GitHub 创建 PR：staging → main
+5. 合并后手动执行 `deploy-prod`
 
 ### 部署命令
-- `deploy-prod` — 拉取 production 分支并重启生产服务
+- `deploy-prod` — 拉取 main 分支并重启生产服务
 - `deploy-staging` — 拉取 staging 分支（一般不需要，--reload 自动生效）
 - `rollback-prod [commit]` — 回滚生产到指定版本（不传则回退上一个）
 

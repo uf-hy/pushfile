@@ -7,7 +7,7 @@ name: PR Review
 on:
   pull_request:
     types: [opened, synchronize]
-    branches: [production]
+    branches: [main]
 
 permissions:
   pull-requests: write
