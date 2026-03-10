@@ -8,7 +8,7 @@ router = APIRouter()
 
 
 @router.get("/health")
-async def health():
+def health():
     checks = {"app": "ok"}
 
     # Check upload directory is writable
