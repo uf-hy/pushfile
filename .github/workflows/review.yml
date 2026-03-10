@@ -81,12 +81,10 @@ jobs:
           ISSUE_NUM="${{ steps.source.outputs.issue_num }}"
           gh issue view "$ISSUE_NUM" --json title,body --jq '"Issue #" + (.title) + "\n" + .body' > /tmp/issue_context.txt 2>/dev/null || echo "" > /tmp/issue_context.txt
 
-      - name: Install Codex CLI
-        run: npm install -g @openai/codex
-
       - name: Run AI Review
         env:
           CUSTOM_OPENAI_KEY: ${{ secrets.CODEX_API_KEY }}
+          API_BASE: ${{ secrets.CODEX_API_BASE }}
         run: |
           SOURCE="${{ steps.source.outputs.source }}"
           ROUND="${{ steps.rounds.outputs.count }}"
@@ -198,15 +196,38 @@ jobs:
             echo "$DIFF"
           } >> /tmp/review_prompt.txt
 
-          codex \
-            -c 'model_providers.custom_openai.name="Custom OpenAI"' \
-            -c "model_providers.custom_openai.base_url=\"${{ secrets.CODEX_API_BASE }}\"" \
-            -c 'model_providers.custom_openai.env_key="CUSTOM_OPENAI_KEY"' \
-            -c 'model_provider="custom_openai"' \
-            exec --full-auto -m gpt-5.2 \
-            "$(cat /tmp/review_prompt.txt)
+          echo "" >> /tmp/review_prompt.txt
+          echo "请用中文输出审核结果，格式清晰。" >> /tmp/review_prompt.txt
 
-          把审核结果写入 /tmp/review_result.md，格式清晰，用中文。"
+          # 构建 JSON 安全的 prompt 并调用 Chat Completions API
+          PROMPT_JSON=$(python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))" < /tmp/review_prompt.txt)
+
+          curl -s "${API_BASE}/v1/chat/completions" \
+            -H "Authorization: Bearer ${CUSTOM_OPENAI_KEY}" \
+            -H "Content-Type: application/json" \
+            --max-time 300 \
+            -d "{\"model\":\"gpt-5.2\",\"messages\":[{\"role\":\"user\",\"content\":${PROMPT_JSON}}]}" \
+            -o /tmp/api_response.json
+
+          python3 << 'PYEOF' > /tmp/review_result.md
+          import json
+          try:
+              with open('/tmp/api_response.json') as f:
+                  resp = json.load(f)
+              if 'choices' in resp:
+                  print(resp['choices'][0]['message']['content'])
+              elif 'error' in resp:
+                  print(f"API 错误: {resp['error']}")
+              else:
+                  print(json.dumps(resp, indent=2, ensure_ascii=False))
+          except Exception as e:
+              print(f'API 响应解析失败: {e}')
+              try:
+                  with open('/tmp/api_response.json') as f:
+                      print(f.read()[:3000])
+              except:
+                  pass
+          PYEOF
 
           cat /tmp/review_result.md 2>/dev/null || echo "审核执行完成但未生成报告" > /tmp/review_result.md
 
