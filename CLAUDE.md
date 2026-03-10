@@ -78,7 +78,7 @@
 - 恢复命令：
   ```bash
   cd /root/code/photo
-  git reset --hard v1.1.0-prod-stable
+  git reset --hard v1.5.0
   systemctl restart photo-prod
   ```
 - 查看所有备份 tag：`git tag -l "备份/*"`

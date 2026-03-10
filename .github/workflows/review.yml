@@ -81,9 +81,6 @@ jobs:
           ISSUE_NUM="${{ steps.source.outputs.issue_num }}"
           gh issue view "$ISSUE_NUM" --json title,body --jq '"Issue #" + (.title) + "\n" + .body' > /tmp/issue_context.txt 2>/dev/null || echo "" > /tmp/issue_context.txt
 
-      - name: Install Codex CLI
-        run: npm install -g @openai/codex@latest
-
       - name: Run AI Review
         env:
           CUSTOM_OPENAI_KEY: ${{ secrets.CODEX_API_KEY }}
@@ -202,10 +199,7 @@ jobs:
           echo "" >> /tmp/review_prompt.txt
           echo "请用中文输出审核结果，格式清晰。" >> /tmp/review_prompt.txt
 
-          # 直接调用 Responses API（替代 Codex CLI）
-          PROMPT_JSON=$(python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))" < /tmp/review_prompt.txt)
-
-          # 直接调用 Chat Completions API（替代 Codex CLI）
+          # 构建 JSON 安全的 prompt 并调用 Chat Completions API
           PROMPT_JSON=$(python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))" < /tmp/review_prompt.txt)
 
           curl -s "${API_BASE}/v1/chat/completions" \
@@ -226,32 +220,6 @@ jobs:
                   print(f"API 错误: {resp['error']}")
               else:
                   print(json.dumps(resp, indent=2, ensure_ascii=False))
-          except Exception as e:
-              print(f'API 响应解析失败: {e}')
-              try:
-                  with open('/tmp/api_response.json') as f:
-                      print(f.read()[:3000])
-              except:
-                  pass
-          PYEOF
-
-          python3 << 'PYEOF' > /tmp/review_result.md
-          import json
-          try:
-              with open('/tmp/api_response.json') as f:
-                  resp = json.load(f)
-              for item in resp.get('output', []):
-                  if item.get('type') == 'message':
-                      for c in item.get('content', []):
-                          if c.get('type') == 'output_text':
-                              print(c['text'])
-                              raise SystemExit
-              if 'choices' in resp:
-                  print(resp['choices'][0]['message']['content'])
-              else:
-                  print(json.dumps(resp, indent=2, ensure_ascii=False))
-          except SystemExit:
-              pass
           except Exception as e:
               print(f'API 响应解析失败: {e}')
               try:
