@@ -213,32 +213,30 @@ jobs:
             -o /tmp/api_response.json
 
           python3 << 'PYEOF' > /tmp/review_result.md
-import json
-try:
-    with open('/tmp/api_response.json') as f:
-        resp = json.load(f)
-    # OpenAI Responses API 格式
-    for item in resp.get('output', []):
-        if item.get('type') == 'message':
-            for c in item.get('content', []):
-                if c.get('type') == 'output_text':
-                    print(c['text'])
-                    raise SystemExit
-    # 兜底：chat completions 格式
-    if 'choices' in resp:
-        print(resp['choices'][0]['message']['content'])
-    else:
-        print(json.dumps(resp, indent=2, ensure_ascii=False))
-except SystemExit:
-    pass
-except Exception as e:
-    print(f'解析响应失败: {e}')
-    try:
-        with open('/tmp/api_response.json') as f:
-            print(f.read()[:3000])
-    except:
-        pass
-PYEOF
+          import json
+          try:
+              with open('/tmp/api_response.json') as f:
+                  resp = json.load(f)
+              for item in resp.get('output', []):
+                  if item.get('type') == 'message':
+                      for c in item.get('content', []):
+                          if c.get('type') == 'output_text':
+                              print(c['text'])
+                              raise SystemExit
+              if 'choices' in resp:
+                  print(resp['choices'][0]['message']['content'])
+              else:
+                  print(json.dumps(resp, indent=2, ensure_ascii=False))
+          except SystemExit:
+              pass
+          except Exception as e:
+              print(f'API 响应解析失败: {e}')
+              try:
+                  with open('/tmp/api_response.json') as f:
+                      print(f.read()[:3000])
+              except:
+                  pass
+          PYEOF
 
           cat /tmp/review_result.md 2>/dev/null || echo "审核执行完成但未生成报告" > /tmp/review_result.md
 
