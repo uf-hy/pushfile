@@ -82,7 +82,7 @@ jobs:
           gh issue view "$ISSUE_NUM" --json title,body --jq '"Issue #" + (.title) + "\n" + .body' > /tmp/issue_context.txt 2>/dev/null || echo "" > /tmp/issue_context.txt
 
       - name: Install Codex CLI
-        run: npm install -g @openai/codex
+        run: npm install -g @openai/codex@latest
 
       - name: Run AI Review
         env:
