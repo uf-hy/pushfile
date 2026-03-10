@@ -41,21 +41,30 @@ jobs:
             echo "desc=👤 人工提交的 PR" >> $GITHUB_OUTPUT
           fi
 
-      - name: Count review rounds
+      - name: Count review rounds & extract previous review
         id: rounds
         uses: actions/github-script@v7
         with:
           script: |
+            const fs = require('fs');
             const comments = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
             });
-            const rounds = comments.data.filter(c =>
+            const reviewComments = comments.data.filter(c =>
               c.body.includes('<!-- codex-review-round -->')
-            ).length;
-            core.setOutput('count', String(rounds));
-            console.log(`Review rounds so far: ${rounds}`);
+            );
+            core.setOutput('count', String(reviewComments.length));
+            console.log(`Review rounds so far: ${reviewComments.length}`);
+
+            if (reviewComments.length > 0) {
+              const lastReview = reviewComments[reviewComments.length - 1].body;
+              const trimmed = lastReview.slice(0, 5000);
+              fs.writeFileSync('/tmp/previous_review.txt', trimmed);
+            } else {
+              fs.writeFileSync('/tmp/previous_review.txt', '');
+            }
 
       - name: Get PR diff
         env:
@@ -97,93 +106,93 @@ jobs:
           if [ -f /tmp/issue_context.txt ]; then
             ISSUE_CTX=$(cat /tmp/issue_context.txt)
           fi
-
-          if [ "$SOURCE" = "manual" ]; then
-            cat > /tmp/review_prompt.txt <<'PROMPT_END'
-          你是代码审核专家。这是一个人工提交的 PR。
-
-          ## 审核原则
-
-          1. **范围锁定**：以原始 Issue 的需求为边界，只审核 PR 是否正确实现了 Issue 要求的功能。
-          2. **双维度评估**：同时考虑 Issue 优先级和改动区域风险：
-             - 改动涉及认证/权限/支付/数据迁移 → 无论 Issue 优先级，严格审核
-             - 改动涉及普通业务逻辑/UI/配置 → 按 Issue 优先级调整标准
-          3. **阻塞 vs 建议**：
-             - 「阻塞」= 功能缺失、实际安全漏洞、会崩溃/丢数据的 bug
-             - 「建议」= 代码风格、文件组织、可选优化、缺少测试
-
-          ## 审核要点
-
-          1. **功能正确性** — 是否实现了 Issue 描述的需求
-          2. **安全性** — 有无可被利用的漏洞（越权、注入、数据泄露等）
-          3. **稳定性** — 有无会导致崩溃、数据丢失、功能不可用的 bug
-          4. **回归风险** — 是否破坏了现有功能
-
-          ## 结论三选一
-
-          - ✅ 推荐合并 — 需求满足，无阻塞问题
-          - ⚠️ 需要修改 — 存在阻塞问题（每条必须说明触发条件和用户可见后果）
-          - ❌ 不建议合并 — 方向错误或引入严重问题
-
-          超出 Issue 范围的改进建议单独列在「建议（非阻塞）」区域，不影响合并结论。
-          PROMPT_END
-          else
-            cat > /tmp/review_prompt.txt <<PROMPT_END
-          你是代码审核专家。这是一个 AI Agent (${SOURCE}) 自动生成的 PR（第 $((ROUND+1)) 轮审核）。
-
-          ## 审核原则（必须严格遵守）
-
-          ### 范围锁定
-          只审核 PR 是否正确实现了原始 Issue 的需求。Issue 没要求的东西不算缺陷。
-
-          ### 双维度评估
-          同时考虑两个维度来决定审核严格度：
-          - **Issue 优先级**：高 → 严格 / 中低 → 功能正确+无漏洞即可
-          - **改动区域风险**：认证/权限/支付/数据迁移 → 无论优先级都严格审核
-
-          ### 硬门禁（任何轮次都不降级）
-          以下问题无论第几轮都必须标记为阻塞：
-          - 需求未实现或实现错误
-          - 可形成攻击路径的安全漏洞（即使有前置条件，只要影响是越权/数据泄露/RCE/注入，就算阻塞）
-          - 会导致崩溃、数据丢失、关键功能不可用的 bug
-          - 明确破坏现有功能的回归
-
-          ### 软门禁（随轮次递减）
-          以下问题在第 1 轮可以提出，第 2 轮后降为建议，第 3 轮后不再提及：
-          - 代码应该放在哪个文件/模块组织方式
-          - 缺少单元测试（除非 Issue 明确要求）
-          - 配置项的防御性校验
-          - 代码风格、命名偏好
-          - "更好的实现方式"
-
-          ### 轮次规则
-          - 第 1 轮：全量审核（硬门禁 + 软门禁）
-          - 第 2 轮起：只追踪未解决的硬门禁 + 本轮新引入的高风险问题，软门禁降为建议
-          - 第 3 轮起：只看硬门禁，不再新增软门禁建议
-          - 例外：如果本轮 diff 变化量 > 上一轮的 50%，或触及高风险目录，重置为第 1 轮标准
-
-          ## 阻塞项输出格式（每条必须包含）
-
-          给出 ⚠️ 时，每条阻塞问题必须按以下格式说明：
-          - **问题**：具体描述
-          - **触发条件**：在什么情况下会发生
-          - **用户可见后果**：用户/系统会遇到什么具体问题
-          - **影响范围**：影响多大（单用户/全部用户/数据层面）
-          - **置信度**：高/中/低
-
-          置信度为「低」的问题默认降为建议，除非属于 OWASP Top 10 或已知高危漏洞模式。
-
-          ## 结论三选一
-
-          - ✅ 推荐合并 — Issue 需求全部满足，无硬门禁问题
-          - ⚠️ 需要修改 — 存在硬门禁问题（必须按上述格式逐条列出）
-          - ❌ 不建议合并 — 方向完全错误或引入严重安全漏洞
-
-          超出 Issue 范围的改进建议单独列在「建议（非阻塞）」区域，不影响合并结论。
-          PROMPT_END
+          PREV_REVIEW=""
+          if [ -s /tmp/previous_review.txt ]; then
+            PREV_REVIEW=$(cat /tmp/previous_review.txt)
           fi
 
+          cat > /tmp/review_prompt.txt <<'PROMPT_END'
+          你是资深软件工程师，正在 CI 流水线中审核一个 Pull Request。
+
+          ## 你的能力
+
+          - 你可以读取仓库中的任何文件来理解完整上下文
+          - 如果 diff 中引用了你不熟悉的函数、类型或配置，主动打开相关源文件查看定义和调用链
+          - 追踪本次修改的影响范围：找到哪些地方调用了被修改的函数/接口，评估是否会受影响
+          - 每次审核最多打开 10 个相关文件，优先查看被 diff 直接引用的
+
+          ## 核心原则
+
+          1. **追踪影响范围**：不要只看 diff 表面。删除代码、修改函数签名、改变默认值都可能引入回归——主动检查调用方是否受影响。
+          2. **区分问题来源**：
+             - **本次引入**：由本 PR 的改动直接导致的问题，可以是任何优先级
+             - **既有问题**：旧代码中已存在的问题，不是本次改动引入的。既有问题不阻断合并，但如果是严重安全隐患需标注「⚠️ 建议尽快处理」
+             - **不确定来源**：无法判断时标注「来源：待确认」并降为 P2，同时说明需要查看哪些文件才能确认
+          3. **范围锁定**：以 PR 描述和关联 Issue 为边界审核功能实现。但安全问题和数据保护不受此限制——即使 Issue 没提到，发现了也必须报告。
+          4. **不要凑问题**：如果改动简单、风险低（纯文档/注释/配置微调/格式化），直接给 ✅ 即可，不需要为了"显得有用"而硬找问题。
+
+          ## 优先级定义
+
+          **P0（必须修复才能合并）** — 只有「本次引入」的问题才能标 P0
+          - 安全漏洞：注入、越权、数据泄露、RCE、密钥硬编码
+          - 会导致崩溃、数据丢失、核心功能不可用的 bug
+          - 需求未实现或实现错误
+          - 明确破坏现有功能的回归
+          - 在核心接口/常用路径上的严重性能问题或错误处理缺失
+
+          **P1（应该修复）**
+          - 非核心功能 bug、边界条件未处理
+          - 性能问题（非核心路径）、错误处理不当（不会崩溃但体验差）
+          - 资源泄漏、并发安全隐患
+
+          **P2（建议改进）**
+          - 代码可读性、命名、结构优化、代码风格
+          - 缺少测试（除非 Issue 明确要求）
+          - 可选的性能优化、防御性校验
+          - 所有「既有问题」和「来源待确认」的问题
+
+          ## 多轮审核规则
+
+          如果这不是第 1 轮审核，下方会附带上一轮的审核意见。此时：
+          - 优先检查上一轮提出的问题是否已解决
+          - 已解决的问题不再重复提出
+          - 不要提出上一轮没提过的新 P2 建议（除非本轮 diff 有大幅变化）
+          - 只有新引入的严重问题（P0/P1）才应该阻断合并
+
+          ## 输出格式
+
+          用中文、Markdown 格式输出，严格按以下结构。注意：除「结论」行外，正文中禁止出现 ✅ ⚠️ ❌ 这三个符号。
+
+          ### 总结
+          - 风险等级：`低` / `中` / `高`
+          - 2-3 句话概括最重要的发现
+
+          ### 问题列表
+
+          按优先级排序（P0 在前）。每条格式：
+
+          **[P0]** `文件路径:行号` — 问题标题
+          - **来源**：本次引入 / 既有问题 / 待确认
+          - **问题**：具体描述
+          - **影响**：触发条件和用户可见后果
+          - **建议**：具体的修复方向或代码示例
+
+          如无问题，写：`未发现问题。`
+
+          ### 结论
+
+          基于「本次引入」的 P0 数量决定（一行，只出现一次）：
+          - ✅ 推荐合并 — 无本次引入的 P0
+          - ⚠️ 需要修改 — 存在本次引入的 P0
+          - ❌ 不建议合并 — PR 方向完全错误，应关闭重做
+
+          <!-- REVIEW_RESULT conclusion:approve|changes_requested|reject -->
+          PROMPT_END
+
           {
+            echo ""
+            echo "---"
+            echo "审核轮次：第 $((ROUND+1)) 轮"
             echo ""
             echo "PR 标题：$PR_TITLE"
             echo ""
@@ -194,12 +203,16 @@ jobs:
               echo "$ISSUE_CTX"
               echo ""
             fi
+            if [ -n "$PREV_REVIEW" ]; then
+              echo "上一轮审核意见（请检查这些问题是否已解决）："
+              echo "$PREV_REVIEW"
+              echo ""
+            fi
             echo "代码变更（diff）："
             echo "$DIFF"
           } >> /tmp/review_prompt.txt
 
           echo "" >> /tmp/review_prompt.txt
-          echo "请用中文直接输出审核结果，格式清晰。" >> /tmp/review_prompt.txt
 
           codex \
             -c 'model_providers.custom_openai.name="Custom OpenAI"' \
@@ -231,8 +244,20 @@ jobs:
             const prNum = ${{ github.event.pull_request.number }};
             const prTitle = '${{ github.event.pull_request.title }}'.replace(/'/g, '');
 
-            const passed = review.includes('✅') && !review.includes('⚠️') && !review.includes('❌');
-            const needsFix = review.includes('需要修改') || review.includes('不建议合并') || review.includes('⚠️') || review.includes('❌');
+            // Parse conclusion: prefer machine-readable block, fallback to emoji
+            const machineMatch = review.match(/<!-- REVIEW_RESULT conclusion:(approve|changes_requested|reject) -->/);
+            let passed = false;
+            let needsFix = false;
+            if (machineMatch) {
+              passed = machineMatch[1] === 'approve';
+              needsFix = machineMatch[1] === 'changes_requested' || machineMatch[1] === 'reject';
+            } else {
+              // fallback: scan conclusion section only (after last "### 结论")
+              const conclusionIdx = review.lastIndexOf('### 结论');
+              const conclusionText = conclusionIdx >= 0 ? review.slice(conclusionIdx) : review.slice(-200);
+              passed = conclusionText.includes('✅') && !conclusionText.includes('⚠️') && !conclusionText.includes('❌');
+              needsFix = conclusionText.includes('⚠️') || conclusionText.includes('❌');
+            }
 
             const labels = context.payload.pull_request.labels.map(l => l.name);
             const hasAutoFixLabel = labels.includes('auto-fix');
@@ -346,6 +371,36 @@ jobs:
                     {\"text\": \"👀 查看\", \"url\": \"${PR_URL}\"}
                   ]
                 ]
+              }
+            }"
+
+      - name: Notify — needs review (no auto-fix)
+        if: steps.comment.outputs.notify_type == 'no_label'
+        run: |
+          PR_NUM="${{ steps.comment.outputs.pr_num }}"
+          PR_TITLE="${{ steps.comment.outputs.pr_title }}"
+          PR_URL="https://github.com/uf-hy/pushfile/pull/${PR_NUM}"
+          ROUND="${{ steps.comment.outputs.round }}"
+
+          # 1) Notification bot: text message
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_NOTIFY_TOKEN }}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
+              \"text\": \"⚠️ PR #${PR_NUM} 审核未通过\\n${PR_TITLE}\\n\\n需要人工处理（无 auto-fix 标签）\",
+              \"disable_notification\": false
+            }"
+
+          # 2) fufu bot: action buttons
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
+              \"text\": \"📦 pushfile — PR #${PR_NUM} 审核未通过\\n标题: ${PR_TITLE}\\n轮次: ${ROUND}\\n链接: ${PR_URL}\\n仓库: uf-hy/pushfile\\n分支: ${{ github.event.pull_request.head.ref }}\\n\\n提示: 添加 auto-fix label 可触发自动修复\",
+              \"reply_markup\": {
+                \"inline_keyboard\": [[
+                  {\"text\": \"👀 查看 PR\", \"url\": \"${PR_URL}\"}
+                ]]
               }
             }"
 
