@@ -87,6 +87,7 @@ jobs:
       - name: Run AI Review
         env:
           CUSTOM_OPENAI_KEY: ${{ secrets.CODEX_API_KEY }}
+          API_BASE: ${{ secrets.CODEX_API_BASE }}
         run: |
           SOURCE="${{ steps.source.outputs.source }}"
           ROUND="${{ steps.rounds.outputs.count }}"
@@ -198,15 +199,46 @@ jobs:
             echo "$DIFF"
           } >> /tmp/review_prompt.txt
 
-          codex \
-            -c 'model_providers.custom_openai.name="Custom OpenAI"' \
-            -c "model_providers.custom_openai.base_url=\"${{ secrets.CODEX_API_BASE }}\"" \
-            -c 'model_providers.custom_openai.env_key="CUSTOM_OPENAI_KEY"' \
-            -c 'model_provider="custom_openai"' \
-            exec --full-auto -m gpt-5.2 \
-            "$(cat /tmp/review_prompt.txt)
+          echo "" >> /tmp/review_prompt.txt
+          echo "请用中文输出审核结果，格式清晰。" >> /tmp/review_prompt.txt
 
-          把审核结果写入 /tmp/review_result.md，格式清晰，用中文。"
+          # 直接调用 Responses API（替代 Codex CLI）
+          PROMPT_JSON=$(python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))" < /tmp/review_prompt.txt)
+
+          curl -sf "${API_BASE}/v1/responses" \
+            -H "Authorization: Bearer ${CUSTOM_OPENAI_KEY}" \
+            -H "Content-Type: application/json" \
+            --max-time 120 \
+            -d "{\"model\":\"gpt-5.2\",\"input\":${PROMPT_JSON}}" \
+            -o /tmp/api_response.json
+
+          python3 << 'PYEOF' > /tmp/review_result.md
+import json
+try:
+    with open('/tmp/api_response.json') as f:
+        resp = json.load(f)
+    # OpenAI Responses API 格式
+    for item in resp.get('output', []):
+        if item.get('type') == 'message':
+            for c in item.get('content', []):
+                if c.get('type') == 'output_text':
+                    print(c['text'])
+                    raise SystemExit
+    # 兜底：chat completions 格式
+    if 'choices' in resp:
+        print(resp['choices'][0]['message']['content'])
+    else:
+        print(json.dumps(resp, indent=2, ensure_ascii=False))
+except SystemExit:
+    pass
+except Exception as e:
+    print(f'解析响应失败: {e}')
+    try:
+        with open('/tmp/api_response.json') as f:
+            print(f.read()[:3000])
+    except:
+        pass
+PYEOF
 
           cat /tmp/review_result.md 2>/dev/null || echo "审核执行完成但未生成报告" > /tmp/review_result.md
 
