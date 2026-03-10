@@ -211,7 +211,7 @@ jobs:
           curl -s "${API_BASE}/v1/chat/completions" \
             -H "Authorization: Bearer ${CUSTOM_OPENAI_KEY}" \
             -H "Content-Type: application/json" \
-            --max-time 120 \
+            --max-time 300 \
             -d "{\"model\":\"gpt-5.2\",\"messages\":[{\"role\":\"user\",\"content\":${PROMPT_JSON}}]}" \
             -o /tmp/api_response.json
 
