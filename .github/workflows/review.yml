@@ -205,30 +205,35 @@ jobs:
           # 直接调用 Responses API（替代 Codex CLI）
           PROMPT_JSON=$(python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))" < /tmp/review_prompt.txt)
 
-          # 尝试 /v1/responses，失败则尝试 /responses（兼容不同 base_url 格式）
-          HTTP_CODE=$(curl -s -w '%{http_code}' "${API_BASE}/v1/responses" \
+          # 直接调用 Chat Completions API（替代 Codex CLI）
+          PROMPT_JSON=$(python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))" < /tmp/review_prompt.txt)
+
+          curl -s "${API_BASE}/v1/chat/completions" \
             -H "Authorization: Bearer ${CUSTOM_OPENAI_KEY}" \
             -H "Content-Type: application/json" \
             --max-time 120 \
-            -d "{\"model\":\"gpt-5.2\",\"input\":${PROMPT_JSON}}" \
-            -o /tmp/api_response.json)
+            -d "{\"model\":\"gpt-5.2\",\"messages\":[{\"role\":\"user\",\"content\":${PROMPT_JSON}}]}" \
+            -o /tmp/api_response.json
 
-          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
-            echo "⚠️ ${API_BASE}/v1/responses 返回 HTTP ${HTTP_CODE}，尝试备用路径..."
-            cat /tmp/api_response.json 2>/dev/null || true
-            HTTP_CODE=$(curl -s -w '%{http_code}' "${API_BASE}/responses" \
-              -H "Authorization: Bearer ${CUSTOM_OPENAI_KEY}" \
-              -H "Content-Type: application/json" \
-              --max-time 120 \
-              -d "{\"model\":\"gpt-5.2\",\"input\":${PROMPT_JSON}}" \
-              -o /tmp/api_response.json)
-          fi
-
-          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
-            echo "❌ API 调用失败 (HTTP ${HTTP_CODE}):"
-            cat /tmp/api_response.json 2>/dev/null || true
-            exit 1
-          fi
+          python3 << 'PYEOF' > /tmp/review_result.md
+          import json
+          try:
+              with open('/tmp/api_response.json') as f:
+                  resp = json.load(f)
+              if 'choices' in resp:
+                  print(resp['choices'][0]['message']['content'])
+              elif 'error' in resp:
+                  print(f"API 错误: {resp['error']}")
+              else:
+                  print(json.dumps(resp, indent=2, ensure_ascii=False))
+          except Exception as e:
+              print(f'API 响应解析失败: {e}')
+              try:
+                  with open('/tmp/api_response.json') as f:
+                      print(f.read()[:3000])
+              except:
+                  pass
+          PYEOF
 
           python3 << 'PYEOF' > /tmp/review_result.md
           import json
