@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 import os
@@ -342,7 +343,7 @@ async def api_upload(
                     status_code=413, detail=f"file too large (max {MAX_MB}MB)"
                 )
             w.write(chunk)
-    append_in_order(token, out.name)
+    await asyncio.to_thread(append_in_order, token, out.name)
     _generate_variants_async([out])
     return JSONResponse(
         {"ok": True, "token": token, "file": out.name, "album": f"/d/{token}"}

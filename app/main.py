@@ -2,8 +2,11 @@ import mimetypes
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import PlainTextResponse
+from app.logging_config import setup_logging, access_log_middleware
 from app.routes import tokens, manage, upload, pages, folders, stats, health, files, api
 from app.config import BASE_PATH, FRONTEND_DIR
+
+setup_logging()
 
 
 class StripBasePathMiddleware:
@@ -43,6 +46,9 @@ async def referrer_policy_middleware(request, call_next):
     response = await call_next(request)
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
+
+
+app.middleware("http")(access_log_middleware)
 
 
 @app.get("/robots.txt", include_in_schema=False)
