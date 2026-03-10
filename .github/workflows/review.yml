@@ -205,12 +205,30 @@ jobs:
           # 直接调用 Responses API（替代 Codex CLI）
           PROMPT_JSON=$(python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))" < /tmp/review_prompt.txt)
 
-          curl -sf "${API_BASE}/v1/responses" \
+          # 尝试 /v1/responses，失败则尝试 /responses（兼容不同 base_url 格式）
+          HTTP_CODE=$(curl -s -w '%{http_code}' "${API_BASE}/v1/responses" \
             -H "Authorization: Bearer ${CUSTOM_OPENAI_KEY}" \
             -H "Content-Type: application/json" \
             --max-time 120 \
             -d "{\"model\":\"gpt-5.2\",\"input\":${PROMPT_JSON}}" \
-            -o /tmp/api_response.json
+            -o /tmp/api_response.json)
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "⚠️ ${API_BASE}/v1/responses 返回 HTTP ${HTTP_CODE}，尝试备用路径..."
+            cat /tmp/api_response.json 2>/dev/null || true
+            HTTP_CODE=$(curl -s -w '%{http_code}' "${API_BASE}/responses" \
+              -H "Authorization: Bearer ${CUSTOM_OPENAI_KEY}" \
+              -H "Content-Type: application/json" \
+              --max-time 120 \
+              -d "{\"model\":\"gpt-5.2\",\"input\":${PROMPT_JSON}}" \
+              -o /tmp/api_response.json)
+          fi
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "❌ API 调用失败 (HTTP ${HTTP_CODE}):"
+            cat /tmp/api_response.json 2>/dev/null || true
+            exit 1
+          fi
 
           python3 << 'PYEOF' > /tmp/review_result.md
           import json
