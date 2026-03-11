@@ -8,6 +8,7 @@
   <div class="nav">
     <span class="badge badge-left" id="versionBadge" title="当前版本">v--</span>
     <h1>PushFile Admin</h1>
+    <button class="nav-btn nav-btn-secondary" id="gridBtn" type="button" onclick="toggleGridTool()" style="display:none">🔲 九宫格</button>
     <button class="nav-btn" id="analyticsBtn" type="button" onclick="toggleAnalytics()" style="display:none">📊 统计</button>
     <span class="badge" id="connBadge">未连接</span>
   </div>
@@ -59,6 +60,96 @@
   <!-- Main (hidden until connected) -->
   <div id="mainSection" style="display:none">
     <div id="analyticsPanel" style="display:none"></div>
+    <div id="gridPanel" style="display:none">
+      <div class="group">
+        <div class="group-label">九宫格工具</div>
+        <div class="group-box">
+          <div class="row row-stack grid-main-row">
+            <div class="grid-header">
+              <div class="grid-title">朋友圈九宫格</div>
+              <div class="grid-sub">上传一张图片，一键生成 3×3 细白线九宫格</div>
+            </div>
+            <div class="grid-upload">
+              <div class="upload-zone" id="gridUploadZone" onclick="gridChooseFile()">
+                <div class="icon">🔲</div>
+                <p>点击选择图片，或拖拽到此</p>
+                <small>推荐正方形高清图 · 支持 JPG/PNG</small>
+              </div>
+              <input id="gridFileInput" type="file" accept="image/*" style="display:none" onchange="handleGridFileChange(this.files)">
+              <div class="grid-file-meta" id="gridFileMeta"></div>
+            </div>
+          </div>
+          <div class="row">
+            <span class="row-label">线宽</span>
+            <div class="chips" id="gridWidthChips">
+              <button type="button" class="chip" data-width="2">细 (2px)</button>
+              <button type="button" class="chip active" data-width="4">中 (4px)</button>
+              <button type="button" class="chip" data-width="6">粗 (6px)</button>
+              <button type="button" class="chip" data-width="8">特粗 (8px)</button>
+            </div>
+          </div>
+          <div class="row row-stack">
+            <div class="grid-gap-row">
+              <span class="row-label" style="width:auto">间距</span>
+              <div class="chips" id="gridGapChips">
+                <button type="button" class="chip active" data-gap="0">无间距</button>
+                <button type="button" class="chip" data-gap="8">小</button>
+                <button type="button" class="chip" data-gap="16">大</button>
+              </div>
+            </div>
+            <div class="grid-tip">模拟朋友圈常见的细白线九宫格风格，可选择是否留出间距。</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-label">预览 &amp; 导出</div>
+        <div class="group-box">
+          <div class="row row-stack grid-preview-row">
+            <div class="grid-preview" id="gridPreview">
+              <div class="empty">
+                <div class="icon">🖼️</div>
+                <p>先选择一张图片，再点击「生成预览」</p>
+              </div>
+            </div>
+            <div class="grid-tip" id="gridPreviewHint">预览展示完整 3×3 九宫格效果，不会改变原图。</div>
+          </div>
+          <div class="row row-stack">
+            <div class="btn-row">
+              <button class="btn btn-gray" type="button" onclick="generateGridPreview()">生成预览</button>
+              <button class="btn btn-gray" type="button" id="gridPreviewDownloadBtn" onclick="downloadGridPreview()" disabled>下载预览图</button>
+            </div>
+          </div>
+          <div class="row row-stack">
+            <div class="btn-row">
+              <button class="btn btn-gray" type="button" id="gridZipDownloadBtn" data-label="下载 9 张图片（ZIP）" onclick="downloadGridZip()" disabled>下载 9 张图片（ZIP）</button>
+              <button class="btn btn-blue" type="button" id="gridSaveBtn" data-label="保存到相册" onclick="saveGridToAlbum()" disabled>保存到相册</button>
+            </div>
+            <div class="grid-tip">保存会在相册里生成 9 张单独图片，方便再次管理与排序。</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-label">保存设置</div>
+        <div class="group-box">
+          <div class="row row-tap" onclick="showGridDestPicker()">
+            <span class="row-label">位置</span>
+            <span class="row-value" id="gridDestDisplay">九宫格</span>
+            <span class="row-chevron">›</span>
+          </div>
+          <input id="gridDestInput" type="hidden" value="九宫格">
+          <div class="row">
+            <span class="row-label">文件夹</span>
+            <input id="gridFolderInput" type="text" placeholder="默认使用原图名">
+          </div>
+          <div class="row">
+            <span class="row-label">实��路径</span>
+            <span class="row-value" id="gridSavePreviewPath">九宫格/原图名/</span>
+          </div>
+        </div>
+      </div>
+    </div>
     <div id="adminPanel">
     <div class="group">
       <div class="group-label">导入 ZIP</div>
@@ -96,6 +187,8 @@
   </div>
 </div>
 
+<div class="grid-overlay" id="gridOverlay" onclick="toggleGridTool()"></div>
+
 <!-- Action sheet for photo -->
 <div class="sheet-bg" id="sheetBg" onclick="closeSheet()">
   <div class="sheet" onclick="event.stopPropagation()">
@@ -114,6 +207,7 @@
   <span class="batch-count" id="batchCount">0 已选</span>
   <button class="btn btn-sm btn-gray" type="button" onclick="selectAll()">全选</button>
   <button class="btn btn-sm btn-gray" type="button" onclick="sel.clear();renderPhotos()">取消</button>
+  <button class="btn btn-sm btn-gray" type="button" onclick="batchMove()">移动</button>
   <button class="btn btn-sm btn-red" type="button" onclick="batchDelete()">删除</button>
   <button class="btn btn-sm btn-gray" type="button" onclick="saveOrder()">保存排序</button>
 </div>

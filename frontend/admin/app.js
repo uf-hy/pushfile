@@ -1,6 +1,6 @@
 let S='',T='',files=[],sel=new Set(),dragN='',sheetTarget='',treeData=[],curPath='',expanded={},statsData={},slugMap={};
 let importDraft={type:'',zipFile:null,folderEntries:[],sourceName:'',preferredDest:''};
-let showAnalytics=false,analyticsData=null;
+let showAnalytics=false,analyticsData=null,showGridTool=false,gridState={file:null,fileName:'',previewBlob:null,previewUrl:''};
 const $=id=>document.getElementById(id);
 const DOMAIN=window.__DOMAIN__||'photo.xaihub.de';
 const BASE=window.__BASE__||'';
@@ -49,8 +49,9 @@ async function connect(key,opts){
     $('connBadge').textContent='✅ 已连接';$('connBadge').style.color='var(--green)';
     $('loginSection').style.display='none';$('mainSection').style.display='';
     const ab=$('analyticsBtn');if(ab){ab.style.display='';ab.textContent='📊 统计'}
+    const gb=$('gridBtn');if(gb){gb.style.display='';gb.textContent='🔲 九宫格'}
     await loadTree();toast('连接成功');
-  }catch(e){const ab=$('analyticsBtn');if(ab)ab.style.display='none';closeAnalytics(true);toast('密码错误');S=''}
+  }catch(e){const ab=$('analyticsBtn');if(ab)ab.style.display='none';const gb=$('gridBtn');if(gb)gb.style.display='none';closeAnalytics(true);closeGridTool(true);toast('密码错误');S=''}
 }
 
 async function loadTree(){
@@ -69,13 +70,14 @@ function closeAnalytics(silent){
   showAnalytics=false;
   analyticsData=null;
   const panel=$('analyticsPanel');if(panel)panel.style.display='none';
-  const admin=$('adminPanel');if(admin)admin.style.display='';
+   const admin=$('adminPanel');if(admin&&!showGridTool)admin.style.display='';
   const btn=$('analyticsBtn');if(btn&&btn.style.display!=='none')btn.textContent='📊 统计';
   if(!silent)toast('已返回管理');
 }
 
 async function openAnalytics(){
   if(!S)return toast('请先连接');
+  if(showGridTool)closeGridTool(true);
   showAnalytics=true;
   const panel=$('analyticsPanel');
   const admin=$('adminPanel');
@@ -105,8 +107,323 @@ function renderAnalytics(d){
     '<div class="ana-card"><div class="ana-num">'+total+'</div><div class="ana-lbl">总访问</div></div>'+
     '<div class="ana-card"><div class="ana-num">'+uniq+'</div><div class="ana-lbl">独立 IP</div></div>'+
     '<div class="ana-card"><div class="ana-num">'+Object.keys(d.by_token||{}).length+'</div><div class="ana-lbl">相册数</div></div>'+
-    '</div></div>'+
-    '<div class="group"><div class="group-label">城市分布（TOP 8）</div><div class="group-box">'+rows+'</div></div>';
+     '</div></div>'+
+     '<div class="group"><div class="group-label">城市分布（TOP 8）</div><div class="group-box">'+rows+'</div></div>';
+}
+
+function isMobileScreen(){
+  return window.matchMedia?window.matchMedia('(max-width: 600px)').matches:(window.innerWidth<=600);
+}
+
+function toggleGridTool(){
+  if(showGridTool)closeGridTool();else openGridTool();
+}
+
+function openGridTool(){
+  if(!S)return toast('请先连接');
+  if(showAnalytics)closeAnalytics(true);
+  showGridTool=true;
+  const panel=$('gridPanel');
+  const admin=$('adminPanel');
+  const overlay=$('gridOverlay');
+  if(!panel)return;
+  panel.style.display='';
+  const mobile=isMobileScreen();
+  if(mobile){
+    panel.classList.add('grid-sheet');
+    if(overlay)overlay.classList.add('show');
+  }else{
+    panel.classList.remove('grid-sheet');
+    if(overlay)overlay.classList.remove('show');
+  }
+  if(admin)admin.style.display='none';
+  const gb=$('gridBtn');if(gb&&gb.style.display!=='none')gb.textContent='⬅ 返回';
+  const ab=$('analyticsBtn');if(ab&&ab.style.display!=='none')ab.textContent='📊 统计';
+  updateGridSavePreviewPath();
+}
+
+function closeGridTool(silent){
+  showGridTool=false;
+  const panel=$('gridPanel');
+  const admin=$('adminPanel');
+  const overlay=$('gridOverlay');
+  if(panel){
+    panel.style.display='none';
+    panel.classList.remove('grid-sheet');
+  }
+  if(overlay)overlay.classList.remove('show');
+  if(admin&&!showAnalytics)admin.style.display='';
+  const gb=$('gridBtn');if(gb&&gb.style.display!=='none')gb.textContent='🔲 九宫格';
+  if(!silent)toast('已返回管理');
+}
+
+function gridChooseFile(){
+  const input=$('gridFileInput');
+  if(input)input.click();
+}
+
+function handleGridFileChange(fileList){
+  if(!fileList||!fileList.length)return;
+  const f=fileList[0];
+  if(!f||!(f.type||'').startsWith('image/')){toast('请选择图片文件');return;}
+  gridState.fileName=f.name||'grid';
+  gridState.previewBlob=null;
+  if(gridState.previewUrl){try{URL.revokeObjectURL(gridState.previewUrl)}catch(_){ }gridState.previewUrl='';}
+  const meta=$('gridFileMeta');
+  if(meta)meta.textContent='已选择：'+gridState.fileName+'（读取中…）';
+  const destInput=$('gridDestInput');
+  if(destInput&&!destInput.value.trim())destInput.value='九宫格';
+  const folderInput=$('gridFolderInput');
+  if(folderInput)folderInput.value=sourceBaseName(gridState.fileName);
+  updateGridSavePreviewPath();
+  compressGridImage(f,(compressedFile,wasCompressed)=>{
+    gridState.file=compressedFile;
+    const meta=$('gridFileMeta');
+    if(meta){
+      let info='已选择：'+gridState.fileName;
+      if(wasCompressed)info+='（已优化）';
+      meta.textContent=info;
+    }
+    const prev=$('gridPreview');
+    if(prev){
+      prev.innerHTML='<div class="empty"><div class="icon">🖼️</div><p>已选择：'+esc(gridState.fileName)+'<br>点击「生成预览」查看效果</p></div>';
+    }
+    const prevBtn=$('gridPreviewDownloadBtn');if(prevBtn)prevBtn.disabled=true;
+    const zipBtn=$('gridZipDownloadBtn');if(zipBtn)zipBtn.disabled=true;
+    const saveBtn=$('gridSaveBtn');if(saveBtn)saveBtn.disabled=false;
+  });
+}
+
+function compressGridImage(file,callback){
+  const MAX_DIM=2048;
+  const img=new Image();
+  img.onload=()=>{
+    let w=img.width,h=img.height;
+    if(w<=MAX_DIM&&h<=MAX_DIM){callback(file,false);return;}
+    if(w>h){h=Math.round(h*MAX_DIM/w);w=MAX_DIM;}
+    else{w=Math.round(w*MAX_DIM/h);h=MAX_DIM;}
+    const canvas=document.createElement('canvas');
+    canvas.width=w;canvas.height=h;
+    const ctx=canvas.getContext('2d');
+    ctx.drawImage(img,0,0,w,h);
+    canvas.toBlob(blob=>{
+      if(!blob){callback(file,false);return;}
+      const compressed=new File([blob],file.name,{type:'image/jpeg'});
+      callback(compressed,true);
+    },'image/jpeg',0.9);
+  };
+  img.onerror=()=>callback(file,false);
+  img.src=URL.createObjectURL(file);
+}
+
+function getGridSettings(){
+  const widthWrap=$('gridWidthChips');
+  let lineWidth=4;
+  if(widthWrap){
+    const active=widthWrap.querySelector('.chip.active');
+    if(active&&active.dataset&&active.dataset.width!=null){lineWidth=Number(active.dataset.width)||4;}
+  }
+  const chipsWrap=$('gridGapChips');
+  let gap=0;
+  if(chipsWrap){
+    const active=chipsWrap.querySelector('.chip.active');
+    if(active&&active.dataset&&active.dataset.gap!=null){gap=Number(active.dataset.gap)||0;}
+  }
+  return {lineWidth,gap};
+}
+
+function updateGridSavePreviewPath(){
+  const destInput=$('gridDestInput');
+  const folderInput=$('gridFolderInput');
+  let dest=(destInput?destInput.value:'').trim()||'九宫格';
+  let baseName=gridState.fileName?sourceBaseName(gridState.fileName):'原图名';
+  let folder=(folderInput?folderInput.value:'').trim()||baseName;
+  const span=$('gridSavePreviewPath');
+  if(span)span.textContent=(dest?dest+'/':'')+folder+'/';
+}
+
+async function generateGridPreview(){
+  if(!S)return toast('请先连接');
+  if(!gridState.file)return toast('请先选择图片');
+  const {lineWidth,gap}=getGridSettings();
+  const prev=$('gridPreview');
+  if(prev)prev.innerHTML='<div class="empty"><p>生成预览中，请稍候…</p></div>';
+  const prevBtn=$('gridPreviewDownloadBtn');
+  const zipBtn=$('gridZipDownloadBtn');
+  if(prevBtn)prevBtn.disabled=true;
+  if(zipBtn)zipBtn.disabled=true;
+  try{
+    const fd=new FormData();
+    fd.append('file',gridState.file);
+    fd.append('line_width',String(lineWidth));
+    fd.append('gap',String(gap));
+    const r=await fetch(BASE+'/api/grid/preview',{method:'POST',headers:{'X-Upload-Key':S},body:fd});
+    if(!r.ok){
+      let msg='预览失败';
+      try{const j=await r.json();if(j&&j.detail)msg='预览失败：'+j.detail;}catch(_){ }
+      throw new Error(msg);
+    }
+    const blob=await r.blob();
+    const url=URL.createObjectURL(blob);
+    gridState.previewBlob=blob;
+    if(gridState.previewUrl){try{URL.revokeObjectURL(gridState.previewUrl)}catch(_){ }}
+    gridState.previewUrl=url;
+    if(prev){
+      prev.innerHTML='<div class="grid-preview-inner"><img src="'+url+'" alt="九宫格预览"></div>';
+    }
+    if(prevBtn)prevBtn.disabled=false;
+    if(zipBtn)zipBtn.disabled=false;
+  }catch(e){
+    toast(e.message||'预览失败');
+    if(prev){prev.innerHTML='<div class="empty"><p style="color:var(--danger)">预览失败：'+esc(e.message||'')+'</p></div>';}
+  }
+}
+
+function downloadGridPreview(){
+  if(!gridState.previewBlob||!gridState.previewUrl)return toast('请先生成预览');
+  const a=document.createElement('a');
+  a.href=gridState.previewUrl;
+  const base=sourceBaseName(gridState.fileName||'grid');
+  a.download=base+'-grid-preview.jpg';
+  document.body.appendChild(a);a.click();a.remove();
+}
+
+async function downloadGridZip(){
+  if(!S)return toast('请先连接');
+  if(!gridState.file)return toast('请先选择图片');
+  const {lineWidth,gap}=getGridSettings();
+  const btn=$('gridZipDownloadBtn');
+  if(btn){btn.disabled=true;btn.dataset.label=btn.dataset.label||btn.textContent;btn.textContent='生成中…';}
+  try{
+    const fd=new FormData();
+    fd.append('file',gridState.file);
+    fd.append('line_width',String(lineWidth));
+    fd.append('gap',String(gap));
+    const r=await fetch(BASE+'/api/grid/split',{method:'POST',headers:{'X-Upload-Key':S},body:fd});
+    if(!r.ok){
+      let msg='下载失败';
+      try{const j=await r.json();if(j&&j.detail)msg='下载失败：'+j.detail;}catch(_){ }
+      throw new Error(msg);
+    }
+    const blob=await r.blob();
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    const base=sourceBaseName(gridState.fileName||'grid');
+    a.download=base+'-grid.zip';
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>{try{URL.revokeObjectURL(url)}catch(_){ }},2000);
+  }catch(e){
+    toast(e.message||'下载失败');
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent=btn.dataset.label||'下载 9 张图片（ZIP）';}
+  }
+}
+
+async function saveGridToAlbum(){
+  if(!S)return toast('请先连接');
+  if(!gridState.file)return toast('请先选择图片');
+  const {lineWidth,gap}=getGridSettings();
+  const destInput=$('gridDestInput');
+  const folderInput=$('gridFolderInput');
+  let dest=(destInput?destInput.value:'').trim()||'九宫格';
+  let baseName=sourceBaseName(gridState.fileName||'grid');
+  let folder=(folderInput?folderInput.value:'').trim()||baseName;
+  const btn=$('gridSaveBtn');
+  if(btn){btn.disabled=true;btn.dataset.label=btn.dataset.label||btn.textContent;btn.textContent='保存中…';}
+  try{
+    const fd=new FormData();
+    fd.append('file',gridState.file);
+    fd.append('destination',dest);
+    fd.append('folder_name',folder);
+    fd.append('line_width',String(lineWidth));
+    fd.append('gap',String(gap));
+    const r=await fetch(BASE+'/api/grid/save',{method:'POST',headers:{'X-Upload-Key':S},body:fd});
+    let j=null;try{j=await r.json();}catch(_){ }
+    if(!r.ok){
+      const msg=j&&j.detail?j.detail:'保存失败';
+      throw new Error(msg);
+    }
+    toast('已保存到：'+(dest?dest+'/':'')+folder+'/');
+    await loadTree();
+  }catch(e){
+    toast('保存失败：'+(e.message||''));
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent=btn.dataset.label||'保存到相册';}
+  }
+}
+
+function initGridTool(){
+  const zone=$('gridUploadZone');
+  if(zone){
+    zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('dragover')});
+    zone.addEventListener('dragleave',()=>zone.classList.remove('dragover'));
+    zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('dragover');const files=e.dataTransfer&&e.dataTransfer.files;if(files&&files.length)handleGridFileChange(files);});
+  }
+  const initChips=(wrapId)=>{
+    const wrap=$(wrapId);
+    if(wrap){
+      wrap.addEventListener('click',e=>{
+        const chip=e.target.closest('.chip');
+        if(!chip)return;
+        Array.from(wrap.querySelectorAll('.chip')).forEach(c=>{c.classList.remove('active');});
+        chip.classList.add('active');
+      });
+    }
+  };
+  initChips('gridGapChips');
+  initChips('gridWidthChips');
+  const destInput=$('gridDestInput');
+  if(destInput)destInput.addEventListener('input',updateGridSavePreviewPath);
+  const folderInput=$('gridFolderInput');
+  if(folderInput)folderInput.addEventListener('input',updateGridSavePreviewPath);
+  updateGridSavePreviewPath();
+}
+
+function showGridDestPicker(){
+  let overlay=document.createElement('div');
+  overlay.className='picker-overlay';
+  let box=document.createElement('div');box.className='picker-box';
+  box.innerHTML='<div class="picker-title">选择保存位置</div>'+
+    '<div class="picker-input"><input type="text" id="gridPickerInput" placeholder="输入新文件夹路径（如 九宫格/朋友圈）" value="九宫格"><button class="btn btn-blue btn-sm" id="gridPickerConfirm">确定</button></div>'+
+    '<div class="picker-tree" id="gridPickerTree"></div>';
+  let cancelBtn=document.createElement('button');
+  cancelBtn.className='btn btn-sm';cancelBtn.style.cssText='margin-top:12px;width:100%';cancelBtn.textContent='取消';
+  cancelBtn.addEventListener('click',()=>overlay.remove());
+  box.appendChild(cancelBtn);
+  overlay.appendChild(box);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove()});
+  document.body.appendChild(overlay);
+  box.querySelector('#gridPickerConfirm').addEventListener('click',()=>{
+    const val=$('gridPickerInput').value.trim()||'九宫格';
+    const destInput=$('gridDestInput');
+    const destDisplay=$('gridDestDisplay');
+    if(destInput)destInput.value=val;
+    if(destDisplay)destDisplay.textContent=val;
+    updateGridSavePreviewPath();
+    overlay.remove();
+  });
+  renderGridPickerTree();
+}
+
+function renderGridPickerTree(){
+  const box=$('gridPickerTree');if(!box)return;
+  box.innerHTML='';
+  function walk(nodes,depth){
+    for(const n of nodes){
+      const item=document.createElement('div');
+      item.className='picker-item';
+      item.style.paddingLeft=depth*16+'px';
+      item.textContent=(n.is_album?'🖼️ ':'📁 ')+n.name;
+      if(n.image_count>0){const cnt=document.createElement('span');cnt.className='tree-count';cnt.textContent=n.image_count;item.appendChild(cnt)}
+      item.dataset.path=n.path;
+      item.addEventListener('click',()=>{const input=$('gridPickerInput');if(input)input.value=n.path});
+      box.appendChild(item);
+      if(n.children)walk(n.children,depth+1);
+    }
+  }
+  walk(treeData,0);
+  if(!box.children.length)box.innerHTML='<div style="padding:12px;color:var(--sub)">还没有文件夹，将使用默认位置</div>';
 }
 
 function collectFolderPaths(nodes,prefix=''){
@@ -809,6 +1126,7 @@ async function createToken(){
     $('newTokenInput').value='';
     if($('mainSection').style.display==='none'){$('loginSection').style.display='none';$('mainSection').style.display='';$('connBadge').textContent='✅';$('connBadge').style.color='var(--green)'}
     const ab=$('analyticsBtn');if(ab){ab.style.display='';ab.textContent='📊 统计'}
+    const gb=$('gridBtn');if(gb){gb.style.display='';gb.textContent='🔲 九宫格'}
     await loadTree();toast('已创建 '+tk)}catch(e){toast('创建失败：'+e.message)}
 }
 
@@ -831,6 +1149,7 @@ async function hydrateBuildMeta(){
   const bm=$('buildMeta');if(bm)bm.textContent=buildTime+' 构建';
 }
 
+initGridTool();
 hydrateBuildMeta();
 const zz=$('zipZone');
 if(zz){zz.addEventListener('dragover',e=>{e.preventDefault();zz.classList.add('dragover')});zz.addEventListener('dragleave',()=>zz.classList.remove('dragover'));zz.addEventListener('drop',async e=>{e.preventDefault();zz.classList.remove('dragover');await handleZipZoneDrop(e.dataTransfer)})}

@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import PlainTextResponse
 from app.logging_config import setup_logging, access_log_middleware
-from app.routes import tokens, manage, upload, pages, folders, stats, health, files, api
+from app.routes import tokens, manage, upload, pages, folders, stats, health, files, api, grid
 from app.config import BASE_PATH, FRONTEND_DIR
 
 setup_logging()
@@ -67,5 +67,6 @@ app.include_router(upload.router)
 app.include_router(folders.router)
 app.include_router(stats.router)
 app.include_router(api.router)
+app.include_router(grid.router)
 
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
