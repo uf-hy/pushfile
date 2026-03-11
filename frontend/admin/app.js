@@ -43,6 +43,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // 3. 卡片 3D 悬浮效果 (可选，增加高级感)
     const cards = document.querySelectorAll('.bento-card');
     
+    // 4. Bento Grid 卡片错峰入场动画 (Stagger Animation)
+    cards.forEach((card, index) => {
+        setTimeout(() => {
+            card.classList.add('animate-in');
+        }, index * 100 + 100); // 基础延迟 100ms，每个卡片间隔 100ms
+    });
+    
     cards.forEach(card => {
         card.addEventListener('mousemove', e => {
             const rect = card.getBoundingClientRect();
