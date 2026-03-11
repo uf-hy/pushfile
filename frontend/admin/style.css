@@ -7,6 +7,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .nav .badge{position:absolute;right:0;top:50%;transform:translateY(-50%);font-size:12px;color:var(--sub);padding:6px 12px;background:var(--card);border-radius:20px}
 .nav .badge-left{left:0;right:auto}
 .nav-btn{position:absolute;right:92px;top:50%;transform:translateY(-50%);border:none;background:var(--card);color:var(--text);padding:6px 10px;border-radius:10px;font-size:12px;cursor:pointer}
+.nav-btn-secondary{right:172px}
 .build-meta{font-size:11px;color:var(--sub);text-align:center;margin-top:-10px;margin-bottom:12px}
 .group{margin-bottom:24px}
 .group-label{font-size:13px;font-weight:400;color:var(--sub);text-transform:uppercase;letter-spacing:.5px;padding:0 16px 8px}
@@ -136,3 +137,28 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .ana-card{background:var(--card);border-radius:10px;padding:10px}
 .ana-num{font-size:18px;font-weight:700}
 .ana-lbl{font-size:12px;color:var(--sub)}
+
+#gridPanel .group-box{border-radius:var(--r)}
+.grid-header{display:flex;flex-direction:column;gap:4px}
+.grid-title{font-size:16px;font-weight:600;color:var(--text)}
+.grid-sub{font-size:13px;color:var(--sub);line-height:1.4}
+.grid-upload{width:100%}
+.grid-file-meta{margin-top:6px;font-size:12px;color:var(--sub);word-break:break-all}
+.grid-preview{width:100%;border-radius:12px;overflow:hidden;background:#000;position:relative;max-height:360px}
+.grid-preview-inner img{width:100%;display:block}
+.grid-preview .empty{padding:24px 16px;color:#fff;background:radial-gradient(circle at top,#2f3542,#000)}
+.grid-preview .empty .icon{font-size:40px;margin-bottom:8px}
+.grid-tip{font-size:12px;color:var(--sub);line-height:1.4}
+.grid-gap-row{display:flex;flex-direction:column;gap:8px;width:100%}
+@media(min-width:480px){
+  .grid-gap-row{flex-direction:row;align-items:center;justify-content:space-between}
+}
+.grid-gap-row .chips{margin-left:-4px;margin-right:-4px}
+.grid-gap-row .chip{font-size:13px;padding:6px 14px}
+#gridPanel .btn-row{flex-wrap:wrap}
+#gridPanel .btn-row .btn{flex:1}
+.grid-overlay{display:none}
+@media(max-width:600px){
+  .grid-overlay.show{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:110;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+  #gridPanel.grid-sheet{position:fixed;left:0;right:0;bottom:0;margin:0 auto;padding:12px 16px max(12px,env(safe-area-inset-bottom));max-width:600px;background:var(--card);border-radius:16px 16px 0 0;box-shadow:0 -12px 30px rgba(0,0,0,.25);z-index:120;max-height:80vh;overflow-y:auto}
+}
