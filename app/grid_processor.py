@@ -63,6 +63,7 @@ def draw_grid_lines(
     line_color: Tuple[int, int, int, int] = (255, 255, 255, 255),
     line_width: int = 2,
     gap: int = 0,
+    bg_color: Tuple[int, int, int] = (255, 255, 255),
 ) -> Image.Image:
     """在图片上绘制九宫格网格线
 
@@ -71,22 +72,34 @@ def draw_grid_lines(
         line_color: 线条颜色 (R, G, B, A)，默认白色
         line_width: 线条宽度（像素）
         gap: 网格间距（像素），0 表示无间距
+        bg_color: 间距背景色 (R, G, B)
 
     Returns:
         带网格线的 Image 对象
     """
-    result = image.copy()
-    if result.mode != "RGBA":
-        result = result.convert("RGBA")
+    if image.mode != "RGBA":
+        img = image.convert("RGBA")
+    else:
+        img = image.copy()
 
-    w, h = result.size
-    draw = ImageDraw.Draw(result)
+    orig_w, orig_h = img.size
 
-    # 计算单元格尺寸（考虑间距）
     if gap > 0:
-        # 有间距：绘制矩形边框而非线条
-        cell_w = (w - gap * 4) // 3  # 4 条间距
-        cell_h = (h - gap * 4) // 3
+        cell_w = (orig_w - gap * 4) // 3
+        cell_h = (orig_h - gap * 4) // 3
+        result = Image.new("RGBA", (orig_w, orig_h), (*bg_color, 255))
+        for row in range(3):
+            for col in range(3):
+                src_left = col * (orig_w // 3)
+                src_upper = row * (orig_h // 3)
+                src_right = (col + 1) * (orig_w // 3) if col < 2 else orig_w
+                src_lower = (row + 1) * (orig_h // 3) if row < 2 else orig_h
+                cell = img.crop((src_left, src_upper, src_right, src_lower))
+                cell = cell.resize((cell_w, cell_h), Image.Resampling.LANCZOS)
+                dst_left = col * (cell_w + gap) + gap
+                dst_upper = row * (cell_h + gap) + gap
+                result.paste(cell, (dst_left, dst_upper))
+        draw = ImageDraw.Draw(result)
         for row in range(3):
             for col in range(3):
                 left = col * (cell_w + gap) + gap
@@ -98,17 +111,15 @@ def draw_grid_lines(
                     outline=line_color[:3],
                     width=line_width,
                 )
+        return result
     else:
-        # 无间距：绘制十字线
+        draw = ImageDraw.Draw(img)
         for i in range(1, 3):
-            # 竖线
-            x = round(i * w / 3)
-            draw.line([(x, 0), (x, h)], fill=line_color, width=line_width)
-            # 横线
-            y = round(i * h / 3)
-            draw.line([(0, y), (w, y)], fill=line_color, width=line_width)
-
-    return result
+            x = round(i * orig_w / 3)
+            draw.line([(x, 0), (x, orig_h)], fill=line_color, width=line_width)
+            y = round(i * orig_h / 3)
+            draw.line([(0, y), (orig_w, y)], fill=line_color, width=line_width)
+        return img
 
 
 def split_into_grid(image: Image.Image, grid_size: int = 3) -> list[Image.Image]:

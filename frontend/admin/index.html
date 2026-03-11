@@ -8,9 +8,11 @@
   <div class="nav">
     <span class="badge badge-left" id="versionBadge" title="当前版本">v--</span>
     <h1>PushFile Admin</h1>
-    <button class="nav-btn nav-btn-secondary" id="gridBtn" type="button" onclick="toggleGridTool()" style="display:none">🔲 九宫格</button>
-    <button class="nav-btn" id="analyticsBtn" type="button" onclick="toggleAnalytics()" style="display:none">📊 统计</button>
-    <span class="badge" id="connBadge">未连接</span>
+    <div class="nav-btns">
+      <button class="nav-btn nav-btn-secondary" id="gridBtn" type="button" onclick="toggleGridTool()" style="display:none">🔲 九宫格</button>
+      <button class="nav-btn" id="analyticsBtn" type="button" onclick="toggleAnalytics()" style="display:none">📊 统计</button>
+    </div>
+    <span class="badge badge-right" id="connBadge">未连接</span>
   </div>
   <div class="build-meta" id="buildMeta">-- -- 构建</div>
 
@@ -144,7 +146,7 @@
             <input id="gridFolderInput" type="text" placeholder="默认使用原图名">
           </div>
           <div class="row">
-            <span class="row-label">实��路径</span>
+            <span class="row-label">实际路径</span>
             <span class="row-value" id="gridSavePreviewPath">九宫格/原图名/</span>
           </div>
         </div>
