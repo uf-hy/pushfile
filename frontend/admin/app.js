@@ -187,8 +187,12 @@ function handleGridFileChange(fileList){
 }
 
 function getGridSettings(){
-  const lineSel=$('gridLineWidth');
-  let lineWidth=lineSel?Number(lineSel.value)||2:2;
+  const widthWrap=$('gridWidthChips');
+  let lineWidth=4;
+  if(widthWrap){
+    const active=widthWrap.querySelector('.chip.active');
+    if(active&&active.dataset&&active.dataset.width!=null){lineWidth=Number(active.dataset.width)||4;}
+  }
   const chipsWrap=$('gridGapChips');
   let gap=0;
   if(chipsWrap){
@@ -326,15 +330,19 @@ function initGridTool(){
     zone.addEventListener('dragleave',()=>zone.classList.remove('dragover'));
     zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('dragover');const files=e.dataTransfer&&e.dataTransfer.files;if(files&&files.length)handleGridFileChange(files);});
   }
-  const chipsWrap=$('gridGapChips');
-  if(chipsWrap){
-    chipsWrap.addEventListener('click',e=>{
-      const chip=e.target.closest('.chip');
-      if(!chip)return;
-      Array.from(chipsWrap.querySelectorAll('.chip')).forEach(c=>{c.classList.remove('active');});
-      chip.classList.add('active');
-    });
-  }
+  const initChips=(wrapId)=>{
+    const wrap=$(wrapId);
+    if(wrap){
+      wrap.addEventListener('click',e=>{
+        const chip=e.target.closest('.chip');
+        if(!chip)return;
+        Array.from(wrap.querySelectorAll('.chip')).forEach(c=>{c.classList.remove('active');});
+        chip.classList.add('active');
+      });
+    }
+  };
+  initChips('gridGapChips');
+  initChips('gridWidthChips');
   const destInput=$('gridDestInput');
   if(destInput)destInput.addEventListener('input',updateGridSavePreviewPath);
   const folderInput=$('gridFolderInput');
