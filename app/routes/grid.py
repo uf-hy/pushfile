@@ -11,24 +11,29 @@ from app.auth import auth_header_key, safe_path, resolve_dir, sniff_image_type
 from app.config import MAX_BYTES, MAX_MB
 from app.grid_processor import process_nine_grid, generate_grid_preview
 from app.storage import append_in_order
-from app.image_variants import ensure_all_variants_best_effort
 
 router = APIRouter(prefix="/api/grid", tags=["grid"])
 
 
 def _safe_filename(filename: str) -> str:
-    """生成安全的文件名"""
-    stem = Path(filename).stem
-    safe = re.sub(r"[^\w\-_.]", "", stem)
+    safe = re.sub(r"[^\w\-_.]", "", Path(filename).stem)
     return safe[:50] or "image"
 
 
+def _safe_folder_name(name: str) -> str:
+    safe = re.sub(r"[^\w\-]", "_", name)
+    return safe[:50] or "folder"
+
+
 def _validate_grid_params(line_width: int, gap: int, img_width: int, img_height: int) -> None:
-    """校验九宫格参数"""
     if line_width < 1 or line_width > 20:
         raise HTTPException(status_code=400, detail="线宽必须在 1-20 之间")
     if gap < 0 or gap > 100:
         raise HTTPException(status_code=400, detail="间距必须在 0-100 之间")
+    if gap > 0:
+        min_size = gap * 4 + 3
+        if img_width < min_size or img_height < min_size:
+            raise HTTPException(status_code=400, detail=f"图片尺寸太小，无法使用 {gap}px 间距")
     if img_width * img_height > 20000 * 20000:
         raise HTTPException(status_code=400, detail="图片尺寸过大（最大 20000x20000 像素）")
 
@@ -63,12 +68,11 @@ async def grid_preview(
         quality=95,
     )
 
+    safe_name = _safe_filename(file.filename or "preview")
     return Response(
         content=preview_bytes,
         media_type="image/jpeg",
-        headers={
-            "Content-Disposition": f"inline; filename={_safe_filename(file.filename or 'preview')}.jpg"
-        },
+        headers={"Content-Disposition": f'inline; filename="{safe_name}.jpg"'},
     )
 
 
@@ -83,7 +87,7 @@ async def grid_split(
     content = await file.read()
     if len(content) > MAX_BYTES:
         raise HTTPException(status_code=413, detail=f"文件太大（最大 {MAX_MB}MB)")
-    
+
     from PIL import Image, UnidentifiedImageError
     from PIL.Image import DecompressionBombError
 
@@ -103,17 +107,17 @@ async def grid_split(
         quality=95,
     )
 
+    safe_stem = _safe_filename(file.filename or "image")
     zip_buffer = io.BytesIO()
-    stem = Path(file.filename or "image").stem
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(f"{stem}_preview.jpg", preview_bytes)
+        zf.writestr(f"{safe_stem}_preview.jpg", preview_bytes)
         for i, tile_bytes in enumerate(tile_bytes_list, 1):
-            zf.writestr(f"{stem}_{i}.jpg", tile_bytes)
+            zf.writestr(f"{safe_stem}_{i}.jpg", tile_bytes)
 
     return Response(
         content=zip_buffer.getvalue(),
         media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename={stem}_grid.zip"},
+        headers={"Content-Disposition": f'attachment; filename="{safe_stem}_grid.zip"'},
     )
 
 
@@ -128,8 +132,7 @@ async def grid_save(
 ):
     auth_header_key(x_upload_key)
     head = await file.read(64)
-    ext = sniff_image_type(head)
-    if ext is None:
+    if sniff_image_type(head) is None:
         raise HTTPException(status_code=400, detail="只支持图片文件")
 
     remaining = await file.read()
@@ -157,24 +160,23 @@ async def grid_save(
     )
 
     safe_dest = safe_path(destination)
-    stem = Path(file.filename or "image").stem
-    target_folder_name = folder_name or stem
-    target_path = f"{safe_dest}/{target_folder_name}" if safe_dest else target_folder_name
+    safe_stem = _safe_filename(file.filename or "image")
+    safe_folder = _safe_folder_name(folder_name or safe_stem)
+    target_path = f"{safe_dest}/{safe_folder}" if safe_dest else safe_folder
     target_dir = resolve_dir(target_path)
     target_dir.mkdir(parents=True, exist_ok=True)
 
     saved_files: list[str] = []
-    all_files: list[tuple[str, bytes]] = [
-        (f"{stem}_preview.jpg", preview_bytes),
-    ]
     for i, tile_bytes in enumerate(tile_bytes_list, 1):
-        all_files.append((f"{stem}_{i}.jpg", tile_bytes))
-
-    for filename, content in all_files:
-        file_path = target_dir / filename
-        file_path.write_bytes(content)
+        filename = f"{safe_stem}_{i}.jpg"
+        (target_dir / filename).write_bytes(tile_bytes)
         saved_files.append(filename)
         append_in_order(target_path, filename)
+
+    preview_name = f"{safe_stem}_preview.jpg"
+    (target_dir / preview_name).write_bytes(preview_bytes)
+    saved_files.insert(0, preview_name)
+    append_in_order(target_path, preview_name)
 
     return {
         "ok": True,
@@ -182,4 +184,3 @@ async def grid_save(
         "files": saved_files,
         "count": len(saved_files),
     }
-
