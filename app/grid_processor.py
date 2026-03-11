@@ -15,6 +15,30 @@ from typing import Tuple
 from PIL import Image, ImageDraw
 
 
+def resize_if_large(image: Image.Image, max_dimension: int = 2048) -> Image.Image:
+    """如果图片尺寸过大，按比例缩小
+
+    Args:
+        image: PIL Image 对象
+        max_dimension: 最大边长（像素）
+
+    Returns:
+        处理后的 Image 对象
+    """
+    w, h = image.size
+    if w <= max_dimension and h <= max_dimension:
+        return image
+
+    if w > h:
+        new_w = max_dimension
+        new_h = int(h * max_dimension / w)
+    else:
+        new_h = max_dimension
+        new_w = int(w * max_dimension / h)
+
+    return image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+
 def convert_to_rgb(
     image: Image.Image, bg_color: Tuple[int, int, int] = (255, 255, 255)
 ) -> Image.Image:

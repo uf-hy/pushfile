@@ -166,24 +166,54 @@ function handleGridFileChange(fileList){
   if(!fileList||!fileList.length)return;
   const f=fileList[0];
   if(!f||!(f.type||'').startsWith('image/')){toast('请选择图片文件');return;}
-  gridState.file=f;
   gridState.fileName=f.name||'grid';
   gridState.previewBlob=null;
   if(gridState.previewUrl){try{URL.revokeObjectURL(gridState.previewUrl)}catch(_){ }gridState.previewUrl='';}
   const meta=$('gridFileMeta');
-  if(meta)meta.textContent='已选择：'+gridState.fileName;
+  if(meta)meta.textContent='已选择：'+gridState.fileName+'（读取中…）';
   const destInput=$('gridDestInput');
   if(destInput&&!destInput.value.trim())destInput.value='九宫格';
   const folderInput=$('gridFolderInput');
   if(folderInput)folderInput.value=sourceBaseName(gridState.fileName);
   updateGridSavePreviewPath();
-  const prev=$('gridPreview');
-  if(prev){
-    prev.innerHTML='<div class="empty"><div class="icon">🖼️</div><p>已选择：'+esc(gridState.fileName)+'<br>点击「生成预览」查看效果</p></div>';
-  }
-  const prevBtn=$('gridPreviewDownloadBtn');if(prevBtn)prevBtn.disabled=true;
-  const zipBtn=$('gridZipDownloadBtn');if(zipBtn)zipBtn.disabled=true;
-  const saveBtn=$('gridSaveBtn');if(saveBtn)saveBtn.disabled=false;
+  compressGridImage(f,(compressedFile,wasCompressed)=>{
+    gridState.file=compressedFile;
+    const meta=$('gridFileMeta');
+    if(meta){
+      let info='已选择：'+gridState.fileName;
+      if(wasCompressed)info+='（已优化）';
+      meta.textContent=info;
+    }
+    const prev=$('gridPreview');
+    if(prev){
+      prev.innerHTML='<div class="empty"><div class="icon">🖼️</div><p>已选择：'+esc(gridState.fileName)+'<br>点击「生成预览」查看效果</p></div>';
+    }
+    const prevBtn=$('gridPreviewDownloadBtn');if(prevBtn)prevBtn.disabled=true;
+    const zipBtn=$('gridZipDownloadBtn');if(zipBtn)zipBtn.disabled=true;
+    const saveBtn=$('gridSaveBtn');if(saveBtn)saveBtn.disabled=false;
+  });
+}
+
+function compressGridImage(file,callback){
+  const MAX_DIM=2048;
+  const img=new Image();
+  img.onload=()=>{
+    let w=img.width,h=img.height;
+    if(w<=MAX_DIM&&h<=MAX_DIM){callback(file,false);return;}
+    if(w>h){h=Math.round(h*MAX_DIM/w);w=MAX_DIM;}
+    else{w=Math.round(w*MAX_DIM/h);h=MAX_DIM;}
+    const canvas=document.createElement('canvas');
+    canvas.width=w;canvas.height=h;
+    const ctx=canvas.getContext('2d');
+    ctx.drawImage(img,0,0,w,h);
+    canvas.toBlob(blob=>{
+      if(!blob){callback(file,false);return;}
+      const compressed=new File([blob],file.name,{type:'image/jpeg'});
+      callback(compressed,true);
+    },'image/jpeg',0.9);
+  };
+  img.onerror=()=>callback(file,false);
+  img.src=URL.createObjectURL(file);
 }
 
 function getGridSettings(){
