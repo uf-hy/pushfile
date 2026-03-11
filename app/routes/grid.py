@@ -45,7 +45,8 @@ async def grid_preview(
     if len(content) > MAX_BYTES:
         raise HTTPException(status_code=413, detail=f"文件太大（最大 {MAX_MB}MB）")
 
-    from PIL import Image, UnidentifiedImageError, DecompressionBombError
+    from PIL import Image, UnidentifiedImageError
+    from PIL.Image import DecompressionBombError
 
     try:
         img = Image.open(io.BytesIO(content))
@@ -83,8 +84,15 @@ async def grid_split(
     if len(content) > MAX_BYTES:
         raise HTTPException(status_code=413, detail=f"文件太大（最大 {MAX_MB}MB)")
     
-    from PIL import Image
-    img = Image.open(io.BytesIO(content))
+    from PIL import Image, UnidentifiedImageError
+    from PIL.Image import DecompressionBombError
+
+    try:
+        img = Image.open(io.BytesIO(content))
+        img.load()
+        _validate_grid_params(line_width, gap, img.width, img.height)
+    except (UnidentifiedImageError, DecompressionBombError, OSError) as e:
+        raise HTTPException(status_code=400, detail=f"无效的图片文件: {str(e)}")
 
     preview_bytes, tile_bytes_list = process_nine_grid(
         source_image=img,
@@ -129,8 +137,15 @@ async def grid_save(
     if len(full_bytes) > MAX_BYTES:
         raise HTTPException(status_code=413, detail=f"文件太大（最大 {MAX_MB}MB）")
 
-    from PIL import Image
-    img = Image.open(io.BytesIO(full_bytes))
+    from PIL import Image, UnidentifiedImageError
+    from PIL.Image import DecompressionBombError
+
+    try:
+        img = Image.open(io.BytesIO(full_bytes))
+        img.load()
+        _validate_grid_params(line_width, gap, img.width, img.height)
+    except (UnidentifiedImageError, DecompressionBombError, OSError) as e:
+        raise HTTPException(status_code=400, detail=f"无效的图片文件: {str(e)}")
 
     preview_bytes, tile_bytes_list = process_nine_grid(
         source_image=img,
