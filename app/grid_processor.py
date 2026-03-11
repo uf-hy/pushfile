@@ -168,34 +168,20 @@ def process_nine_grid(
 
 
 def generate_grid_preview(
-    source_path: Path,
+    source_image: Image.Image,
     line_width: int = 2,
     gap: int = 0,
     line_color: Tuple[int, int, int, int] = (255, 255, 255, 255),
     output_format: str = "JPEG",
     quality: int = 95,
 ) -> bytes:
-    """从文件路径生成带网格线的预览图
-
-    Args:
-        source_path: 源图片路径
-        line_width: 线条宽度
-        gap: 网格间距
-        line_color: 线条颜色
-        output_format: 输出格式
-        quality: JPEG 质量
-
-    Returns:
-        预览图字节
-    """
-    with Image.open(source_path) as img:
-        preview = draw_grid_lines(img, line_color, line_width, gap)
-        buffer = io.BytesIO()
-        if output_format.upper() == "JPEG":
-            preview = convert_to_rgb(preview)
-            preview.save(buffer, format="JPEG", quality=quality, subsampling=0)
-        else:
-            if preview.mode != "RGBA":
-                preview = preview.convert("RGBA")
-            preview.save(buffer, format="PNG")
-        return buffer.getvalue()
+    preview = draw_grid_lines(source_image, line_color, line_width, gap)
+    buffer = io.BytesIO()
+    if output_format.upper() == "JPEG":
+        preview = convert_to_rgb(preview)
+        preview.save(buffer, format="JPEG", quality=quality, subsampling=0)
+    else:
+        if preview.mode != "RGBA":
+            preview = preview.convert("RGBA")
+        preview.save(buffer, format="PNG")
+    return buffer.getvalue()

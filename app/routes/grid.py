@@ -1,6 +1,6 @@
 import io
 import zipfile
-import tempfile
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -16,6 +16,23 @@ from app.image_variants import ensure_all_variants_best_effort
 router = APIRouter(prefix="/api/grid", tags=["grid"])
 
 
+def _safe_filename(filename: str) -> str:
+    """生成安全的文件名"""
+    stem = Path(filename).stem
+    safe = re.sub(r"[^\w\-_.]", "", stem)
+    return safe[:50] or "image"
+
+
+def _validate_grid_params(line_width: int, gap: int, img_width: int, img_height: int) -> None:
+    """校验九宫格参数"""
+    if line_width < 1 or line_width > 20:
+        raise HTTPException(status_code=400, detail="线宽必须在 1-20 之间")
+    if gap < 0 or gap > 100:
+        raise HTTPException(status_code=400, detail="间距必须在 0-100 之间")
+    if img_width * img_height > 20000 * 20000:
+        raise HTTPException(status_code=400, detail="图片尺寸过大（最大 20000x20000 像素）")
+
+
 @router.post("/preview")
 async def grid_preview(
     file: UploadFile = File(...),
@@ -24,18 +41,18 @@ async def grid_preview(
     x_upload_key: str | None = Header(default=None),
 ):
     auth_header_key(x_upload_key)
-    head = await file.read(64)
-    ext = sniff_image_type(head)
-    if ext is None:
-        raise HTTPException(status_code=400, detail="只支持图片文件")
-
-    remaining = await file.read()
-    full_bytes = head + remaining
-    if len(full_bytes) > MAX_BYTES:
+    content = await file.read()
+    if len(content) > MAX_BYTES:
         raise HTTPException(status_code=413, detail=f"文件太大（最大 {MAX_MB}MB）")
 
-    from PIL import Image
-    img = Image.open(io.BytesIO(full_bytes))
+    from PIL import Image, UnidentifiedImageError, DecompressionBombError
+
+    try:
+        img = Image.open(io.BytesIO(content))
+        img.load()
+        _validate_grid_params(line_width, gap, img.width, img.height)
+    except (UnidentifiedImageError, DecompressionBombError, OSError) as e:
+        raise HTTPException(status_code=400, detail=f"无效的图片文件: {str(e)}")
 
     preview_bytes = generate_grid_preview(
         source_image=img,
@@ -48,7 +65,9 @@ async def grid_preview(
     return Response(
         content=preview_bytes,
         media_type="image/jpeg",
-        headers={"Content-Disposition": f"inline; filename={file.filename or 'preview'}.jpg"},
+        headers={
+            "Content-Disposition": f"inline; filename={_safe_filename(file.filename or 'preview')}.jpg"
+        },
     )
 
 
@@ -60,18 +79,12 @@ async def grid_split(
     x_upload_key: str | None = Header(default=None),
 ):
     auth_header_key(x_upload_key)
-    head = await file.read(64)
-    ext = sniff_image_type(head)
-    if ext is None:
-        raise HTTPException(status_code=400, detail="只支持图片文件")
-
-    remaining = await file.read()
-    full_bytes = head + remaining
-    if len(full_bytes) > MAX_BYTES:
-        raise HTTPException(status_code=413, detail=f"文件太大（最大 {MAX_MB}MB）")
-
+    content = await file.read()
+    if len(content) > MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"文件太大（最大 {MAX_MB}MB)")
+    
     from PIL import Image
-    img = Image.open(io.BytesIO(full_bytes))
+    img = Image.open(io.BytesIO(content))
 
     preview_bytes, tile_bytes_list = process_nine_grid(
         source_image=img,
