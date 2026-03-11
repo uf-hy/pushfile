@@ -70,11 +70,11 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .batch{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--bg);padding:10px 16px max(10px,env(safe-area-inset-bottom));display:none;gap:8px;align-items:center;z-index:50;flex-wrap:wrap}
 .batch.show{display:flex}
 .batch-count{font-size:14px;font-weight:600;color:var(--accent);margin-right:auto}
-.toast{position:fixed;top:max(60px,env(safe-area-inset-top,60px));left:50%;transform:translateX(-50%) translateY(-80px);background:var(--text);color:var(--card);padding:10px 20px;border-radius:20px;font-size:14px;z-index:500;transition:transform .3s;pointer-events:none;white-space:nowrap;max-width:calc(100% - 32px);text-align:center}
+.toast{position:fixed;top:max(60px,env(safe-area-inset-top,60px));left:50%;transform:translateX(-50%) translateY(-200%);background:var(--text);color:var(--card);padding:10px 20px;border-radius:20px;font-size:14px;z-index:500;transition:transform .3s;pointer-events:none;white-space:nowrap;max-width:calc(100% - 32px);text-align:center}
 .toast.show{transform:translateX(-50%) translateY(0)}
 @media(max-width:600px){
-  .toast{top:calc(env(safe-area-inset-top,0px) + 56px);transform:translateX(-50%) translateY(-130%);white-space:normal}
-  .toast.show{transform:translateX(-50%) translateY(0)}
+.toast{top:0;left:50%;transform:translateX(-50%) translateY(-100%);white-space:normal}
+.toast.show{transform:translateX(-50%) translateY(calc(env(safe-area-inset-top, 0px) + 8px))}
 }
 .empty{text-align:center;padding:40px 16px;color:var(--sub)}
 .empty .icon{font-size:48px;margin-bottom:8px}
