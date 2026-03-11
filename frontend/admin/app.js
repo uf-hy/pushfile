@@ -128,15 +128,15 @@ function openGridTool(){
   const overlay=$('gridOverlay');
   if(!panel)return;
   panel.style.display='';
-  if(isMobileScreen()){
+  const mobile=isMobileScreen();
+  if(mobile){
     panel.classList.add('grid-sheet');
     if(overlay)overlay.classList.add('show');
-    if(admin)admin.style.display='';
   }else{
     panel.classList.remove('grid-sheet');
     if(overlay)overlay.classList.remove('show');
-    if(admin)admin.style.display='none';
   }
+  if(admin)admin.style.display='none';
   const gb=$('gridBtn');if(gb&&gb.style.display!=='none')gb.textContent='⬅ 返回';
   const ab=$('analyticsBtn');if(ab&&ab.style.display!=='none')ab.textContent='📊 统计';
   updateGridSavePreviewPath();

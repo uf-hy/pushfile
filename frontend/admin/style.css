@@ -138,17 +138,22 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .ana-num{font-size:18px;font-weight:700}
 .ana-lbl{font-size:12px;color:var(--sub)}
 
-#gridPanel .group-box{border-radius:var(--r)}
+#gridPanel{margin:0 auto}
+@media(min-width:720px){
+  #gridPanel{max-width:520px}
+}
+#gridPanel .group-box{border-radius:var(--r);box-shadow:0 18px 40px rgba(0,0,0,.04)}
 .grid-header{display:flex;flex-direction:column;gap:4px}
-.grid-title{font-size:16px;font-weight:600;color:var(--text)}
-.grid-sub{font-size:13px;color:var(--sub);line-height:1.4}
+.grid-title{font-size:17px;font-weight:600;color:var(--text)}
+.grid-sub{font-size:13px;color:var(--sub);line-height:1.5}
 .grid-upload{width:100%}
 .grid-file-meta{margin-top:6px;font-size:12px;color:var(--sub);word-break:break-all}
-.grid-preview{width:100%;border-radius:12px;overflow:hidden;background:#000;position:relative;max-height:360px}
-.grid-preview-inner img{width:100%;display:block}
-.grid-preview .empty{padding:24px 16px;color:#fff;background:radial-gradient(circle at top,#2f3542,#000)}
+.grid-preview{width:100%;border-radius:16px;overflow:hidden;position:relative;max-height:420px;background:radial-gradient(circle at top,#111827,#020617 55%,#000 100%);display:flex;align-items:center;justify-content:center;padding:12px}
+.grid-preview-inner{width:100%;max-width:480px;margin:0 auto}
+.grid-preview-inner img{width:100%;display:block;border-radius:14px;box-shadow:0 18px 45px rgba(0,0,0,.7)}
+.grid-preview .empty{padding:28px 18px;color:#f9fafb;background:radial-gradient(circle at top,#374151,#020617 70%)}
 .grid-preview .empty .icon{font-size:40px;margin-bottom:8px}
-.grid-tip{font-size:12px;color:var(--sub);line-height:1.4}
+.grid-tip{font-size:12px;color:var(--sub);line-height:1.5}
 .grid-gap-row{display:flex;flex-direction:column;gap:8px;width:100%}
 @media(min-width:480px){
   .grid-gap-row{flex-direction:row;align-items:center;justify-content:space-between}
@@ -157,8 +162,27 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .grid-gap-row .chip{font-size:13px;padding:6px 14px}
 #gridPanel .btn-row{flex-wrap:wrap}
 #gridPanel .btn-row .btn{flex:1}
+
+#gridPanel .upload-zone{border-color:rgba(0,122,255,.72);background:linear-gradient(135deg,rgba(0,122,255,.08),rgba(0,122,255,.02));box-shadow:0 14px 30px rgba(0,0,0,.06)}
+#gridPanel .upload-zone .icon{font-size:40px}
+#gridPanel .upload-zone p{color:var(--text);font-size:15px}
+#gridPanel .upload-zone small{color:var(--sub)}
+#gridPanel .upload-zone:active,#gridPanel .upload-zone.dragover{border-color:var(--accent);background:linear-gradient(135deg,rgba(0,122,255,.12),rgba(0,122,255,.04))}
+
+.grid-main-row,.grid-preview-row{align-items:flex-start}
+@media(min-width:720px){
+  .grid-main-row{flex-direction:row;gap:16px}
+  .grid-header{flex:1}
+  .grid-upload{flex:1.1}
+  .grid-preview-row{flex-direction:row;gap:16px;align-items:flex-start}
+  .grid-preview-row .grid-preview{flex:1}
+  .grid-preview-row .grid-tip{max-width:220px}
+}
+
 .grid-overlay{display:none}
 @media(max-width:600px){
-  .grid-overlay.show{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:110;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
-  #gridPanel.grid-sheet{position:fixed;left:0;right:0;bottom:0;margin:0 auto;padding:12px 16px max(12px,env(safe-area-inset-bottom));max-width:600px;background:var(--card);border-radius:16px 16px 0 0;box-shadow:0 -12px 30px rgba(0,0,0,.25);z-index:120;max-height:80vh;overflow-y:auto}
+  .grid-overlay.show{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:110;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);animation:gridOverlayIn .18s ease-out}
+  #gridPanel.grid-sheet{position:fixed;left:0;right:0;bottom:0;margin:0 auto;padding:12px 16px max(12px,env(safe-area-inset-bottom));max-width:600px;background:var(--card);border-radius:16px 16px 0 0;box-shadow:0 -16px 40px rgba(0,0,0,.35);z-index:120;max-height:80vh;overflow-y:auto;transform:translateY(100%);opacity:0;animation:gridSheetIn .22s ease-out forwards}
 }
+@keyframes gridOverlayIn{from{opacity:0}to{opacity:1}}
+@keyframes gridSheetIn{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}
