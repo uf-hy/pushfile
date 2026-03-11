@@ -133,16 +133,18 @@
       <div class="group">
         <div class="group-label">保存设置</div>
         <div class="group-box">
-          <div class="row">
+          <div class="row row-tap" onclick="showGridDestPicker()">
             <span class="row-label">位置</span>
-            <input id="gridDestInput" type="text" placeholder="默认：九宫格">
+            <span class="row-value" id="gridDestDisplay">九宫格</span>
+            <span class="row-chevron">›</span>
           </div>
+          <input id="gridDestInput" type="hidden" value="九宫格">
           <div class="row">
             <span class="row-label">文件夹</span>
             <input id="gridFolderInput" type="text" placeholder="默认使用原图名">
           </div>
           <div class="row">
-            <span class="row-label">实际路径</span>
+            <span class="row-label">实��路径</span>
             <span class="row-value" id="gridSavePreviewPath">九宫格/原图名/</span>
           </div>
         </div>

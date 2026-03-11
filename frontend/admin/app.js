@@ -350,6 +350,52 @@ function initGridTool(){
   updateGridSavePreviewPath();
 }
 
+function showGridDestPicker(){
+  let overlay=document.createElement('div');
+  overlay.className='picker-overlay';
+  let box=document.createElement('div');box.className='picker-box';
+  box.innerHTML='<div class="picker-title">选择保存位置</div>'+
+    '<div class="picker-input"><input type="text" id="gridPickerInput" placeholder="输入新文件夹路径（如 九宫格/朋友圈）" value="九宫格"><button class="btn btn-blue btn-sm" id="gridPickerConfirm">确定</button></div>'+
+    '<div class="picker-tree" id="gridPickerTree"></div>';
+  let cancelBtn=document.createElement('button');
+  cancelBtn.className='btn btn-sm';cancelBtn.style.cssText='margin-top:12px;width:100%';cancelBtn.textContent='取消';
+  cancelBtn.addEventListener('click',()=>overlay.remove());
+  box.appendChild(cancelBtn);
+  overlay.appendChild(box);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove()});
+  document.body.appendChild(overlay);
+  box.querySelector('#gridPickerConfirm').addEventListener('click',()=>{
+    const val=$('gridPickerInput').value.trim()||'九宫格';
+    const destInput=$('gridDestInput');
+    const destDisplay=$('gridDestDisplay');
+    if(destInput)destInput.value=val;
+    if(destDisplay)destDisplay.textContent=val;
+    updateGridSavePreviewPath();
+    overlay.remove();
+  });
+  renderGridPickerTree();
+}
+
+function renderGridPickerTree(){
+  const box=$('gridPickerTree');if(!box)return;
+  box.innerHTML='';
+  function walk(nodes,depth){
+    for(const n of nodes){
+      const item=document.createElement('div');
+      item.className='picker-item';
+      item.style.paddingLeft=depth*16+'px';
+      item.textContent=(n.is_album?'🖼️ ':'📁 ')+n.name;
+      if(n.image_count>0){const cnt=document.createElement('span');cnt.className='tree-count';cnt.textContent=n.image_count;item.appendChild(cnt)}
+      item.dataset.path=n.path;
+      item.addEventListener('click',()=>{const input=$('gridPickerInput');if(input)input.value=n.path});
+      box.appendChild(item);
+      if(n.children)walk(n.children,depth+1);
+    }
+  }
+  walk(treeData,0);
+  if(!box.children.length)box.innerHTML='<div style="padding:12px;color:var(--sub)">还没有文件夹，将使用默认位置</div>';
+}
+
 function collectFolderPaths(nodes,prefix=''){
   let out=[];
   for(const n of nodes){
