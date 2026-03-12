@@ -16,7 +16,7 @@
     --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.08);
     --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.15);
     
-    --sidebar-width: 260px;
+    --sidebar-width: 280px;
     --toolbar-height: 56px;
     --radius-sm: 8px;
     --radius-md: 12px;
@@ -90,6 +90,11 @@ html.icons-loading i[class^="ph"] {
     padding: 12px;
     flex: 1;
     overflow-y: auto;
+    scrollbar-width: none;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+    display: none;
 }
 
 .nav-group {
@@ -338,6 +343,59 @@ html.icons-loading i[class^="ph"] {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: 24px 16px;
+}
+
+.mobile-view {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2px;
+    max-width: 400px;
+    margin: 0 auto;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    padding: 2px;
+}
+
+.mobile-view .grid-item {
+    padding: 0;
+    border-radius: 0;
+    gap: 0;
+}
+
+.mobile-view .grid-item:hover {
+    background: transparent;
+}
+
+.mobile-view .item-thumb {
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.mobile-view .item-info {
+    display: none;
+}
+
+.mobile-view .folder-item {
+    aspect-ratio: 1;
+    background: var(--color-hover);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mobile-view .folder-item .item-icon-wrapper {
+    font-size: 40px;
+}
+
+.grid-item.dragging {
+    opacity: 0.5;
+    transform: scale(0.95);
+}
+
+.grid-item.drag-over {
+    border: 2px dashed var(--color-primary);
 }
 
 .grid-item {

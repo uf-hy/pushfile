@@ -31,23 +31,19 @@
 
     async function ensureKey(options = {}) {
         const base = options.base ?? getBase();
-        const promptText = options.promptText || '请输入管理员密码：';
 
         let key = getKey();
-        while (true) {
-            if (!key) {
-                key = prompt(promptText) || '';
-                if (!key) continue;
-                setKey(key);
-            }
-
-            const ok = await validateKey(key, base);
-            if (ok) return key;
-
-            clearKey();
-            key = '';
-            alert('密码错误，请重试');
+        if (!key) {
+            window.location.href = (base || '') + '/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
+            return new Promise(() => {}); // Never resolves, stops execution
         }
+
+        const ok = await validateKey(key, base);
+        if (ok) return key;
+
+        clearKey();
+        window.location.href = (base || '') + '/login?redirect=' + encodeURIComponent(window.location.pathname + window.location.search);
+        return new Promise(() => {}); // Never resolves, stops execution
     }
 
     async function apiGet(path, options = {}) {

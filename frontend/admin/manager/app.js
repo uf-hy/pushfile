@@ -146,7 +146,7 @@ async function loadAlbum(token, title) {
 
 // 渲染网格视图
 function renderGridView() {
-    const container = document.querySelector('.grid-view');
+    const container = document.querySelector('.grid-view') || document.querySelector('.mobile-view');
     if (!container) return;
     
     if (state.currentFiles.length === 0) {
@@ -165,10 +165,10 @@ function renderGridView() {
         
         let mediaHtml = isVideo 
             ? `<div style="width:100%;height:100%;background:#f0f0f0;display:flex;align-items:center;justify-content:center"><i class="ph-fill ph-video-camera" style="font-size:32px;color:#999"></i></div>`
-            : `<img src="${url}" alt="${file}" loading="lazy">`;
+            : `<img src="${url}" alt="${file}" loading="lazy" draggable="false">`;
             
         return `
-            <div class="grid-item image-item" data-file="${file}" data-url="${url}">
+            <div class="grid-item image-item" data-file="${file}" data-url="${url}" draggable="true">
                 <div class="item-checkbox" onclick="event.stopPropagation(); toggleSelect(this.closest('.grid-item'))"><i class="ph-bold ph-check"></i></div>
                 <div class="item-thumb" onclick="handleItemClick(event, this.closest('.grid-item'))">
                     ${mediaHtml}
@@ -188,6 +188,92 @@ function renderGridView() {
     } else {
         document.body.classList.remove('mobile-multi-select');
     }
+
+    setupDragAndDrop();
+    
+    if (currentView === 'mobile') {
+        container.className = 'mobile-view';
+    }
+}
+
+let currentView = 'grid';
+window.switchView = function(view) {
+    if (currentView === view) return;
+    currentView = view;
+    
+    const container = document.querySelector('.grid-view') || document.querySelector('.mobile-view');
+    if (container) {
+        container.className = view === 'grid' ? 'grid-view' : 'mobile-view';
+    }
+    
+    document.querySelectorAll('.view-toggles .icon-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    const activeBtn = document.querySelector(`.view-toggles .icon-btn[onclick="switchView('${view}')"]`);
+    if (activeBtn) {
+        activeBtn.classList.add('active');
+    }
+};
+
+function setupDragAndDrop() {
+    const container = document.querySelector('.grid-view') || document.querySelector('.mobile-view');
+    if (!container) return;
+
+    let draggedItem = null;
+
+    const items = container.querySelectorAll('.grid-item');
+    items.forEach(item => {
+        item.addEventListener('dragstart', function(e) {
+            draggedItem = this;
+            setTimeout(() => this.classList.add('dragging'), 0);
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', this.dataset.file);
+        });
+
+        item.addEventListener('dragend', function() {
+            this.classList.remove('dragging');
+            items.forEach(i => i.classList.remove('drag-over'));
+            draggedItem = null;
+        });
+
+        item.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            if (this !== draggedItem) {
+                this.classList.add('drag-over');
+            }
+        });
+
+        item.addEventListener('dragleave', function() {
+            this.classList.remove('drag-over');
+        });
+
+        item.addEventListener('drop', async function(e) {
+            e.preventDefault();
+            this.classList.remove('drag-over');
+            
+            if (this !== draggedItem && draggedItem) {
+                const allItems = [...container.querySelectorAll('.grid-item')];
+                const draggedIndex = allItems.indexOf(draggedItem);
+                const droppedIndex = allItems.indexOf(this);
+                
+                if (draggedIndex < droppedIndex) {
+                    this.parentNode.insertBefore(draggedItem, this.nextSibling);
+                } else {
+                    this.parentNode.insertBefore(draggedItem, this);
+                }
+
+                const newFiles = [...container.querySelectorAll('.grid-item')].map(el => el.dataset.file);
+                state.currentFiles = newFiles;
+
+                try {
+                    await api.post(`/api/manage/${state.currentToken}/order`, JSON.stringify({ files: newFiles }));
+                } catch (err) {
+                    console.error('Failed to save order:', err);
+                }
+            }
+        });
+    });
 }
 
 // 更新面包屑
@@ -198,7 +284,6 @@ function updateBreadcrumbs(title) {
     }
 }
 
-// 渲染上传下拉框
 function renderUploadSelect() {
     const select = document.getElementById('upload-album-select');
     if (!select) return;

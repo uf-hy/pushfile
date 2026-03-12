@@ -96,6 +96,13 @@ def home(request: Request):
     )
 
 
+@router.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    return templates.TemplateResponse(
+        "admin/login.html", {"request": request, **_common},
+    )
+
+
 @router.get("/manage", response_class=HTMLResponse)
 def manage_page(request: Request):
     return templates.TemplateResponse(
