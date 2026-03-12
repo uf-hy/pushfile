@@ -9,7 +9,7 @@ const state = {
     currentToken: null,
     currentFiles: [],
     folderTree: [],
-    uploadTargetToken: null
+    uploadTargetPath: ''
 };
 
 // API 工具函数
@@ -79,7 +79,6 @@ async function loadTokens() {
         flattenTree(state.folderTree);
         
         renderSidebarTree(state.folderTree);
-        renderUploadSelect();
         
         if (state.tokens.length > 0) {
             const current = state.currentToken
@@ -89,6 +88,20 @@ async function loadTokens() {
             await loadAlbum(target.token, target.title || target.token);
         }
     }
+}
+
+function getCurrentAlbumPath() {
+    const t = state.tokens.find(x => x.token === state.currentToken);
+    return (t && typeof t.path === 'string') ? t.path : '';
+}
+
+function splitPath(path) {
+    const parts = String(path || '').split('/').filter(Boolean);
+    if (parts.length === 0) return { destination: '', folderName: '' };
+    return {
+        destination: parts.slice(0, -1).join('/'),
+        folderName: parts[parts.length - 1] || '',
+    };
 }
 
 function renderSidebarTree(tree) {
@@ -132,6 +145,12 @@ function renderSidebarTree(tree) {
 async function loadAlbum(token, title) {
     state.currentToken = token;
     updateBreadcrumbs(title || token);
+
+    state.uploadTargetPath = getCurrentAlbumPath();
+    const display = document.getElementById('uploadDestDisplay');
+    if (display) {
+        display.textContent = state.uploadTargetPath ? `/${state.uploadTargetPath}` : '未选择';
+    }
     
     // 更新侧边栏激活状态
     document.querySelectorAll('.nav-item[data-token]').forEach(item => {
@@ -402,7 +421,7 @@ function copyCurrentLink() {
         input.select();
         document.execCommand('copy');
         document.body.removeChild(input);
-        showToast('链接已复制');
+        showToast(`链接已复制: ${url}`);
     };
 
     if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
@@ -455,19 +474,26 @@ window.clearSelection = function() {
 function updateBottomActionBar() {
     const bar = document.getElementById('bottomActionBar');
     const countBadge = document.getElementById('selectedCount');
+    const previewBtn = document.getElementById('batchPreviewBtn');
     if (!bar || !countBadge) return;
     
     if (selectedFiles.size > 0) {
         countBadge.textContent = selectedFiles.size;
         bar.classList.add('active');
+        if (previewBtn) {
+            previewBtn.style.display = (isMobile && selectedFiles.size === 1) ? 'flex' : 'none';
+        }
     } else {
         bar.classList.remove('active');
+        if (previewBtn) {
+            previewBtn.style.display = 'none';
+        }
     }
 }
 
 // 处理项目点击 (兼容移动端与桌面端)
 window.handleItemClick = function(e, itemEl) {
-    if (selectedFiles.size > 0) {
+    if (isMobile || selectedFiles.size > 0) {
         e.preventDefault();
         toggleSelect(itemEl);
         return;
@@ -604,6 +630,13 @@ window.handleBatchAction = function(action) {
     const files = Array.from(selectedFiles);
     
     switch (action) {
+        case 'preview':
+            if (count === 1) {
+                const file = files[0];
+                const url = `${state.base}/d/${state.currentToken}/${file}`;
+                previewImage(url);
+            }
+            break;
         case 'copy': {
             const urls = files.map(f => new URL(`${state.base}/d/${state.currentToken}/${f}`, window.location.origin).href);
             navigator.clipboard.writeText(urls.join(String.fromCharCode(10)))
@@ -836,15 +869,30 @@ function setUploadingUI(files) {
     };
 }
 
+window.chooseUploadDestination = function() {
+    const picker = new FolderSelector({
+        base: state.base,
+        title: '选择保存位置',
+        onSelect: (selectedPath) => {
+            state.uploadTargetPath = selectedPath || '';
+            const display = document.getElementById('uploadDestDisplay');
+            if (display) {
+                display.textContent = state.uploadTargetPath ? `/${state.uploadTargetPath}` : '未选择';
+            }
+        },
+    });
+    picker.show();
+};
+
 // 处理文件上传
 async function handleFiles(e) {
     const files = e && e.target ? e.target.files : null;
     if (!files || files.length === 0) return;
 
-    const selectEl = document.getElementById('upload-album-select');
-    const token = selectEl ? selectEl.value : state.currentToken;
-    if (!token) {
-        showToast('请先选择相册');
+    const targetPath = state.uploadTargetPath || getCurrentAlbumPath();
+    const { destination, folderName } = splitPath(targetPath);
+    if (!folderName) {
+        showToast('请先选择一个具体的保存位置（可在根目录下新建文件夹）');
         return;
     }
 
@@ -852,15 +900,43 @@ async function handleFiles(e) {
     const restoreUI = setUploadingUI(files);
 
     try {
-        const { successCount, failCount, lastError } = await uploadFiles(files, token, updateUploadProgress);
-        if (failCount > 0) {
-            const msg = lastError ? getErrorMessage(lastError) : '部分文件上传失败';
-            throw new Error(`成功 ${successCount}，失败 ${failCount}：${msg}`);
+        const list = Array.from(files);
+        const zipFiles = list.filter(f => (f && f.name && f.name.toLowerCase().endsWith('.zip')));
+        const otherFiles = list.filter(f => !(f && f.name && f.name.toLowerCase().endsWith('.zip')));
+
+        if (zipFiles.length > 0) {
+            for (let i = 0; i < zipFiles.length; i++) {
+                const file = zipFiles[i];
+                updateUploadProgress(i + 1, zipFiles.length, file);
+                const fd = new FormData();
+                fd.append('file', file);
+                fd.append('destination', destination);
+                fd.append('folder_name', folderName);
+                const data = await api.post('/api/upload/zip-import', fd);
+                if (!data || data.ok !== true) {
+                    throw new Error((data && data.detail) || 'ZIP 上传失败');
+                }
+            }
         }
+
+        if (otherFiles.length > 0) {
+            const fd = new FormData();
+            for (const file of otherFiles) {
+                fd.append('files', file);
+                fd.append('paths', file.name || 'file');
+            }
+            fd.append('destination', destination);
+            fd.append('folder_name', folderName);
+            const data = await api.post('/api/upload/folder-import', fd);
+            if (!data || data.ok !== true) {
+                throw new Error((data && data.detail) || '上传失败');
+            }
+        }
+
         showToast('上传成功');
         toggleUploadModal();
-        if (token === state.currentToken) {
-            loadAlbum(token, document.querySelector('.crumb-item.current').textContent);
+        if (targetPath && targetPath === getCurrentAlbumPath()) {
+            loadAlbum(state.currentToken, document.querySelector('.crumb-item.current').textContent);
         }
     } catch (err) {
         showToast('上传失败: ' + getErrorMessage(err));
@@ -876,7 +952,11 @@ window.toggleUploadModal = function() {
     if (modal) {
         modal.classList.toggle('active');
         if (modal.classList.contains('active')) {
-            renderUploadSelect();
+            const display = document.getElementById('uploadDestDisplay');
+            if (display) {
+                const p = state.uploadTargetPath || getCurrentAlbumPath();
+                display.textContent = p ? `/${p}` : '未选择';
+            }
         }
     }
 };

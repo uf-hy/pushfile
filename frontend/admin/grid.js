@@ -82,37 +82,64 @@ document.addEventListener('DOMContentLoaded', () => {
     lineWidthEl.addEventListener('input', debouncePreview);
     gapEl.addEventListener('input', debouncePreview);
 
-    saveBtn.addEventListener('click', async () => {
-        if (!currentFile) return;
-        const key = localStorage.getItem('pushfile_admin_key') || '';
-        const formData = new FormData();
-        formData.append('file', currentFile);
-        formData.append('line_width', String(lineWidthEl.value));
-        formData.append('gap', String(gapEl.value));
+    function splitPath(path) {
+        const parts = String(path || '').split('/').filter(Boolean);
+        if (parts.length === 0) return { destination: '', folderName: '' };
+        return {
+            destination: parts.slice(0, -1).join('/'),
+            folderName: parts[parts.length - 1] || '',
+        };
+    }
 
-        try {
-            saveBtn.disabled = true;
-            const res = await fetch(`${base}/api/grid/save`, {
-                method: 'POST',
-                headers: { 'X-Upload-Key': key },
-                body: formData,
-            });
-            if (!res.ok) {
-                const text = await res.text().catch(() => '');
-                throw new Error(text || '保存失败');
+    const folderSelector = new FolderSelector({
+        base,
+        title: '选择保存位置',
+        onSelect: async (selectedPath) => {
+            if (!currentFile) return;
+
+            const { destination, folderName } = splitPath(selectedPath);
+            if (!folderName) {
+                alert('请先选择一个具体的文件夹，或在当前目录下新建文件夹');
+                return;
             }
-            const data = await res.json();
-            if (data?.ok) {
-                alert(`保存成功：${data?.destination || '九宫格'}`);
-            } else {
-                throw new Error(data?.detail || '保存失败');
+
+            const key = localStorage.getItem('pushfile_admin_key') || '';
+            const formData = new FormData();
+            formData.append('file', currentFile);
+            formData.append('line_width', String(lineWidthEl.value));
+            formData.append('gap', String(gapEl.value));
+            formData.append('destination', destination);
+            formData.append('folder_name', folderName);
+
+            try {
+                saveBtn.disabled = true;
+                const res = await fetch(`${base}/api/grid/save`, {
+                    method: 'POST',
+                    headers: { 'X-Upload-Key': key },
+                    body: formData,
+                });
+                if (!res.ok) {
+                    const text = await res.text().catch(() => '');
+                    throw new Error(text || '保存失败');
+                }
+                const data = await res.json();
+                if (data?.ok) {
+                    alert(`保存成功：${data?.destination || ''}`);
+                } else {
+                    throw new Error(data?.detail || '保存失败');
+                }
+            } catch (err) {
+                console.error(err);
+                alert(err?.message || '保存失败');
+            } finally {
+                saveBtn.disabled = false;
             }
-        } catch (err) {
-            console.error(err);
-            alert(err?.message || '保存失败');
-        } finally {
-            saveBtn.disabled = false;
         }
+    });
+
+    saveBtn.addEventListener('click', () => {
+        if (!currentFile) return;
+        folderSelector.show();
     });
 
     downloadBtn.addEventListener('click', async () => {

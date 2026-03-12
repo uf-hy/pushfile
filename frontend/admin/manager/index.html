@@ -19,6 +19,7 @@
     
     <!-- 基础样式复用和专用样式 -->
     <link rel="stylesheet" href="{{ base }}/static/admin/manager/style.css">
+    <link rel="stylesheet" href="{{ base }}/static/admin/components/FolderSelector.css">
 </head>
     <script>
         window.__BASE__ = '{{ base }}';
@@ -199,11 +200,14 @@
                 <div class="upload-options">
                     <div class="option-row">
                         <span>保存到相册</span>
-                        <select class="apple-select" id="upload-album-select">
-                            <option>默认相册</option>
-                            <option>2024 团建相册</option>
-                            <option>新建相册...</option>
-                        </select>
+                        <button type="button" class="btn-secondary" id="chooseUploadDestBtn" onclick="chooseUploadDestination()">
+                            <i class="ph ph-folder"></i>
+                            选择保存位置
+                        </button>
+                    </div>
+                    <div class="option-row" style="margin-top: 8px;">
+                        <span style="opacity: 0.7;">当前</span>
+                        <div id="uploadDestDisplay" style="flex:1; text-align:right; font-size: 13px; color: var(--color-text-secondary); word-break: break-all;">未选择</div>
                     </div>
                 </div>
             </div>
@@ -235,6 +239,10 @@
             <span>项</span>
         </div>
         <div class="action-bar-buttons">
+            <button type="button" class="action-bar-btn" id="batchPreviewBtn" onclick="handleBatchAction('preview')" style="display: none;">
+                <i class="ph ph-eye"></i>
+                <span>预览</span>
+            </button>
             <button type="button" class="action-bar-btn" onclick="handleBatchAction('copy')">
                 <i class="ph ph-link"></i>
                 <span>复制链接</span>
@@ -254,6 +262,7 @@
     </div>
 
      <script src="{{ base }}/static/admin/auth.js"></script>
+     <script src="{{ base }}/static/admin/components/FolderSelector.js"></script>
      <script src="{{ base }}/static/admin/manager/app.js"></script>
-</body>
-</html>
+ </body>
+ </html>
