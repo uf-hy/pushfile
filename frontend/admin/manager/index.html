@@ -101,9 +101,9 @@
                         复制画廊链接
                     </button>
                     <div class="action-divider"></div>
-                     <button type="button" class="btn-primary upload-btn" onclick="toggleUploadModal(); document.getElementById('fileInput').click()">
-                          <i class="ph ph-upload-simple"></i> <span class="btn-text">上传</span>
-                      </button>
+                     <button type="button" class="btn-primary upload-btn" onclick="toggleUploadModal()">
+                           <i class="ph ph-upload-simple"></i> <span class="btn-text">上传</span>
+                       </button>
                   </div>
               </header>
 
@@ -189,13 +189,19 @@
                         <div class="upload-icon-ring">
                             <i class="ph ph-cloud-arrow-up"></i>
                         </div>
-                        <h4>将照片拖拽到此处</h4>
-                        <p>支持 JPG, PNG, GIF, WEBP 等格式</p>
-                        <button type="button" class="btn-secondary mt-3" id="chooseFilesBtn" onclick="document.getElementById('fileInput').click()">选择文件</button>
+                        <h4>拖拽文件到这里，或手动选择</h4>
+                        <p>支持图片、ZIP 压缩包，也支持直接选择文件夹</p>
+                        <div class="upload-cta-row">
+                            <button type="button" class="btn-secondary mt-3" id="chooseFilesBtn">选择图片 / ZIP</button>
+                            <button type="button" class="btn-secondary mt-3" id="chooseFolderBtn">选择文件夹</button>
+                        </div>
                     </div>
                 </div>
 
                 <input type="file" id="fileInput" accept="image/*,.zip" multiple hidden>
+                <input type="file" id="folderInput" webkitdirectory multiple hidden>
+
+                <div class="upload-preview-list" id="uploadPreviewList"></div>
 
                 <div class="upload-options">
                     <div class="option-row">
@@ -208,6 +214,10 @@
                     <div class="option-row" style="margin-top: 8px;">
                         <span style="opacity: 0.7;">当前</span>
                         <div id="uploadDestDisplay" style="flex:1; text-align:right; font-size: 13px; color: var(--color-text-secondary); word-break: break-all;">未选择</div>
+                    </div>
+                    <div class="upload-modal-actions">
+                        <button type="button" class="btn-secondary" onclick="toggleUploadModal()">取消</button>
+                        <button type="button" class="btn-primary" id="startUploadBtn" onclick="startPendingUpload()">开始上传</button>
                     </div>
                 </div>
             </div>

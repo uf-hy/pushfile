@@ -9,7 +9,9 @@ const state = {
     currentToken: null,
     currentFiles: [],
     folderTree: [],
-    uploadTargetPath: ''
+    uploadTargetPath: '',
+    pendingUploadFiles: [],
+    pendingUploadPaths: []
 };
 
 // API 工具函数
@@ -754,6 +756,21 @@ function setupEventListeners() {
         fileInput.addEventListener('change', handleFiles);
     }
 
+    const folderInput = document.getElementById('folderInput');
+    if (folderInput) {
+        folderInput.addEventListener('change', handleFiles);
+    }
+
+    const chooseFilesBtn = document.getElementById('chooseFilesBtn');
+    if (chooseFilesBtn && fileInput) {
+        chooseFilesBtn.addEventListener('click', () => fileInput.click());
+    }
+
+    const chooseFolderBtn = document.getElementById('chooseFolderBtn');
+    if (chooseFolderBtn && folderInput) {
+        chooseFolderBtn.addEventListener('click', () => folderInput.click());
+    }
+
     const uploadZone = document.getElementById('uploadZone');
     if (uploadZone) {
         uploadZone.addEventListener('dragover', e => {
@@ -770,8 +787,7 @@ function setupEventListeners() {
 
         uploadZone.addEventListener('click', e => {
             if (!fileInput) return;
-            if (e.target && e.target.closest && e.target.closest('#chooseFilesBtn')) return;
-            fileInput.click();
+            if (e.target && e.target.closest && e.target.closest('#chooseFilesBtn, #chooseFolderBtn')) return;
         });
     }
 }
@@ -869,6 +885,46 @@ function setUploadingUI(files) {
     };
 }
 
+function renderPendingUploadPreview() {
+    const list = document.getElementById('uploadPreviewList');
+    if (!list) return;
+
+    const files = state.pendingUploadFiles || [];
+    if (!files.length) {
+        list.innerHTML = '';
+        return;
+    }
+
+    list.innerHTML = files.slice(0, 8).map((file) => {
+        const isImage = !!(file && file.type && file.type.startsWith('image/'));
+        if (isImage) {
+            const url = URL.createObjectURL(file);
+            return `<div class="upload-preview-item"><img src="${url}" alt="${file.name || 'image'}"></div>`;
+        }
+        const icon = (file && file.name && file.name.toLowerCase().endsWith('.zip')) ? 'ph-file-zip' : 'ph-folder';
+        const label = file && file.name ? file.name : '文件';
+        return `<div class="upload-preview-item upload-preview-file"><i class="ph ${icon}"></i><span>${label}</span></div>`;
+    }).join('');
+}
+
+function resetPendingUpload() {
+    state.pendingUploadFiles = [];
+    state.pendingUploadPaths = [];
+    renderPendingUploadPreview();
+    const fileInput = document.getElementById('fileInput');
+    const folderInput = document.getElementById('folderInput');
+    if (fileInput) fileInput.value = '';
+    if (folderInput) folderInput.value = '';
+}
+
+function cachePendingFiles(files, paths) {
+    state.pendingUploadFiles = Array.from(files || []);
+    state.pendingUploadPaths = Array.isArray(paths)
+        ? paths
+        : state.pendingUploadFiles.map(file => file.name || 'file');
+    renderPendingUploadPreview();
+}
+
 window.chooseUploadDestination = function() {
     const picker = new FolderSelector({
         base: state.base,
@@ -884,10 +940,22 @@ window.chooseUploadDestination = function() {
     picker.show();
 };
 
-// 处理文件上传
 async function handleFiles(e) {
     const files = e && e.target ? e.target.files : null;
     if (!files || files.length === 0) return;
+
+    const fileList = Array.from(files);
+    const paths = fileList.map(file => file.webkitRelativePath || file.name || 'file');
+    cachePendingFiles(fileList, paths);
+    showToast(`已选择 ${fileList.length} 个文件，请确认保存位置后开始上传`);
+}
+
+window.startPendingUpload = async function() {
+    const files = state.pendingUploadFiles || [];
+    if (!files.length) {
+        showToast('请先选择要上传的文件');
+        return;
+    }
 
     const targetPath = state.uploadTargetPath || getCurrentAlbumPath();
     const { destination, folderName } = splitPath(targetPath);
@@ -923,7 +991,8 @@ async function handleFiles(e) {
             const fd = new FormData();
             for (const file of otherFiles) {
                 fd.append('files', file);
-                fd.append('paths', file.name || 'file');
+                const originalPath = state.pendingUploadPaths[list.indexOf(file)] || file.webkitRelativePath || file.name || 'file';
+                fd.append('paths', originalPath);
             }
             fd.append('destination', destination);
             fd.append('folder_name', folderName);
@@ -935,6 +1004,7 @@ async function handleFiles(e) {
 
         showToast('上传成功');
         toggleUploadModal();
+        resetPendingUpload();
         if (targetPath && targetPath === getCurrentAlbumPath()) {
             loadAlbum(state.currentToken, document.querySelector('.crumb-item.current').textContent);
         }
@@ -942,10 +1012,8 @@ async function handleFiles(e) {
         showToast('上传失败: ' + getErrorMessage(err));
     } finally {
         if (typeof restoreUI === 'function') restoreUI();
-        const fileInput = document.getElementById('fileInput');
-        if (fileInput) fileInput.value = '';
     }
-}
+};
 
 window.toggleUploadModal = function() {
     const modal = document.getElementById('uploadModal');
@@ -957,6 +1025,8 @@ window.toggleUploadModal = function() {
                 const p = state.uploadTargetPath || getCurrentAlbumPath();
                 display.textContent = p ? `/${p}` : '未选择';
             }
+        } else {
+            resetPendingUpload();
         }
     }
 };

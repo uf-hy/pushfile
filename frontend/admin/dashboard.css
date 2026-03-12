@@ -9,8 +9,118 @@
     overflow: hidden;
 }
 
+.dashboard-bar-chart {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    align-items: end;
+    gap: 12px;
+    min-height: 220px;
+}
+
+.dashboard-bar-item {
+    display: flex;
+    flex-direction: column;
+    justify-content: end;
+    gap: 10px;
+    min-width: 0;
+}
+
+.dashboard-bar-track {
+    height: 170px;
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.05), rgba(15, 23, 42, 0.02));
+    display: flex;
+    align-items: end;
+    padding: 6px;
+}
+
+.dashboard-bar-fill {
+    width: 100%;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #7cc4ff, #007aff);
+    box-shadow: 0 12px 24px rgba(0, 122, 255, 0.2);
+}
+
+.dashboard-bar-item.is-active .dashboard-bar-fill {
+    background: linear-gradient(180deg, #86efac, #22c55e);
+}
+
+.dashboard-bar-label,
+.dashboard-bar-value {
+    text-align: center;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dashboard-bar-value {
+    color: var(--color-text-main);
+    font-weight: 600;
+}
+
+.dashboard-rank-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.dashboard-rank-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.72);
+    border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.dashboard-rank-order {
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,122,255,0.1);
+    color: #007aff;
+    font-size: 13px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.dashboard-rank-main {
+    min-width: 0;
+    flex: 1;
+}
+
+.dashboard-rank-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dashboard-rank-meta {
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
 @media (max-width: 768px) {
     .dashboard-grid .big-stat {
         font-size: 32px;
+    }
+
+    .dashboard-bar-chart {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        min-height: auto;
+    }
+
+    .dashboard-bar-track {
+        height: 110px;
     }
 }

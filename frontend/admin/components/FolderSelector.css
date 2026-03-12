@@ -8,9 +8,9 @@
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+    background: rgba(15, 23, 42, 0.18);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -24,16 +24,18 @@
 }
 
 .folder-selector-modal {
-    background: var(--color-surface);
-    border-radius: var(--radius-md);
+    background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(248,250,252,0.96));
+    border-radius: 24px;
     width: 90%;
-    max-width: 500px;
+    max-width: 560px;
     max-height: 85vh;
     display: flex;
     flex-direction: column;
-    box-shadow: var(--shadow-lg);
+    border: 1px solid rgba(255,255,255,0.7);
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
     transform: scale(0.95) translateY(20px);
     transition: transform var(--transition-fast);
+    overflow: hidden;
 }
 
 .folder-selector-overlay.show .folder-selector-modal {
@@ -41,11 +43,12 @@
 }
 
 .folder-selector-header {
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--color-border);
+    padding: 18px 22px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
     display: flex;
     justify-content: space-between;
     align-items: center;
+    background: rgba(255,255,255,0.5);
 }
 
 .folder-selector-header h3 {
@@ -75,12 +78,13 @@
     flex-direction: column;
     overflow: hidden;
     flex: 1;
+    background: transparent;
 }
 
 .folder-tree-container {
     flex: 1;
     overflow-y: auto;
-    padding: 12px 0;
+    padding: 14px 0;
     min-height: 200px;
 }
 
@@ -92,19 +96,22 @@
 .tree-node-content {
     display: flex;
     align-items: center;
-    padding: 10px 16px;
+    padding: 11px 16px;
     cursor: pointer;
     transition: background-color var(--transition-fast);
     user-select: none;
+    margin: 0 10px;
+    border-radius: 14px;
 }
 
 .tree-node-content:hover {
-    background-color: var(--color-bg);
+    background-color: rgba(15, 23, 42, 0.05);
 }
 
 .tree-node-content.selected {
-    background-color: var(--color-primary-light);
+    background: linear-gradient(135deg, rgba(0,122,255,0.12), rgba(96,165,250,0.2));
     color: var(--color-primary);
+    box-shadow: inset 0 0 0 1px rgba(0,122,255,0.08);
 }
 
 .tree-toggle {
@@ -146,28 +153,32 @@
 }
 
 .new-folder-section {
-    padding: 12px 20px;
-    border-top: 1px solid var(--color-border);
-    background-color: var(--color-bg);
+    padding: 14px 20px 18px;
+    border-top: 1px solid rgba(15, 23, 42, 0.06);
+    background: linear-gradient(180deg, rgba(248,250,252,0.95), rgba(255,255,255,0.8));
 }
 
 #toggleNewFolderBtn {
     width: 100%;
-    text-align: left;
-    padding: 8px 0;
-    color: var(--color-text-secondary);
+    justify-content: center;
+    padding: 12px 14px;
+    color: var(--color-text-main);
     display: flex;
     align-items: center;
     gap: 8px;
+    border: 1px dashed rgba(0,122,255,0.22);
+    border-radius: 14px;
+    background: rgba(255,255,255,0.7);
 }
 
 #toggleNewFolderBtn:hover {
     color: var(--color-primary);
+    background: rgba(0,122,255,0.06);
 }
 
 .new-folder-input-container {
     display: none;
-    margin-top: 8px;
+    margin-top: 12px;
     gap: 8px;
 }
 
@@ -177,12 +188,13 @@
 
 .new-folder-input {
     flex: 1;
-    padding: 8px 12px;
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 14px;
     font-size: 14px;
     outline: none;
     transition: border-color var(--transition-fast);
+    background: rgba(255,255,255,0.92);
 }
 
 .new-folder-input:focus {
@@ -190,11 +202,12 @@
 }
 
 .folder-selector-footer {
-    padding: 16px 20px;
-    border-top: 1px solid var(--color-border);
+    padding: 16px 20px 18px;
+    border-top: 1px solid rgba(15, 23, 42, 0.06);
     display: flex;
     flex-direction: column;
     gap: 12px;
+    background: rgba(255,255,255,0.78);
 }
 
 .selected-path-display {
@@ -210,8 +223,9 @@
 }
 
 .footer-actions .btn {
-    padding: 8px 20px;
+    padding: 10px 20px;
     font-size: 14px;
+    border-radius: 14px;
 }
 
 /* Mobile optimizations */
