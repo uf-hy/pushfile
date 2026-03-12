@@ -2,145 +2,43 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>九宫格制作 - PushFile</title>
-    
-    <!-- 预加载 Phosphor Icons 字体文件 -->
-    <link rel="preconnect" href="https://unpkg.com" crossorigin>
-    <link rel="preload" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" as="style">
-    <link rel="preload" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css" as="style">
-    
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
     <link rel="stylesheet" href="{{ base }}/static/admin/style.css">
     <link rel="stylesheet" href="{{ base }}/static/admin/grid.css">
-    <link rel="stylesheet" href="{{ base }}/static/admin/components/FolderSelector.css">
-    
-    <!-- 异步加载 Phosphor Icons -->
-    <script>
-        document.documentElement.classList.add('icons-loading');
-    </script>
-    <script src="https://unpkg.com/@phosphor-icons/web" async onload="document.documentElement.classList.remove('icons-loading')"></script>
-    
-    <!-- 引入 Inter 字体 -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
-    <script>
-        window.__BASE__ = '{{ base }}';
-        document.documentElement.style.visibility = 'hidden';
-    </script>
+    <style>
+        body { background: #f5f5f7; }
+    </style>
 </head>
 <body>
-    <div class="app-container grid-page-container">
-        <!-- 顶部导航 -->
-        <header class="header">
-            <div class="header-content">
-                <div class="logo-area">
-                    <button type="button" class="icon-btn" onclick="location.href='/'" title="返回首页">
-                        <i class="ph ph-arrow-left"></i>
-                    </button>
-                    <div class="logo-text" style="margin-left: 12px;">
-                        <h1>九宫格制作</h1>
-                    </div>
-                </div>
-            </div>
+    <div class="grid-page">
+        <header class="grid-header">
+            <button type="button" onclick="history.back()" class="back-btn"><i class="ph ph-arrow-left"></i></button>
+            <h1>九宫格制作</h1>
         </header>
-
-        <main class="main-content grid-main">
-            <div class="grid-layout-container">
-                <!-- 左侧/上方：控制区 -->
-                <div class="control-panel">
-                    <!-- 上传区域 -->
-                    <div class="bento-card upload-card">
-                        <div class="card-body">
-                            <div class="upload-zone" id="uploadZone">
-                                <input type="file" id="fileInput" accept="image/*" style="display: none;">
-                                <div class="upload-content">
-                                    <div class="upload-icon">
-                                        <i class="ph ph-image"></i>
-                                    </div>
-                                    <h3>上传图片</h3>
-                                    <p>点击或拖拽图片到此处</p>
-                                </div>
-                                <!-- 预览图容器 -->
-                                <div class="preview-container" id="previewContainer" style="display: none;">
-                                    <img id="previewImage" src="" alt="预览图">
-                                    <button type="button" class="icon-btn remove-btn" id="removeBtn" title="移除图片">
-                                        <i class="ph ph-x"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 参数调节区 -->
-                    <div class="bento-card params-card" id="paramsPanel" style="opacity: 0.5; pointer-events: none;">
-                        <div class="card-header">
-                            <h3>切割参数</h3>
-                        </div>
-                        <div class="card-body">
-                            <div class="param-group">
-                                <div class="param-header">
-                                    <label for="lineWidth">线宽</label>
-                                    <span class="param-value" id="lineWidthValue">2px</span>
-                                </div>
-                                <input type="range" id="lineWidth" min="0" max="20" value="2" class="slider">
-                            </div>
-                            
-                            <div class="param-group">
-                                <div class="param-header">
-                                    <label for="gap">间距</label>
-                                    <span class="param-value" id="gapValue">0px</span>
-                                </div>
-                                <input type="range" id="gap" min="0" max="50" value="0" class="slider">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 操作按钮 -->
-                    <div class="action-buttons" id="actionButtons" style="display: none;">
-                        <button type="button" class="btn btn-primary" id="saveBtn">
-                            <i class="ph ph-folder-simple"></i>
-                            保存到文件夹
-                        </button>
-                        <button type="button" class="btn btn-secondary" id="downloadBtn">
-                            <i class="ph ph-download"></i>
-                            下载 ZIP
-                        </button>
-                    </div>
-                </div>
-
-                <!-- 右侧/下方：结果展示区 -->
-                <div class="result-panel">
-                    <div class="bento-card result-card">
-                        <div class="card-header">
-                            <h3>预览效果</h3>
-                            <div class="loading-spinner" id="loadingSpinner" style="display: none;">
-                                <i class="ph ph-spinner-gap"></i>
-                            </div>
-                        </div>
-                        <div class="card-body result-body">
-                            <div class="empty-state" id="emptyState">
-                                <i class="ph ph-squares-four"></i>
-                                <p>上传图片后查看九宫格效果</p>
-                            </div>
-                            
-                            <!-- 切割结果展示 -->
-                            <div class="tiles-section" id="tilesSection" style="display: none;">
-                                <div class="tiles-grid" id="tilesGrid">
-                                    <!-- 9 张切割后的图片将在这里动态生成 -->
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+        <main class="grid-main">
+            <div class="upload-zone" id="uploadZone">
+                <i class="ph ph-image" style="font-size:48px;color:#666"></i>
+                <p>点击或拖拽上传图片</p>
+                <input type="file" id="fileInput" accept="image/*" hidden>
+            </div>
+            <div class="params" id="params" style="display:none">
+                <label>线宽: <input type="range" id="lineWidth" min="1" max="10" value="2"></label>
+                <label>间距: <input type="range" id="gap" min="0" max="20" value="0"></label>
+            </div>
+            <div class="preview" id="preview" style="display:none">
+                <img id="previewImg" alt="预览图">
+            </div>
+            <div class="tiles" id="tiles" style="display:none"></div>
+            <div class="actions" id="actions" style="display:none">
+                <button type="button" class="btn-primary" id="saveBtn">保存到文件夹</button>
+                <button type="button" class="btn-secondary" id="downloadBtn">下载 ZIP</button>
             </div>
         </main>
     </div>
-
-    <!-- 引入组件和脚本 -->
+    <script>window.__BASE__ = '{{ base }}';</script>
     <script src="{{ base }}/static/admin/auth.js"></script>
-    <script src="{{ base }}/static/admin/components/FolderSelector.js"></script>
     <script src="{{ base }}/static/admin/grid.js"></script>
 </body>
 </html>
