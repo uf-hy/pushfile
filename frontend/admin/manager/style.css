@@ -59,6 +59,11 @@ html.icons-loading i[class^="ph"] {
     display: flex;
     flex-direction: column;
     z-index: 10;
+    scrollbar-width: none; /* Firefox */
+}
+
+.sidebar::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Edge */
 }
 
 .sidebar-header {

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PushFile Admin</title>
+    <link rel="stylesheet" href="{{ base }}/static/admin/style.css">
+    <!-- Phosphor Icons for clean, modern icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+</head>
+<body>
+    <div class="app-container">
+        <header class="header">
+            <div class="logo">
+                <i class="ph-fill ph-cloud-arrow-up"></i>
+                <h1>PushFile</h1>
+            </div>
+            <div class="version">v1.5.1</div>
+        </header>
+
+        <main class="main-content">
+            <div class="bento-grid">
+                <!-- Manage Card (Large) -->
+                <div class="bento-card manage-card span-2">
+                    <div class="card-header">
+                        <h2>相册管理</h2>
+                        <button type="button" class="icon-btn" aria-label="进入相册管理"><i class="ph ph-arrow-right"></i></button>
+                    </div>
+                    <div class="card-body">
+                        <div class="stat-hero">
+                            <span class="stat-number" id="stat-albums">12</span>
+                            <span class="stat-label">个相册</span>
+                        </div>
+                        <div class="recent-albums">
+                            <div class="album-preview bg-blue"></div>
+                            <div class="album-preview bg-purple"></div>
+                            <div class="album-preview bg-orange"></div>
+                            <div class="album-preview more">+9</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats Card -->
+                <div class="bento-card stats-card">
+                    <div class="card-header">
+                        <h2>存储概览</h2>
+                        <i class="ph ph-hard-drives text-gray"></i>
+                    </div>
+                    <div class="card-body">
+                        <div class="storage-ring">
+                            <svg viewBox="0 0 36 36" class="circular-chart">
+                                <title>存储使用情况</title>
+                                <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                <path class="circle" stroke-dasharray="65, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            </svg>
+                            <div class="storage-text">
+                                <span class="storage-used" id="stat-storage">1.2 GB</span>
+                                <span class="storage-total">/ 5 GB</span>
+                            </div>
+                        </div>
+                        <div class="stat-row mt-auto">
+                            <div class="stat-item">
+                                <span class="stat-value" id="stat-photos">328</span>
+                                <span class="stat-name">照片</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-value">45</span>
+                                <span class="stat-name">视频</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Create Card -->
+                <div class="bento-card create-card">
+                    <div class="card-header">
+                        <h2>快捷创作</h2>
+                    </div>
+                    <div class="card-body grid-tools">
+                        <button type="button" class="tool-btn">
+                            <div class="tool-icon bg-blue-light text-blue"><i class="ph-fill ph-upload-simple"></i></div>
+                            <span>上传</span>
+                        </button>
+                        <button type="button" class="tool-btn">
+                            <div class="tool-icon bg-green-light text-green"><i class="ph-fill ph-folder-plus"></i></div>
+                            <span>新建相册</span>
+                        </button>
+                        <button type="button" class="tool-btn">
+                            <div class="tool-icon bg-purple-light text-purple"><i class="ph-fill ph-link"></i></div>
+                            <span>分享链接</span>
+                        </button>
+                        <button type="button" class="tool-btn">
+                            <div class="tool-icon bg-orange-light text-orange"><i class="ph-fill ph-qr-code"></i></div>
+                            <span>扫码接收</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- System Status Card -->
+                <div class="bento-card status-card span-2">
+                    <div class="card-header">
+                        <h2>系统状态</h2>
+                        <div class="status-badge"><span class="dot"></span> 运行正常</div>
+                    </div>
+                    <div class="card-body">
+                        <div class="status-metrics">
+                            <div class="metric">
+                                <span class="metric-label">CPU</span>
+                                <div class="progress-bar"><div class="progress" style="width: 12%"></div></div>
+                                <span class="metric-value">12%</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">内存</span>
+                                <div class="progress-bar"><div class="progress" style="width: 45%"></div></div>
+                                <span class="metric-value">45%</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">网络</span>
+                                <div class="progress-bar"><div class="progress" style="width: 8%"></div></div>
+                                <span class="metric-value">8%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <section class="recent-activity">
+                <div class="section-header">
+                    <h2>最近活动</h2>
+                    <button type="button" class="text-btn">查看全部</button>
+                </div>
+                <div class="activity-list" id="activity-list">
+                    <!-- Injected by JS -->
+                </div>
+            </section>
+        </main>
+    </div>
+    <script>
+        window.__BASE__ = '{{ base }}';
+        window.__DOMAIN__ = '{{ domain }}';
+        window.__MAX_MB__ = Number('{{ max_mb }}');
+        window.__APP_VERSION__ = '{{ app_version }}' || '1.5.1';
+        window.__APP_BUILD_TIME__ = '{{ app_build_time }}' || '03-12 12:00';
+    </script>
+    <script src="{{ base }}/static/admin/app.js"></script>
+</body>
+</html>
