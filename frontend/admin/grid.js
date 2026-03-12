@@ -91,54 +91,54 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    const folderSelector = new FolderSelector({
-        base,
-        title: '选择保存位置',
-        onSelect: async (selectedPath) => {
-            if (!currentFile) return;
-
-            const { destination, folderName } = splitPath(selectedPath);
-            if (!folderName) {
-                alert('请先选择一个具体的文件夹，或在当前目录下新建文件夹');
-                return;
-            }
-
-            const key = localStorage.getItem('pushfile_admin_key') || '';
-            const formData = new FormData();
-            formData.append('file', currentFile);
-            formData.append('line_width', String(lineWidthEl.value));
-            formData.append('gap', String(gapEl.value));
-            formData.append('destination', destination);
-            formData.append('folder_name', folderName);
-
-            try {
-                saveBtn.disabled = true;
-                const res = await fetch(`${base}/api/grid/save`, {
-                    method: 'POST',
-                    headers: { 'X-Upload-Key': key },
-                    body: formData,
-                });
-                if (!res.ok) {
-                    const text = await res.text().catch(() => '');
-                    throw new Error(text || '保存失败');
-                }
-                const data = await res.json();
-                if (data?.ok) {
-                    alert(`保存成功：${data?.destination || ''}`);
-                } else {
-                    throw new Error(data?.detail || '保存失败');
-                }
-            } catch (err) {
-                console.error(err);
-                alert(err?.message || '保存失败');
-            } finally {
-                saveBtn.disabled = false;
-            }
-        }
-    });
-
     saveBtn.addEventListener('click', () => {
         if (!currentFile) return;
+
+        const folderSelector = new FolderSelector({
+            base,
+            title: '选择保存位置',
+            onSelect: async (selectedPath) => {
+                if (!currentFile) return;
+
+                const { destination, folderName } = splitPath(selectedPath);
+                if (!folderName) {
+                    alert('请先选择一个具体的文件夹，或在当前目录下新建文件夹');
+                    return;
+                }
+
+                const key = localStorage.getItem('pushfile_admin_key') || '';
+                const formData = new FormData();
+                formData.append('file', currentFile);
+                formData.append('line_width', String(lineWidthEl.value));
+                formData.append('gap', String(gapEl.value));
+                formData.append('destination', destination);
+                formData.append('folder_name', folderName);
+
+                try {
+                    saveBtn.disabled = true;
+                    const res = await fetch(`${base}/api/grid/save`, {
+                        method: 'POST',
+                        headers: { 'X-Upload-Key': key },
+                        body: formData,
+                    });
+                    if (!res.ok) {
+                        const text = await res.text().catch(() => '');
+                        throw new Error(text || '保存失败');
+                    }
+                    const data = await res.json();
+                    if (data?.ok) {
+                        alert(`保存成功：${data?.destination || ''}`);
+                    } else {
+                        throw new Error(data?.detail || '保存失败');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert(err?.message || '保存失败');
+                } finally {
+                    saveBtn.disabled = false;
+                }
+            }
+        });
         folderSelector.show();
     });
 

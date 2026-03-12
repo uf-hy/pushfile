@@ -28,6 +28,7 @@
     max-width: 800px;
     margin: 0 auto;
     padding: 20px;
+    padding-bottom: 120px;
 }
 
 .upload-zone {
@@ -69,12 +70,22 @@
     height: auto;
     display: block;
     border-radius: 8px;
+    max-height: 40vh;
+    object-fit: contain;
 }
 
 .actions {
     margin-top: 16px;
     display: flex;
     gap: 12px;
+    flex-wrap: wrap;
+    position: sticky;
+    bottom: 12px;
+    background: rgba(245, 245, 247, 0.9);
+    border: 1px solid #eee;
+    border-radius: 14px;
+    padding: 12px;
+    backdrop-filter: blur(10px);
 }
 
 .actions .btn-primary,
@@ -87,4 +98,5 @@
     .upload-zone { padding: 40px 16px; }
     .params { grid-template-columns: 1fr; }
     .actions { flex-direction: column; }
+    .actions { bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
 }
