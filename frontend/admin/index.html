@@ -10,6 +10,7 @@
     <link rel="preload" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css" as="style">
     
     <link rel="stylesheet" href="{{ base }}/static/admin/style.css">
+    <link rel="stylesheet" href="{{ base }}/static/admin/components/FolderSelector.css">
     
     <!-- 异步加载 Phosphor Icons，并添加加载状态类 -->
     <script>
@@ -205,9 +206,35 @@
 
     <div class="modal" id="uploadModal" style="display:none" onclick="if(event.target===this) closeModal('uploadModal')">
         <div class="modal-content">
-            <h3>上传照片</h3>
-            <p>功能开发中...</p>
-            <button type="button" class="btn btn-secondary" onclick="closeModal('uploadModal')">关闭</button>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                <h3 style="margin:0;">上传文件</h3>
+                <button type="button" class="icon-btn" onclick="closeModal('uploadModal')"><i class="ph ph-x"></i></button>
+            </div>
+
+            <div class="upload-drop-zone" id="homeUploadZone" style="margin-top:12px;border:2px dashed var(--color-border);border-radius:16px;padding:18px;text-align:center;cursor:pointer;">
+                <i class="ph ph-upload-simple" style="font-size:28px;color:var(--color-text-secondary);"></i>
+                <div style="margin-top:8px;font-weight:600;">点击选择 或 拖拽图片/ZIP</div>
+                <div style="margin-top:4px;font-size:13px;color:var(--color-text-secondary);">移动端不支持拖拽时，点击选择即可</div>
+                <input type="file" id="homeUploadFileInput" accept="image/*,.zip" multiple hidden>
+                <input type="file" id="homeUploadFolderInput" webkitdirectory multiple hidden>
+                <div style="display:flex;gap:10px;justify-content:center;margin-top:12px;flex-wrap:wrap;">
+                    <button type="button" class="btn btn-secondary" id="homeChooseFilesBtn"><i class="ph ph-image"></i> 选图片/ZIP</button>
+                    <button type="button" class="btn btn-secondary" id="homeChooseFolderBtn"><i class="ph ph-folder"></i> 选文件夹</button>
+                </div>
+            </div>
+
+            <div id="homeUploadPreview" style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:12px;"></div>
+
+            <div style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                <div style="font-size:13px;color:var(--color-text-secondary);">保存到</div>
+                <button type="button" class="btn btn-secondary" id="homeChooseDestBtn"><i class="ph ph-folder"></i> 选择位置</button>
+            </div>
+            <div id="homeUploadDest" style="margin-top:6px;font-size:13px;color:var(--color-text-secondary);word-break:break-all;">未选择</div>
+
+            <div class="modal-actions" style="margin-top:14px;display:flex;gap:10px;justify-content:flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('uploadModal')">取消</button>
+                <button type="button" class="btn btn-primary" id="homeUploadStartBtn">开始上传</button>
+            </div>
         </div>
     </div>
 
@@ -231,6 +258,7 @@
     </div>
 
     <script src="{{ base }}/static/admin/auth.js"></script>
+    <script src="{{ base }}/static/admin/components/FolderSelector.js"></script>
     <script src="{{ base }}/static/admin/app.js"></script>
 </body>
 </html>

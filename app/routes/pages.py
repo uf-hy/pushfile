@@ -117,6 +117,13 @@ def grid_page(request: Request):
     )
 
 
+@router.get("/dashboard", response_class=HTMLResponse)
+def dashboard_page(request: Request):
+    return templates.TemplateResponse(
+        "admin/dashboard.html", {"request": request, **_common},
+    )
+
+
 @router.get("/album/{token}", response_class=HTMLResponse)
 def album(request: Request, token: str):
     return _render_album(request, token)

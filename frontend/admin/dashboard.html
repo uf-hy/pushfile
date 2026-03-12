@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>数据统计 - PushFile Admin</title>
+
+    <link rel="preconnect" href="https://unpkg.com" crossorigin>
+    <script src="https://unpkg.com/@phosphor-icons/web" async></script>
+
+    <link rel="stylesheet" href="{{ base }}/static/admin/style.css">
+    <link rel="stylesheet" href="{{ base }}/static/admin/dashboard.css">
+
+    <script>
+        window.__BASE__ = '{{ base }}';
+        document.documentElement.style.visibility = 'hidden';
+    </script>
+</head>
+<body>
+    <div class="app-container">
+        <header class="header">
+            <div class="header-content">
+                <div class="logo-area" style="cursor: pointer;" onclick="go('/')">
+                    <div class="logo-icon">
+                        <i class="ph-fill ph-paper-plane-tilt"></i>
+                    </div>
+                    <div class="logo-text">
+                        <h1>数据统计</h1>
+                        <span class="version-badge">Dashboard</span>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <button type="button" class="btn btn-secondary" onclick="go('/')">
+                        <i class="ph ph-arrow-left"></i>
+                        返回首页
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="greeting">
+                <h2>统计概览</h2>
+                <p id="dashSubtitle">加载中...</p>
+            </div>
+
+            <div class="bento-grid dashboard-grid">
+                <div class="bento-card">
+                    <div class="card-header">
+                        <div class="card-icon-wrapper primary"><i class="ph ph-image"></i></div>
+                        <h3>总照片数</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="big-stat" id="statPhotos">-</div>
+                    </div>
+                </div>
+
+                <div class="bento-card">
+                    <div class="card-header">
+                        <div class="card-icon-wrapper accent"><i class="ph ph-folders"></i></div>
+                        <h3>相册</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="big-stat" id="statAlbums">-</div>
+                    </div>
+                </div>
+
+                <div class="bento-card">
+                    <div class="card-header">
+                        <div class="card-icon-wrapper warning"><i class="ph ph-trend-up"></i></div>
+                        <h3>今日访问</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="big-stat" id="statToday">-</div>
+                    </div>
+                </div>
+
+                <div class="bento-card">
+                    <div class="card-header">
+                        <div class="card-icon-wrapper success"><i class="ph ph-chart-line-up"></i></div>
+                        <h3>总访问</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="big-stat" id="statTotal">-</div>
+                    </div>
+                </div>
+
+                <div class="bento-card span-2">
+                    <div class="card-header">
+                        <div class="card-icon-wrapper success"><i class="ph ph-clock-counter-clockwise"></i></div>
+                        <div class="header-text">
+                            <h3>最近活动</h3>
+                            <p>按最后访问时间排序</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="activity-list" id="dashActivityList">
+                            <div class="activity-item">
+                                <div class="activity-content">
+                                    <div class="activity-title">加载中...</div>
+                                    <div class="activity-meta">请稍候</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="{{ base }}/static/admin/auth.js"></script>
+    <script src="{{ base }}/static/admin/app.js"></script>
+    <script src="{{ base }}/static/admin/dashboard.js"></script>
+</body>
+</html>

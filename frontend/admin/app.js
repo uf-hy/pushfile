@@ -198,6 +198,176 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     guardPromise.then(loadAndRenderStats);
+
+    const homeUpload = {
+        selectedPath: '',
+        files: [],
+        paths: [],
+    };
+
+    function splitPath(path) {
+        const parts = String(path || '').split('/').filter(Boolean);
+        if (parts.length === 0) return { destination: '', folderName: '' };
+        return { destination: parts.slice(0, -1).join('/'), folderName: parts[parts.length - 1] || '' };
+    }
+
+    function renderHomeUploadPreview() {
+        const box = document.getElementById('homeUploadPreview');
+        if (!box) return;
+        const items = homeUpload.files.slice(0, 6);
+        if (items.length === 0) {
+            box.innerHTML = '';
+            return;
+        }
+        box.innerHTML = items.map((f) => {
+            const isImg = (f && f.type && f.type.startsWith('image/'));
+            if (isImg) {
+                const url = URL.createObjectURL(f);
+                return `<div style="width:100%;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:var(--color-bg);border:1px solid var(--color-border);"><img src="${url}" style="width:100%;height:100%;object-fit:cover;display:block;"></div>`;
+            }
+            const name = (f && f.name) ? f.name : '文件';
+            return `<div style="width:100%;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:var(--color-bg);border:1px solid var(--color-border);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--color-text-secondary);padding:6px;text-align:center;">${name}</div>`;
+        }).join('');
+    }
+
+    function setHomeUploadDestText() {
+        const el = document.getElementById('homeUploadDest');
+        if (!el) return;
+        el.textContent = homeUpload.selectedPath ? `/${homeUpload.selectedPath}` : '未选择';
+    }
+
+    function resetHomeUploadState() {
+        homeUpload.files = [];
+        homeUpload.paths = [];
+        renderHomeUploadPreview();
+    }
+
+    function initHomeUpload() {
+        const zone = document.getElementById('homeUploadZone');
+        const fileInput = document.getElementById('homeUploadFileInput');
+        const folderInput = document.getElementById('homeUploadFolderInput');
+        const chooseFilesBtn = document.getElementById('homeChooseFilesBtn');
+        const chooseFolderBtn = document.getElementById('homeChooseFolderBtn');
+        const chooseDestBtn = document.getElementById('homeChooseDestBtn');
+        const startBtn = document.getElementById('homeUploadStartBtn');
+
+        if (chooseFilesBtn && fileInput) {
+            chooseFilesBtn.addEventListener('click', () => fileInput.click());
+        }
+        if (chooseFolderBtn && folderInput) {
+            chooseFolderBtn.addEventListener('click', () => folderInput.click());
+        }
+        if (zone && fileInput) {
+            zone.addEventListener('click', (e) => {
+                if (e.target && e.target.closest && e.target.closest('button')) return;
+                fileInput.click();
+            });
+            zone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+            });
+            zone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const files = (e.dataTransfer && e.dataTransfer.files) ? Array.from(e.dataTransfer.files) : [];
+                homeUpload.files = files;
+                homeUpload.paths = files.map(f => f.name || 'file');
+                renderHomeUploadPreview();
+            });
+        }
+
+        if (fileInput) {
+            fileInput.addEventListener('change', () => {
+                const files = fileInput.files ? Array.from(fileInput.files) : [];
+                homeUpload.files = files;
+                homeUpload.paths = files.map(f => f.name || 'file');
+                renderHomeUploadPreview();
+            });
+        }
+
+        if (folderInput) {
+            folderInput.addEventListener('change', () => {
+                const files = folderInput.files ? Array.from(folderInput.files) : [];
+                homeUpload.files = files;
+                homeUpload.paths = files.map(f => f.webkitRelativePath || f.name || 'file');
+                renderHomeUploadPreview();
+            });
+        }
+
+        if (chooseDestBtn) {
+            chooseDestBtn.addEventListener('click', () => {
+                const picker = new FolderSelector({
+                    base,
+                    title: '选择保存位置',
+                    onSelect: (p) => {
+                        homeUpload.selectedPath = p || '';
+                        setHomeUploadDestText();
+                    },
+                });
+                picker.show();
+            });
+        }
+
+        if (startBtn) {
+            startBtn.addEventListener('click', async () => {
+                if (!window.PushFileAuth || typeof window.PushFileAuth.apiPost !== 'function') return;
+                if (!homeUpload.files || homeUpload.files.length === 0) {
+                    alert('请先选择要上传的文件');
+                    return;
+                }
+                const { destination, folderName } = splitPath(homeUpload.selectedPath);
+                if (!folderName) {
+                    alert('请先选择一个具体的保存位置（可在根目录下新建文件夹）');
+                    return;
+                }
+
+                startBtn.disabled = true;
+                startBtn.textContent = '上传中...';
+
+                try {
+                    const pairs = homeUpload.files.map((f, idx) => ({
+                        file: f,
+                        path: homeUpload.paths[idx] || (f && f.name ? f.name : 'file'),
+                    }));
+                    const zipPairs = pairs.filter(p => (p.file && p.file.name && p.file.name.toLowerCase().endsWith('.zip')));
+                    const otherPairs = pairs.filter(p => !(p.file && p.file.name && p.file.name.toLowerCase().endsWith('.zip')));
+
+                    for (const p of zipPairs) {
+                        const fd = new FormData();
+                        fd.append('file', p.file);
+                        fd.append('destination', destination);
+                        fd.append('folder_name', folderName);
+                        const r = await window.PushFileAuth.apiPost('/api/upload/zip-import', fd, { base });
+                        if (!r || r.ok !== true) throw new Error((r && r.detail) || 'ZIP 上传失败');
+                    }
+
+                    if (otherPairs.length > 0) {
+                        const fd = new FormData();
+                        for (const p of otherPairs) {
+                            fd.append('files', p.file);
+                            fd.append('paths', p.path);
+                        }
+                        fd.append('destination', destination);
+                        fd.append('folder_name', folderName);
+                        const r = await window.PushFileAuth.apiPost('/api/upload/folder-import', fd, { base });
+                        if (!r || r.ok !== true) throw new Error((r && r.detail) || '上传失败');
+                    }
+
+                    alert('上传成功');
+                    resetHomeUploadState();
+                    closeModal('uploadModal');
+                } catch (err) {
+                    console.error(err);
+                    alert(err && err.message ? err.message : '上传失败');
+                } finally {
+                    startBtn.disabled = false;
+                    startBtn.textContent = '开始上传';
+                }
+            });
+        }
+
+        setHomeUploadDestText();
+    }
+
+    guardPromise.then(initHomeUpload);
     // 简单的交互动画逻辑
     
     // 1. 按钮点击波纹效果 (Apple 风格的轻微缩放)
