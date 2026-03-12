@@ -288,8 +288,14 @@ function updateBreadcrumbs(title) {
 }
 
 function renderUploadSelect() {
-    renderAlbumList(state.folderTree || []);
-    setUploadAlbumSelection(state.uploadTargetToken || state.currentToken);
+    const select = document.getElementById('upload-album-select');
+    if (!select) return;
+
+    select.innerHTML = state.tokens.map(t => {
+        const displayTitle = t.title || t.token;
+        const isSelected = t.token === state.currentToken ? 'selected' : '';
+        return `<option value="${t.token}" ${isSelected}>${displayTitle}</option>`;
+    }).join('');
 }
 
 function setUploadAlbumSelection(token) {
@@ -679,92 +685,158 @@ function setupEventListeners() {
         overlay.addEventListener('click', toggleSidebar);
     }
 
-    const dropzone = document.getElementById('dropzone');
-    if (dropzone) {
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            dropzone.addEventListener(eventName, preventDefaults, false);
-        });
-
-        function preventDefaults(e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-
-        ['dragenter', 'dragover'].forEach(eventName => {
-            dropzone.addEventListener(eventName, () => {
-                dropzone.classList.add('dragover');
-            }, false);
-        });
-
-        ['dragleave', 'drop'].forEach(eventName => {
-            dropzone.addEventListener(eventName, () => {
-                dropzone.classList.remove('dragover');
-            }, false);
-        });
-
-        dropzone.addEventListener('drop', handleDrop, false);
-
-        function handleDrop(e) {
-            const dt = e.dataTransfer;
-            const files = dt.files;
-            handleFiles(files);
-        }
+    const fileInput = document.getElementById('fileInput');
+    if (fileInput) {
+        fileInput.addEventListener('change', handleFiles);
     }
 
-    document.addEventListener('click', function(e) {
-        const list = document.getElementById('albumList');
-        const selector = document.getElementById('albumSelector');
-        if (!list || !selector) return;
-        if (selector.contains(e.target)) return;
-        list.style.display = 'none';
-    });
+    const uploadZone = document.getElementById('uploadZone');
+    if (uploadZone) {
+        uploadZone.addEventListener('dragover', e => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+
+        uploadZone.addEventListener('drop', e => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            const files = e.dataTransfer && e.dataTransfer.files;
+            handleFiles({ target: { files } });
+        });
+
+        uploadZone.addEventListener('click', e => {
+            if (!fileInput) return;
+            if (e.target && e.target.closest && e.target.closest('#chooseFilesBtn')) return;
+            fileInput.click();
+        });
+    }
 }
 
-// 处理文件上传
-async function handleFiles(files) {
-    if (!files || files.length === 0) return;
-    
-    const token = state.uploadTargetToken || state.currentToken;
-    if (!token) {
-        alert('请先选择或创建一个相册喵！');
-        return;
-    }
-
-    const dropzoneContent = document.querySelector('.dropzone-content');
-    const originalHtml = dropzoneContent ? dropzoneContent.innerHTML : '';
-
-    if (dropzoneContent) {
-        dropzoneContent.innerHTML = `
-            <div class="upload-icon-ring" style="animation: pulse 1.5s infinite">
-                <i class="ph ph-spinner-gap ph-spin"></i>
-            </div>
-            <h4>正在上传...</h4>
-            <p id="upload-progress">0 / ${files.length}</p>
-        `;
-    }
-
+async function uploadFiles(files, token, onProgress) {
     let successCount = 0;
+    let failCount = 0;
+    let lastError = null;
+
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const formData = new FormData();
         formData.append('file', file);
 
         try {
-            const progressEl = document.getElementById('upload-progress');
-            if (progressEl) progressEl.textContent = `${i + 1} / ${files.length} (${file.name})`;
-            await api.post(`/api/upload/${token}`, formData);
+            if (typeof onProgress === 'function') {
+                onProgress(i + 1, files.length, file);
+            }
+            const res = await api.post(`/api/upload/${token}`, formData);
+            if (res && res.ok === false) {
+                throw new Error(res.message || '上传失败');
+            }
             successCount++;
-        } catch (e) {
-            console.error(`上传 ${file.name} 失败:`, e);
+        } catch (err) {
+            lastError = err;
+            failCount++;
         }
     }
 
-    alert(`上传完成喵！成功: ${successCount}，失败: ${files.length - successCount}`);
+    return { successCount, failCount, lastError };
+}
 
-    if (dropzoneContent) dropzoneContent.innerHTML = originalHtml;
-    toggleUploadModal();
-    if (token === state.currentToken) {
-        loadAlbum(token, document.querySelector('.crumb-item.current').textContent);
+function showToast(message) {
+    let toast = document.getElementById('pfToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'pfToast';
+        toast.style.cssText = [
+            'position:fixed',
+            'left:50%',
+            'bottom:28px',
+            'transform:translateX(-50%)',
+            'background:rgba(0,0,0,0.75)',
+            'color:#fff',
+            'padding:10px 14px',
+            'border-radius:10px',
+            'font-size:13px',
+            'z-index:20000',
+            'max-width:90vw',
+            'text-align:center',
+            'opacity:0',
+            'transition:opacity 0.2s ease'
+        ].join(';');
+        document.body.appendChild(toast);
+    }
+
+    toast.textContent = message;
+    toast.style.opacity = '1';
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => {
+        toast.style.opacity = '0';
+    }, 2200);
+}
+
+function getErrorMessage(err) {
+    if (!err) return '未知错误';
+    if (typeof err === 'string') return err;
+    if (err instanceof Error && err.message) return err.message;
+    if (typeof err.message === 'string') return err.message;
+    return String(err);
+}
+
+function updateUploadProgress(current, total, file) {
+    const el = document.getElementById('upload-progress');
+    if (!el) return;
+    const name = file && file.name ? ` (${file.name})` : '';
+    el.textContent = `${current} / ${total}${name}`;
+}
+
+function setUploadingUI(files) {
+    const dropzoneContent = document.querySelector('.dropzone-content');
+    if (!dropzoneContent) return null;
+
+    const originalHtml = dropzoneContent.innerHTML;
+    dropzoneContent.innerHTML = `
+        <div class="upload-icon-ring" style="animation: pulse 1.5s infinite">
+            <i class="ph ph-spinner-gap ph-spin"></i>
+        </div>
+        <h4>正在上传...</h4>
+        <p id="upload-progress">0 / ${files.length}</p>
+    `;
+
+    return () => {
+        dropzoneContent.innerHTML = originalHtml;
+    };
+}
+
+// 处理文件上传
+async function handleFiles(e) {
+    const files = e && e.target ? e.target.files : null;
+    if (!files || files.length === 0) return;
+
+    const selectEl = document.getElementById('upload-album-select');
+    const token = selectEl ? selectEl.value : state.currentToken;
+    if (!token) {
+        showToast('请先选择相册');
+        return;
+    }
+
+    showToast('上传中...');
+    const restoreUI = setUploadingUI(files);
+
+    try {
+        const { successCount, failCount, lastError } = await uploadFiles(files, token, updateUploadProgress);
+        if (failCount > 0) {
+            const msg = lastError ? getErrorMessage(lastError) : '部分文件上传失败';
+            throw new Error(`成功 ${successCount}，失败 ${failCount}：${msg}`);
+        }
+        showToast('上传成功');
+        toggleUploadModal();
+        if (token === state.currentToken) {
+            loadAlbum(token, document.querySelector('.crumb-item.current').textContent);
+        }
+    } catch (err) {
+        showToast('上传失败: ' + getErrorMessage(err));
+    } finally {
+        if (typeof restoreUI === 'function') restoreUI();
+        const fileInput = document.getElementById('fileInput');
+        if (fileInput) fileInput.value = '';
     }
 }
 
@@ -773,7 +845,6 @@ window.toggleUploadModal = function() {
     if (modal) {
         modal.classList.toggle('active');
         if (modal.classList.contains('active')) {
-            setUploadAlbumSelection(state.currentToken);
             renderUploadSelect();
         }
     }
