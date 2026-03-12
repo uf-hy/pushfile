@@ -95,11 +95,11 @@
                          <button type="button" class="icon-btn" title="手机预览" onclick="switchView('mobile')"><i class="ph ph-device-mobile"></i></button>
                     </div>
                     <div class="action-divider"></div>
-                     <button type="button" class="btn-primary" onclick="toggleUploadModal()">
+                     <button type="button" class="btn-primary upload-btn" onclick="toggleUploadModal(); document.getElementById('fileInput').click()">
                          <i class="ph ph-upload-simple"></i> <span class="btn-text">上传</span>
                      </button>
-                </div>
-            </header>
+                 </div>
+             </header>
 
             <!-- 网格内容区 -->
             <div class="content-area">
@@ -178,17 +178,19 @@
             </div>
             
             <div class="modal-body">
-                <div class="dropzone" id="dropzone">
+                <div class="dropzone" id="uploadZone">
                     <div class="dropzone-content">
                         <div class="upload-icon-ring">
                             <i class="ph ph-cloud-arrow-up"></i>
                         </div>
                         <h4>将照片拖拽到此处</h4>
                         <p>支持 JPG, PNG, GIF, WEBP 等格式</p>
-                        <button type="button" class="btn-secondary mt-3">选择文件</button>
+                        <button type="button" class="btn-secondary mt-3" id="chooseFilesBtn" onclick="document.getElementById('fileInput').click()">选择文件</button>
                     </div>
                 </div>
-                
+
+                <input type="file" id="fileInput" accept="image/*,.zip" multiple hidden>
+
                 <div class="upload-options">
                     <div class="option-row">
                         <span>保存到相册</span>

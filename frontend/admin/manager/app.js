@@ -7,7 +7,9 @@ const state = {
     base: window.__BASE__ || '',
     tokens: [],
     currentToken: null,
-    currentFiles: []
+    currentFiles: [],
+    folderTree: [],
+    uploadTargetToken: null
 };
 
 // API 工具函数
@@ -57,6 +59,7 @@ async function loadTokens() {
     const data = await api.get('/api/folders/tree');
     if (data.ok) {
         state.tokens = [];
+        state.folderTree = data.tree || [];
         
         function flattenTree(nodes) {
             for (const node of nodes) {
@@ -73,9 +76,9 @@ async function loadTokens() {
                 }
             }
         }
-        flattenTree(data.tree);
+        flattenTree(state.folderTree);
         
-        renderSidebarTree(data.tree);
+        renderSidebarTree(state.folderTree);
         renderUploadSelect();
         
         if (state.tokens.length > 0) {
@@ -233,7 +236,7 @@ function setupDragAndDrop() {
 
         item.addEventListener('dragend', function() {
             this.classList.remove('dragging');
-            items.forEach(i => i.classList.remove('drag-over'));
+            items.forEach(i => { i.classList.remove('drag-over'); });
             draggedItem = null;
         });
 
@@ -285,14 +288,85 @@ function updateBreadcrumbs(title) {
 }
 
 function renderUploadSelect() {
-    const select = document.getElementById('upload-album-select');
-    if (!select) return;
-    
-    select.innerHTML = state.tokens.map(t => {
-        const displayTitle = t.title || t.token;
-        const isSelected = t.token === state.currentToken ? 'selected' : '';
-        return `<option value="${t.token}" ${isSelected}>${displayTitle}</option>`;
-    }).join('');
+    renderAlbumList(state.folderTree || []);
+    setUploadAlbumSelection(state.uploadTargetToken || state.currentToken);
+}
+
+function setUploadAlbumSelection(token) {
+    if (!token) return;
+    state.uploadTargetToken = token;
+
+    const t = state.tokens.find(x => x.token === token);
+    const name = t ? (t.title || t.token) : token;
+    const nameEl = document.getElementById('selectedAlbumName');
+    if (nameEl) nameEl.textContent = name;
+
+    const list = document.getElementById('albumList');
+    if (!list) return;
+    list.querySelectorAll('.album-item').forEach(el => {
+        el.classList.toggle('selected', el.dataset && el.dataset.token === token);
+    });
+}
+
+function toggleAlbumList() {
+    const list = document.getElementById('albumList');
+    if (!list) return;
+    list.style.display = list.style.display === 'none' ? 'block' : 'none';
+}
+
+function selectAlbum(path, name, el) {
+    if (!path) return;
+    state.uploadTargetToken = path;
+    const nameEl = document.getElementById('selectedAlbumName');
+    if (nameEl) nameEl.textContent = name;
+    const list = document.getElementById('albumList');
+    if (list) list.style.display = 'none';
+
+    document.querySelectorAll('#albumList .album-item').forEach(item => { item.classList.remove('selected'); });
+    const target = el && el.closest ? el.closest('.album-item') : null;
+    if (target) target.classList.add('selected');
+}
+
+function renderAlbumList(folders) {
+    const list = document.getElementById('albumList');
+    if (!list) return;
+    list.innerHTML = '';
+
+    const frag = document.createDocumentFragment();
+
+    function appendNodes(nodes, level) {
+        for (const node of nodes || []) {
+            const clamped = Math.min(Math.max(level, 0), 3);
+            const item = document.createElement('div');
+            item.className = `album-item${clamped > 0 ? ` level-${clamped}` : ''}`;
+
+            const icon = document.createElement('i');
+            icon.className = 'ph ph-folder';
+            const text = document.createElement('span');
+            text.textContent = node.name || '';
+
+            item.appendChild(icon);
+            item.appendChild(text);
+
+            if (node.is_album) {
+                item.dataset.token = node.slug;
+                item.addEventListener('click', () => selectAlbum(node.slug, node.name, item));
+            } else {
+                item.style.cursor = 'default';
+                item.style.fontWeight = '600';
+                item.style.opacity = '0.85';
+            }
+
+            frag.appendChild(item);
+
+            if (node.children && node.children.length > 0) {
+                appendNodes(node.children, level + 1);
+            }
+        }
+    }
+
+    appendNodes(folders || [], 0);
+    list.appendChild(frag);
 }
 
 // 工具：复制链接
@@ -631,43 +705,53 @@ function setupEventListeners() {
         dropzone.addEventListener('drop', handleDrop, false);
 
         function handleDrop(e) {
-            let dt = e.dataTransfer;
-            let files = dt.files;
+            const dt = e.dataTransfer;
+            const files = dt.files;
             handleFiles(files);
         }
     }
+
+    document.addEventListener('click', function(e) {
+        const list = document.getElementById('albumList');
+        const selector = document.getElementById('albumSelector');
+        if (!list || !selector) return;
+        if (selector.contains(e.target)) return;
+        list.style.display = 'none';
+    });
 }
 
 // 处理文件上传
 async function handleFiles(files) {
-    if (files.length === 0) return;
+    if (!files || files.length === 0) return;
     
-    const selectEl = document.getElementById('upload-album-select');
-    const token = selectEl ? selectEl.value : state.currentToken;
+    const token = state.uploadTargetToken || state.currentToken;
     if (!token) {
         alert('请先选择或创建一个相册喵！');
         return;
     }
 
     const dropzoneContent = document.querySelector('.dropzone-content');
-    const originalHtml = dropzoneContent.innerHTML;
-    
-    dropzoneContent.innerHTML = `
-        <div class="upload-icon-ring" style="animation: pulse 1.5s infinite">
-            <i class="ph ph-spinner-gap ph-spin"></i>
-        </div>
-        <h4>正在上传...</h4>
-        <p id="upload-progress">0 / ${files.length}</p>
-    `;
+    const originalHtml = dropzoneContent ? dropzoneContent.innerHTML : '';
+
+    if (dropzoneContent) {
+        dropzoneContent.innerHTML = `
+            <div class="upload-icon-ring" style="animation: pulse 1.5s infinite">
+                <i class="ph ph-spinner-gap ph-spin"></i>
+            </div>
+            <h4>正在上传...</h4>
+            <p id="upload-progress">0 / ${files.length}</p>
+        `;
+    }
 
     let successCount = 0;
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const formData = new FormData();
         formData.append('file', file);
-        
+
         try {
-            document.getElementById('upload-progress').textContent = `${i + 1} / ${files.length} (${file.name})`;
+            const progressEl = document.getElementById('upload-progress');
+            if (progressEl) progressEl.textContent = `${i + 1} / ${files.length} (${file.name})`;
             await api.post(`/api/upload/${token}`, formData);
             successCount++;
         } catch (e) {
@@ -676,8 +760,8 @@ async function handleFiles(files) {
     }
 
     alert(`上传完成喵！成功: ${successCount}，失败: ${files.length - successCount}`);
-    
-    dropzoneContent.innerHTML = originalHtml;
+
+    if (dropzoneContent) dropzoneContent.innerHTML = originalHtml;
     toggleUploadModal();
     if (token === state.currentToken) {
         loadAlbum(token, document.querySelector('.crumb-item.current').textContent);
@@ -689,6 +773,7 @@ window.toggleUploadModal = function() {
     if (modal) {
         modal.classList.toggle('active');
         if (modal.classList.contains('active')) {
+            setUploadAlbumSelection(state.currentToken);
             renderUploadSelect();
         }
     }

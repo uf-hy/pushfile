@@ -10,6 +10,11 @@
     --color-text-main: #1D1D1F;
     --color-text-secondary: #86868B;
     --color-border: rgba(0, 0, 0, 0.08);
+
+    --border-color: var(--color-border);
+    --hover-bg: var(--color-hover);
+    --card-bg: rgba(255, 255, 255, 0.95);
+    --primary-light: var(--color-active);
     
     --spring-soft: cubic-bezier(0.175, 0.885, 0.32, 1.1);
     --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
@@ -671,6 +676,59 @@ html.icons-loading i[class^="ph"] {
     background-size: 10px auto;
 }
 
+.album-selector {
+    position: relative;
+    width: 100%;
+}
+
+.selected-album {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.selected-album:hover {
+    background: var(--hover-bg);
+}
+
+.album-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: 300px;
+    overflow-y: auto;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    z-index: 100;
+}
+
+.album-item {
+    padding: 10px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.album-item:hover {
+    background: var(--hover-bg);
+}
+
+.album-item.selected {
+    background: var(--primary-light);
+}
+
+.album-item.level-1 { padding-left: 24px; }
+.album-item.level-2 { padding-left: 40px; }
+.album-item.level-3 { padding-left: 56px; }
+
 /* 移动端侧边栏遮罩 */
 .sidebar-overlay {
     display: none;
@@ -791,7 +849,7 @@ html.icons-loading i[class^="ph"] {
         border-radius: 8px;
         min-width: 36px;
     }
-    
+
     .btn-primary .btn-text {
         display: none;
     }
