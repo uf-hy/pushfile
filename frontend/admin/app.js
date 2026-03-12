@@ -95,8 +95,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const albumCountEl = document.querySelector('.card-manage .stat-item:nth-child(3) .stat-value');
             const newVisitorsEl = document.querySelector('.card-manage .stat-item:nth-child(5) .stat-value');
 
-            if (totalPhotos > 0) setText(totalPhotosEl, formatNumber(totalPhotos));
-            if (albumCount > 0) setText(albumCountEl, formatNumber(albumCount));
+            setText(totalPhotosEl, formatNumber(totalPhotos));
+            setText(albumCountEl, formatNumber(albumCount));
 
             const statsData = await window.PushFileAuth.apiGet('/api/stats', { base });
             let totalViews = 0;
@@ -122,9 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             
-            if (todayViews > 0) {
-                setText(newVisitorsEl, '+' + formatNumber(todayViews));
-            }
+            setText(newVisitorsEl, `+${formatNumber(todayViews)}`);
 
             recentItems.sort((a, b) => (b.last_visit || '').localeCompare(a.last_visit || ''));
             const top5 = recentItems.slice(0, 5);
@@ -136,7 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const titleEl = items[i].querySelector('.activity-title');
                     const metaEl = items[i].querySelector('.activity-meta');
                     if (titleEl) setText(titleEl, item.title);
-                    if (metaEl) setText(metaEl, item.views + ' 次访问');
+                    if (metaEl) setText(metaEl, `${item.views} 次访问`);
                 }
             }
 
