@@ -337,6 +337,35 @@ html.icons-loading i[class^="ph"] {
 
 .btn-primary:active { transform: scale(0.96); }
 
+.copy-link-btn {
+    background: var(--color-hover);
+    color: var(--color-text-main);
+    border: 1px solid var(--color-border);
+    padding: 8px 14px;
+    border-radius: 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.2s var(--spring-soft);
+    white-space: nowrap;
+}
+
+.copy-link-btn i {
+    font-size: 18px;
+    color: var(--color-text-secondary);
+}
+
+.copy-link-btn:hover {
+    background: rgba(0, 0, 0, 0.08);
+    transform: translateY(-1px);
+}
+
+.copy-link-btn:active { transform: scale(0.98); }
+
 /* === 网格内容区 === */
 .content-area {
     flex: 1;
@@ -781,6 +810,20 @@ html.icons-loading i[class^="ph"] {
     
     .action-divider, .view-toggles {
         display: none;
+    }
+
+    .copy-link-btn {
+        padding: 0;
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        font-size: 0;
+        gap: 0;
+    }
+
+    .copy-link-btn i {
+        font-size: 18px;
+        color: var(--color-text-main);
     }
 
     /* 上传按钮变方形 */

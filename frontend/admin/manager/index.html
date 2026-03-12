@@ -91,15 +91,20 @@
                     </div>
                     <div class="action-divider"></div>
                     <div class="view-toggles">
-                         <button type="button" class="icon-btn active" title="网格视图" onclick="switchView('grid')"><i class="ph ph-squares-four"></i></button>
-                         <button type="button" class="icon-btn" title="手机预览" onclick="switchView('mobile')"><i class="ph ph-device-mobile"></i></button>
+                          <button type="button" class="icon-btn active" title="网格视图" onclick="switchView('grid')"><i class="ph ph-squares-four"></i></button>
+                          <button type="button" class="icon-btn" title="手机预览" onclick="switchView('mobile')"><i class="ph ph-device-mobile"></i></button>
                     </div>
                     <div class="action-divider"></div>
+                    <button class="copy-link-btn" type="button" onclick="copyCurrentLink()">
+                        <i class="ph ph-link"></i>
+                        复制画廊链接
+                    </button>
+                    <div class="action-divider"></div>
                      <button type="button" class="btn-primary upload-btn" onclick="toggleUploadModal(); document.getElementById('fileInput').click()">
-                         <i class="ph ph-upload-simple"></i> <span class="btn-text">上传</span>
-                     </button>
-                 </div>
-             </header>
+                          <i class="ph ph-upload-simple"></i> <span class="btn-text">上传</span>
+                      </button>
+                  </div>
+              </header>
 
             <!-- 网格内容区 -->
             <div class="content-area">

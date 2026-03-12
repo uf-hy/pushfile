@@ -386,6 +386,37 @@ async function copyUrl(url) {
     }
 }
 
+function copyCurrentLink() {
+    const token = state.currentToken;
+    if (!token) {
+        showToast('请先选择一个相册');
+        return;
+    }
+    const base = (state.base || '').replace(/\/$/, '');
+    const url = `${window.location.origin}${base}/d/${token}`;
+
+    const fallbackCopy = () => {
+        const input = document.createElement('input');
+        input.value = url;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+        showToast('链接已复制');
+    };
+
+    if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+        fallbackCopy();
+        return;
+    }
+
+    navigator.clipboard.writeText(url).then(() => {
+        showToast(`链接已复制: ${url}`);
+    }).catch(() => {
+        fallbackCopy();
+    });
+}
+
 // === 多选与右键菜单交互逻辑 ===
 let selectedFiles = new Set();
 let contextMenuTarget = null;
