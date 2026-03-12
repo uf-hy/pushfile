@@ -1,7 +1,137 @@
 document.addEventListener('DOMContentLoaded', () => {
+    const base = window.__BASE__ || '';
+    let guardPromise = Promise.resolve();
     if (window.PushFileAuth && typeof window.PushFileAuth.guardPage === 'function') {
-        window.PushFileAuth.guardPage({ base: window.__BASE__ || '' });
+        guardPromise = Promise.resolve(window.PushFileAuth.guardPage({ base }));
     }
+
+    function toNumber(v) {
+        if (typeof v === 'number' && Number.isFinite(v)) return v;
+        if (typeof v === 'string') {
+            const n = Number(v.replace(/,/g, '').replace(/^\+/, ''));
+            if (Number.isFinite(n)) return n;
+        }
+        return null;
+    }
+
+    function formatNumber(n) {
+        try {
+            return Number(n).toLocaleString('zh-CN');
+        } catch (_) {
+            return String(n);
+        }
+    }
+
+    function pickNumber(obj, keys) {
+        if (!obj || typeof obj !== 'object') return null;
+        for (const k of keys) {
+            const n = toNumber(obj[k]);
+            if (n !== null) return n;
+        }
+        return null;
+    }
+
+    function isPlainObject(v) {
+        return !!v && typeof v === 'object' && !Array.isArray(v);
+    }
+
+    function isStatsEntry(v) {
+        return isPlainObject(v) && ('views' in v || 'first_visit' in v || 'last_visit' in v);
+    }
+
+    function resolveStatsPayload(payload) {
+        const root = isPlainObject(payload) ? payload : {};
+        const totals = isPlainObject(root.totals) ? root.totals : {};
+
+        const photoCount =
+            pickNumber(root, ['photo_count', 'photos', 'images', 'total_photos', 'total_images', 'total_photo_count']) ??
+            pickNumber(totals, ['photo_count', 'photos', 'images', 'total_photos', 'total_images', 'total_photo_count']);
+
+        let albumCount =
+            pickNumber(root, ['album_count', 'albums', 'total_albums', 'total_album_count']) ??
+            pickNumber(totals, ['album_count', 'albums', 'total_albums', 'total_album_count']);
+
+        if (albumCount === null && isPlainObject(root)) {
+            const keys = Object.keys(root);
+            const entryCount = keys.reduce((acc, k) => (isStatsEntry(root[k]) ? acc + 1 : acc), 0);
+            if (entryCount > 0) albumCount = entryCount;
+        }
+
+        const newVisitors =
+            pickNumber(root, ['today_visit_count', 'new_visitors', 'new_visitor_count', 'today_new_visitors', 'unique_ip_count']) ??
+            pickNumber(totals, ['today_visit_count', 'new_visitors', 'new_visitor_count', 'today_new_visitors', 'unique_ip_count']);
+
+        const todayUploads =
+            pickNumber(root, ['today_upload_count', 'upload_today', 'today_new_files', 'new_files_today']) ??
+            pickNumber(totals, ['today_upload_count', 'upload_today', 'today_new_files', 'new_files_today']);
+
+        const activities =
+            (Array.isArray(root.recent_activities) && root.recent_activities) ||
+            (Array.isArray(root.activities) && root.activities) ||
+            (Array.isArray(root.recent) && root.recent) ||
+            (Array.isArray(totals.recent_activities) && totals.recent_activities) ||
+            null;
+
+        return { photoCount, albumCount, newVisitors, todayUploads, activities };
+    }
+
+    function setText(el, text) {
+        if (!el) return;
+        el.textContent = text;
+    }
+
+    async function loadAndRenderStats() {
+        if (!window.PushFileAuth || typeof window.PushFileAuth.apiGet !== 'function') return;
+        try {
+            const payload = await window.PushFileAuth.apiGet('/api/stats', { base });
+            const { photoCount, albumCount, newVisitors, todayUploads, activities } = resolveStatsPayload(payload);
+
+            const totalPhotosEl = document.querySelector('.card-manage .stat-item:nth-child(1) .stat-value');
+            const albumCountEl = document.querySelector('.card-manage .stat-item:nth-child(3) .stat-value');
+            const newVisitorsEl = document.querySelector('.card-manage .stat-item:nth-child(5) .stat-value');
+
+            if (photoCount !== null) setText(totalPhotosEl, formatNumber(photoCount));
+            if (albumCount !== null) setText(albumCountEl, formatNumber(albumCount));
+            if (newVisitors !== null) {
+                const sign = Number(newVisitors) >= 0 ? '+' : '';
+                setText(newVisitorsEl, `${sign}${formatNumber(newVisitors)}`);
+            }
+
+            if (todayUploads !== null) {
+                const greetingP = document.querySelector('.greeting p');
+                if (greetingP && typeof greetingP.textContent === 'string') {
+                    greetingP.textContent = greetingP.textContent.replace(/\d+/, String(todayUploads));
+                }
+            }
+
+            if (Array.isArray(activities) && activities.length > 0) {
+                const items = document.querySelectorAll('.activity-list .activity-item');
+                for (let i = 0; i < items.length && i < activities.length; i++) {
+                    const act = activities[i];
+                    if (!isPlainObject(act)) continue;
+                    const title =
+                        (typeof act.title === 'string' && act.title) ||
+                        (typeof act.filename === 'string' && act.filename) ||
+                        (typeof act.name === 'string' && act.name) ||
+                        '';
+                    const meta =
+                        (typeof act.meta === 'string' && act.meta) ||
+                        (typeof act.description === 'string' && act.description) ||
+                        (typeof act.text === 'string' && act.text) ||
+                        '';
+                    if (!title && !meta) continue;
+                    const titleEl = items[i].querySelector('.activity-title');
+                    const metaEl = items[i].querySelector('.activity-meta');
+                    if (title) setText(titleEl, title);
+                    if (meta) setText(metaEl, meta);
+                }
+            }
+        } catch (err) {
+            console.warn('[admin] /api/stats 加载失败', err);
+        }
+    }
+
+    guardPromise.then(loadAndRenderStats);
     // 简单的交互动画逻辑
     
     // 1. 按钮点击波纹效果 (Apple 风格的轻微缩放)
