@@ -1,4 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
+    if (window.PushFileAuth && typeof window.PushFileAuth.guardPage === 'function') {
+        window.PushFileAuth.guardPage({ base: window.__BASE__ || '' });
+    }
     // 简单的交互动画逻辑
     
     // 1. 按钮点击波纹效果 (Apple 风格的轻微缩放)

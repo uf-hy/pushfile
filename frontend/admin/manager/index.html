@@ -20,6 +20,10 @@
     <!-- 基础样式复用和专用样式 -->
     <link rel="stylesheet" href="{{ base }}/static/admin/manager/style.css">
 </head>
+    <script>
+        window.__BASE__ = '{{ base }}';
+        document.documentElement.style.visibility = 'hidden';
+    </script>
 <body>
     <div class="app-container">
         <!-- 移动端侧边栏遮罩 -->
@@ -72,7 +76,7 @@
             <!-- 顶部工具栏 -->
             <header class="toolbar">
                 <div class="toolbar-left">
-                    <button class="icon-btn sidebar-toggle"><i class="ph ph-list"></i></button>
+                    <button type="button" class="icon-btn sidebar-toggle"><i class="ph ph-list"></i></button>
                     <div class="breadcrumbs">
                         <span class="crumb-item"><i class="ph-fill ph-folder" style="color: #82b1ff; margin-right: 4px;"></i> 所有相册</span>
                         <i class="ph ph-caret-right separator"></i>
@@ -87,13 +91,13 @@
                     </div>
                     <div class="action-divider"></div>
                     <div class="view-toggles">
-                        <button class="icon-btn active" title="网格视图"><i class="ph ph-squares-four"></i></button>
-                        <button class="icon-btn" title="列表视图"><i class="ph ph-list-dashes"></i></button>
+                         <button type="button" class="icon-btn active" title="网格视图"><i class="ph ph-squares-four"></i></button>
+                         <button type="button" class="icon-btn" title="列表视图"><i class="ph ph-list-dashes"></i></button>
                     </div>
                     <div class="action-divider"></div>
-                    <button class="btn-primary" onclick="toggleUploadModal()">
-                        <i class="ph ph-upload-simple"></i> <span class="btn-text">上传</span>
-                    </button>
+                     <button type="button" class="btn-primary" onclick="toggleUploadModal()">
+                         <i class="ph ph-upload-simple"></i> <span class="btn-text">上传</span>
+                     </button>
                 </div>
             </header>
 
@@ -124,10 +128,10 @@
                     <!-- 照片 Item -->
                     <div class="grid-item image-item">
                         <div class="item-thumb">
-                            <img src="https://images.unsplash.com/photo-1682687220742-aba13b6e50ba?w=400&q=80" alt="Photo" loading="lazy">
+                            <img src="https://images.unsplash.com/photo-1682687220742-aba13b6e50ba?w=400&q=80" alt="预览" loading="lazy">
                             <div class="item-overlay">
-                                <button class="action-btn"><i class="ph ph-link"></i></button>
-                                <button class="action-btn"><i class="ph ph-download-simple"></i></button>
+                                <button type="button" class="action-btn"><i class="ph ph-link"></i></button>
+                                <button type="button" class="action-btn"><i class="ph ph-download-simple"></i></button>
                             </div>
                         </div>
                         <div class="item-info">
@@ -137,10 +141,10 @@
                     
                     <div class="grid-item image-item">
                         <div class="item-thumb">
-                            <img src="https://images.unsplash.com/photo-1682687982501-1e58f813f228?w=400&q=80" alt="Photo" loading="lazy">
+                            <img src="https://images.unsplash.com/photo-1682687982501-1e58f813f228?w=400&q=80" alt="预览" loading="lazy">
                             <div class="item-overlay">
-                                <button class="action-btn"><i class="ph ph-link"></i></button>
-                                <button class="action-btn"><i class="ph ph-download-simple"></i></button>
+                                <button type="button" class="action-btn"><i class="ph ph-link"></i></button>
+                                <button type="button" class="action-btn"><i class="ph ph-download-simple"></i></button>
                             </div>
                         </div>
                         <div class="item-info">
@@ -150,10 +154,10 @@
                     
                     <div class="grid-item image-item">
                         <div class="item-thumb">
-                            <img src="https://images.unsplash.com/photo-1682687218147-9806132dc697?w=400&q=80" alt="Photo" loading="lazy">
+                            <img src="https://images.unsplash.com/photo-1682687218147-9806132dc697?w=400&q=80" alt="预览" loading="lazy">
                             <div class="item-overlay">
-                                <button class="action-btn"><i class="ph ph-link"></i></button>
-                                <button class="action-btn"><i class="ph ph-download-simple"></i></button>
+                                <button type="button" class="action-btn"><i class="ph ph-link"></i></button>
+                                <button type="button" class="action-btn"><i class="ph ph-download-simple"></i></button>
                             </div>
                         </div>
                         <div class="item-info">
@@ -170,7 +174,7 @@
         <div class="upload-modal">
             <div class="modal-header">
                 <h3>上传照片</h3>
-                <button class="close-btn" onclick="toggleUploadModal()"><i class="ph ph-x"></i></button>
+                 <button type="button" class="close-btn" onclick="toggleUploadModal()"><i class="ph ph-x"></i></button>
             </div>
             
             <div class="modal-body">
@@ -181,14 +185,14 @@
                         </div>
                         <h4>将照片拖拽到此处</h4>
                         <p>支持 JPG, PNG, GIF, WEBP 等格式</p>
-                        <button class="btn-secondary mt-3">选择文件</button>
+                        <button type="button" class="btn-secondary mt-3">选择文件</button>
                     </div>
                 </div>
                 
                 <div class="upload-options">
                     <div class="option-row">
                         <span>保存到相册</span>
-                        <select class="apple-select">
+                        <select class="apple-select" id="upload-album-select">
                             <option>默认相册</option>
                             <option>2024 团建相册</option>
                             <option>新建相册...</option>
@@ -224,24 +228,25 @@
             <span>项</span>
         </div>
         <div class="action-bar-buttons">
-            <button class="action-bar-btn" onclick="handleBatchAction('copy')">
+            <button type="button" class="action-bar-btn" onclick="handleBatchAction('copy')">
                 <i class="ph ph-link"></i>
                 <span>复制链接</span>
             </button>
-            <button class="action-bar-btn" onclick="handleBatchAction('move')">
+         <button type="button" class="action-bar-btn" onclick="handleBatchAction('move')">
                 <i class="ph ph-folder-simple-dashed"></i>
                 <span>移动至</span>
             </button>
-            <button class="action-bar-btn danger" onclick="handleBatchAction('delete')">
+         <button type="button" class="action-bar-btn danger" onclick="handleBatchAction('delete')">
                 <i class="ph ph-trash"></i>
                 <span>删除</span>
             </button>
         </div>
-        <button class="icon-btn" onclick="clearSelection()" style="margin-left: 8px;">
+         <button type="button" class="icon-btn" onclick="clearSelection()" style="margin-left: 8px;">
             <i class="ph ph-x"></i>
         </button>
     </div>
 
-    <script src="{{ base }}/static/admin/manager/app.js"></script>
+     <script src="{{ base }}/static/admin/auth.js"></script>
+     <script src="{{ base }}/static/admin/manager/app.js"></script>
 </body>
 </html>

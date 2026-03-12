@@ -1,7 +1,9 @@
 
 // 全局状态管理
 const state = {
-    key: localStorage.getItem('pushfile_admin_key') || '',
+    key: (window.PushFileAuth && typeof window.PushFileAuth.getKey === 'function')
+        ? window.PushFileAuth.getKey()
+        : (localStorage.getItem('pushfile_admin_key') || ''),
     base: window.__BASE__ || '',
     tokens: [],
     currentToken: null,
@@ -11,16 +13,18 @@ const state = {
 // API 工具函数
 const api = {
     async get(path) {
+        if (window.PushFileAuth && typeof window.PushFileAuth.apiGet === 'function') {
+            return window.PushFileAuth.apiGet(path, { base: state.base });
+        }
         const url = new URL(state.base + path, window.location.origin);
         url.searchParams.append('key', state.key);
         const res = await fetch(url);
-        if (res.status === 401) {
-            handleAuthError();
-            throw new Error('Unauthorized');
-        }
         return res.json();
     },
     async post(path, body) {
+        if (window.PushFileAuth && typeof window.PushFileAuth.apiPost === 'function') {
+            return window.PushFileAuth.apiPost(path, body, { base: state.base });
+        }
         const res = await fetch(state.base + path, {
             method: 'POST',
             headers: {
@@ -29,28 +33,15 @@ const api = {
             },
             body: body
         });
-        if (res.status === 401) {
-            handleAuthError();
-            throw new Error('Unauthorized');
-        }
         return res.json();
     }
 };
 
-function handleAuthError() {
-    const key = prompt('请输入管理员密码：');
-    if (key) {
-        localStorage.setItem('pushfile_admin_key', key);
-        state.key = key;
-        initApp();
-    }
-}
-
 // 核心功能：初始化应用
 async function initApp() {
-    if (!state.key) {
-        handleAuthError();
-        return;
+    if (window.PushFileAuth && typeof window.PushFileAuth.guardPage === 'function') {
+        await window.PushFileAuth.guardPage({ base: state.base });
+        state.key = window.PushFileAuth.getKey();
     }
     
     try {
@@ -87,10 +78,12 @@ async function loadTokens() {
         renderSidebarTree(data.tree);
         renderUploadSelect();
         
-        // 默认加载第一个相册
         if (state.tokens.length > 0) {
-            const first = state.tokens[0];
-            loadAlbum(first.token, first.title || first.token);
+            const current = state.currentToken
+                ? state.tokens.find(t => t.token === state.currentToken)
+                : null;
+            const target = current || state.tokens[0];
+            await loadAlbum(target.token, target.title || target.token);
         }
     }
 }
@@ -385,7 +378,23 @@ window.handleContextAction = function(action) {
             break;
         case 'delete':
             if (confirm(`确定要删除 ${file} 喵？`)) {
-                alert('准备删除: ' + file);
+                (async () => {
+                    try {
+                        const data = await api.post(
+                            `/api/manage/${state.currentToken}/delete`,
+                            JSON.stringify({ name: file })
+                        );
+                        if (!data || !data.ok) {
+                            alert('删除失败，请重试');
+                            return;
+                        }
+                        await loadTokens();
+                        clearSelection();
+                    } catch (e) {
+                        console.error('delete failed:', e);
+                        alert('删除失败，请重试');
+                    }
+                })();
             }
             break;
     }
@@ -408,12 +417,50 @@ window.handleBatchAction = function(action) {
             break;
         }
         case 'move':
-            alert(`准备移动 ${count} 个文件 (待接入API)`);
+            (async () => {
+                const dest = (prompt('移动到哪个文件夹路径？（相对根目录，可填子目录）') || '').trim();
+                if (!dest) return;
+                try {
+                    const data = await api.post(
+                        `/api/manage/${state.currentToken}/batch-move`,
+                        JSON.stringify({ dest: dest, names: files })
+                    );
+                    if (!data || !data.ok) {
+                        alert('移动失败，请重试');
+                        return;
+                    }
+                    const movedCount = (data.moved || []).length;
+                    const skippedCount = (data.skipped || []).length;
+                    alert(`移动完成喵！成功: ${movedCount}，跳过: ${skippedCount}`);
+                    await loadTokens();
+                    clearSelection();
+                } catch (e) {
+                    console.error('batch-move failed:', e);
+                    alert('移动失败，请重试');
+                }
+            })();
             break;
         case 'delete':
             if (confirm(`确定要删除选中的 ${count} 个文件喵？不可恢复哦！`)) {
-                alert('准备批量删除 (待接入API)');
-                clearSelection();
+                (async () => {
+                    try {
+                        const data = await api.post(
+                            `/api/manage/${state.currentToken}/batch-delete`,
+                            JSON.stringify({ names: files })
+                        );
+                        if (!data || !data.ok) {
+                            alert('删除失败，请重试');
+                            return;
+                        }
+                        const deletedCount = data.count ?? (data.deleted || []).length;
+                        alert(`删除完成喵！成功删除 ${deletedCount} 个文件`);
+                        await loadTokens();
+                        clearSelection();
+                    } catch (e) {
+                        console.error('batch-delete failed:', e);
+                        alert('删除失败，请重试');
+                    }
+                })();
             }
             break;
     }

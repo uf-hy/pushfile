@@ -21,6 +21,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
+    <script>
+        window.__BASE__ = '{{ base }}';
+        document.documentElement.style.visibility = 'hidden';
+    </script>
 <body>
     <div class="app-container">
         <!-- 顶部导航 -->
@@ -199,6 +203,7 @@
         </main>
     </div>
 
+    <script src="{{ base }}/static/admin/auth.js"></script>
     <script src="{{ base }}/static/admin/app.js"></script>
 </body>
 </html>
