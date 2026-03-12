@@ -92,7 +92,7 @@
                     </div>
                     <div class="action-divider"></div>
                     <button class="btn-primary" onclick="toggleUploadModal()">
-                        <i class="ph ph-upload-simple"></i> <span>上传</span>
+                        <i class="ph ph-upload-simple"></i> <span class="btn-text">上传</span>
                     </button>
                 </div>
             </header>
@@ -197,6 +197,49 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- 右键菜单 (Context Menu) -->
+    <div class="context-menu" id="contextMenu">
+        <div class="context-menu-item" onclick="handleContextAction('preview')">
+            <i class="ph ph-eye"></i> <span>预览图片</span>
+        </div>
+        <div class="context-menu-item" onclick="handleContextAction('copy')">
+            <i class="ph ph-link"></i> <span>复制链接</span>
+        </div>
+        <div class="context-menu-item" onclick="handleContextAction('download')">
+            <i class="ph ph-download-simple"></i> <span>下载原始文件</span>
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item danger" onclick="handleContextAction('delete')">
+            <i class="ph ph-trash"></i> <span>删除</span>
+        </div>
+    </div>
+
+    <!-- 底部多选操作栏 (Bottom Action Bar) -->
+    <div class="bottom-action-bar" id="bottomActionBar">
+        <div class="action-bar-info">
+            <span>已选择</span>
+            <span class="count-badge" id="selectedCount">0</span>
+            <span>项</span>
+        </div>
+        <div class="action-bar-buttons">
+            <button class="action-bar-btn" onclick="handleBatchAction('copy')">
+                <i class="ph ph-link"></i>
+                <span>复制链接</span>
+            </button>
+            <button class="action-bar-btn" onclick="handleBatchAction('move')">
+                <i class="ph ph-folder-simple-dashed"></i>
+                <span>移动至</span>
+            </button>
+            <button class="action-bar-btn danger" onclick="handleBatchAction('delete')">
+                <i class="ph ph-trash"></i>
+                <span>删除</span>
+            </button>
+        </div>
+        <button class="icon-btn" onclick="clearSelection()" style="margin-left: 8px;">
+            <i class="ph ph-x"></i>
+        </button>
     </div>
 
     <script src="{{ base }}/static/admin/manager/app.js"></script>

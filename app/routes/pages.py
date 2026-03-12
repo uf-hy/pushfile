@@ -99,7 +99,7 @@ def home(request: Request):
 @router.get("/manage", response_class=HTMLResponse)
 def manage_page(request: Request):
     return templates.TemplateResponse(
-        "admin/index.html", {"request": request, **_common},
+        "admin/manager/index.html", {"request": request, **_common},
     )
 
 
