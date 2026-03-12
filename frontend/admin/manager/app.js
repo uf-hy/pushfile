@@ -63,10 +63,28 @@ async function initApp() {
 
 // 加载相册列表 (Tokens)
 async function loadTokens() {
-    const data = await api.get('/api/tokens');
+    const data = await api.get('/api/folders/tree');
     if (data.ok) {
-        state.tokens = data.tokens;
-        renderSidebarTokens();
+        state.tokens = [];
+        
+        function flattenTree(nodes) {
+            for (const node of nodes) {
+                if (node.is_album) {
+                    state.tokens.push({
+                        token: node.slug,
+                        title: node.name,
+                        path: node.path,
+                        count: node.image_count
+                    });
+                }
+                if (node.children && node.children.length > 0) {
+                    flattenTree(node.children);
+                }
+            }
+        }
+        flattenTree(data.tree);
+        
+        renderSidebarTree(data.tree);
         renderUploadSelect();
         
         // 默认加载第一个相册
@@ -75,6 +93,43 @@ async function loadTokens() {
             loadAlbum(first.token, first.title || first.token);
         }
     }
+}
+
+function renderSidebarTree(tree) {
+    const container = document.getElementById('album-list');
+    if (!container) return;
+    
+    function buildTreeHtml(nodes, level = 0) {
+        let html = '';
+        for (const node of nodes) {
+            const paddingLeft = level * 16 + 12;
+            
+            if (node.is_album) {
+                const countHtml = node.image_count !== undefined ? `<span style="margin-left:auto;font-size:12px;color:var(--color-text-secondary)">${node.image_count}</span>` : '';
+                html += `
+                    <a href="#" class="nav-item" data-token="${node.slug}" onclick="loadAlbum('${node.slug}', '${node.name}')" style="padding-left: ${paddingLeft}px">
+                        <i class="ph-fill ph-image" style="color: #82b1ff;"></i>
+                        <span>${node.name}</span>
+                        ${countHtml}
+                    </a>
+                `;
+            } else {
+                html += `
+                    <div class="nav-folder" style="padding-left: ${paddingLeft}px; padding-top: 8px; padding-bottom: 4px; display: flex; align-items: center; gap: 8px; color: var(--color-text-main); font-size: 13px; font-weight: 600;">
+                        <i class="ph-fill ph-folder" style="color: #ffd54f;"></i>
+                        <span>${node.name}</span>
+                    </div>
+                `;
+            }
+            
+            if (node.children && node.children.length > 0) {
+                html += buildTreeHtml(node.children, level + 1);
+            }
+        }
+        return html;
+    }
+    
+    container.innerHTML = buildTreeHtml(tree);
 }
 
 // 加载具体相册内容
@@ -96,24 +151,6 @@ async function loadAlbum(token, title) {
     }
 }
 
-// 渲染侧边栏相册列表
-function renderSidebarTokens() {
-    const container = document.getElementById('album-list');
-    if (!container) return;
-    
-    container.innerHTML = state.tokens.map(t => {
-        const displayTitle = t.title || t.token;
-        const countHtml = t.count !== undefined ? `<span style="margin-left:auto;font-size:12px;color:var(--color-text-secondary)">${t.count}</span>` : '';
-        return `
-            <a href="#" class="nav-item" data-token="${t.token}" onclick="loadAlbum('${t.token}', '${displayTitle}')">
-                <i class="ph-fill ph-folder" style="color: #82b1ff;"></i>
-                <span>${displayTitle}</span>
-                ${countHtml}
-            </a>
-        `;
-    }).join('');
-}
-
 // 渲染网格视图
 function renderGridView() {
     const container = document.querySelector('.grid-view');
@@ -130,7 +167,7 @@ function renderGridView() {
     }
 
     container.innerHTML = state.currentFiles.map(file => {
-        const isVideo = file.toLowerCase().match(/.(mp4|mov|webm)$/);
+        const isVideo = file.toLowerCase().match(/\.(mp4|mov|webm)$/);
         const url = `${state.base}/d/${state.currentToken}/${file}`;
         
         let mediaHtml = isVideo 
@@ -152,6 +189,12 @@ function renderGridView() {
             </div>
         `;
     }).join('');
+
+    if (isMobile) {
+        document.body.classList.add('mobile-multi-select');
+    } else {
+        document.body.classList.remove('mobile-multi-select');
+    }
 }
 
 // 更新面包屑
@@ -236,21 +279,13 @@ function updateBottomActionBar() {
 // 处理项目点击 (兼容移动端与桌面端)
 window.handleItemClick = function(e, itemEl) {
     if (selectedFiles.size > 0) {
-        // 如果处于多选模式，点击项相当于 toggle
         e.preventDefault();
         toggleSelect(itemEl);
         return;
     }
     
-    if (isMobile) {
-        // 手机端直接打开操作菜单
-        e.preventDefault();
-        showContextMenu(e, itemEl, true);
-    } else {
-        // 桌面端默认行为: 触发预览
-        e.preventDefault();
-        previewImage(itemEl.dataset.url);
-    }
+    e.preventDefault();
+    previewImage(itemEl.dataset.url);
 };
 
 // 右键菜单逻辑
@@ -364,13 +399,14 @@ window.handleBatchAction = function(action) {
     const files = Array.from(selectedFiles);
     
     switch (action) {
-        case 'copy':
+        case 'copy': {
             const urls = files.map(f => new URL(`${state.base}/d/${state.currentToken}/${f}`, window.location.origin).href);
             navigator.clipboard.writeText(urls.join(String.fromCharCode(10)))
                 .then(() => alert(`已复制 ${count} 个链接喵！`))
                 .catch(() => alert('复制失败，请重试'));
             clearSelection();
             break;
+        }
         case 'move':
             alert(`准备移动 ${count} 个文件 (待接入API)`);
             break;
@@ -407,7 +443,13 @@ window.previewImage = function(url) {
         viewer.querySelector('div').addEventListener('click', function(e) {
             if (e.target === this) {
                 viewer.classList.remove('show');
+                setTimeout(() => viewer.remove(), 300);
             }
+        });
+        
+        viewer.querySelector('button').addEventListener('click', function(e) {
+            viewer.classList.remove('show');
+            setTimeout(() => viewer.remove(), 300);
         });
     }
     
