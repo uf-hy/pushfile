@@ -36,6 +36,7 @@
             min-height: 100vh;
             margin: 0;
             -webkit-font-smoothing: antialiased;
+            color-scheme: light only;
         }
 
         .login-container {
@@ -58,6 +59,25 @@
                 inset 0 1px 0 rgba(255, 255, 255, 0.5);
             border: 1px solid var(--border-color);
             text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .login-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0) 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .login-card > * {
+            position: relative;
+            z-index: 1;
         }
 
         .logo {
@@ -69,6 +89,13 @@
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             filter: drop-shadow(0 4px 6px rgba(0, 102, 204, 0.2));
+            animation: float 6s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
         }
 
         h1 {
@@ -96,6 +123,7 @@
             color: var(--text-secondary);
             font-size: 1.2rem;
             pointer-events: none;
+            transition: color 0.2s ease;
         }
 
         input[type="password"] {
@@ -114,6 +142,12 @@
         input[type="password"]:focus {
             border-color: var(--primary-color);
             box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.2);
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        input[type="password"]:focus + .input-icon,
+        input[type="password"]:not(:placeholder-shown) + .input-icon {
+            color: var(--primary-color);
         }
 
         .login-btn {
@@ -179,8 +213,8 @@
             
             <form id="loginForm">
                 <div class="input-group">
-                    <i class="ph ph-lock input-icon"></i>
                     <input type="password" id="passwordInput" placeholder="密码" required autofocus>
+                    <i class="ph ph-lock input-icon"></i>
                 </div>
                 <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1.5rem; cursor: pointer;">
                     <input type="checkbox" id="rememberMe" style="width: 16px; height: 16px; cursor: pointer;">
@@ -207,8 +241,10 @@
             
             if (localKey) {
                 rememberMe.checked = true;
+                passwordInput.value = localKey;
             } else if (sessionKey) {
                 rememberMe.checked = false;
+                passwordInput.value = sessionKey;
             } else {
                 rememberMe.checked = true; // 默认勾选
             }
