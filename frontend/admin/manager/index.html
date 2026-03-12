@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>PushFile - 图库管理</title>
+    
+    <!-- 预加载 Phosphor Icons -->
+    <link rel="preconnect" href="https://unpkg.com" crossorigin>
+    <link rel="preload" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" as="style">
+    <link rel="preload" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css" as="style">
+    <script>document.documentElement.classList.add('icons-loading');</script>
+    <script src="https://unpkg.com/@phosphor-icons/web" async onload="document.documentElement.classList.remove('icons-loading')"></script>
+    
+    <!-- 系统字体 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- 基础样式复用和专用样式 -->
+    <link rel="stylesheet" href="{{ base }}/static/admin/manager/style.css">
+</head>
+    <script>
+        window.__BASE__ = '{{ base }}';
+        document.documentElement.style.visibility = 'hidden';
+    </script>
+<body>
+    <div class="app-container">
+        <!-- 移动端侧边栏遮罩 -->
+        <div class="sidebar-overlay"></div>
+        
+        <!-- 左侧边栏 (Mac 访达风格) -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="mac-dots">
+                    <div class="dot red" onclick="location.href='/#manage'" title="返回首页"></div>
+                    <div class="dot yellow"></div>
+                    <div class="dot green"></div>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <div class="nav-group">
+                    <div class="nav-title">图库</div>
+                    <a href="#" class="nav-item active">
+                        <i class="ph-fill ph-images"></i>
+                        <span>所有照片</span>
+                    </a>
+                </div>
+
+                <div class="nav-group">
+                    <div class="nav-title">我的相册</div>
+                    <div id="album-list">
+                        <!-- 相册列表由 JS 动态渲染 -->
+                        <div style="padding: 12px; color: var(--color-text-secondary); font-size: 12px; text-align: center;">加载中...</div>
+                    </div>
+                </div>
+            </nav>
+            
+            <!-- 左下角存储空间 -->
+            <div class="sidebar-footer">
+                <div class="storage-info">
+                    <div class="storage-text">
+                        <span>存储空间</span>
+                        <span>45.2 GB / 100 GB</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress" style="width: 45%;"></div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 右侧主内容区 -->
+        <main class="main-view">
+            <!-- 顶部工具栏 -->
+            <header class="toolbar">
+                <div class="toolbar-left">
+                    <button type="button" class="icon-btn sidebar-toggle"><i class="ph ph-list"></i></button>
+                    <div class="breadcrumbs">
+                        <span class="crumb-item"><i class="ph-fill ph-folder" style="color: #82b1ff; margin-right: 4px;"></i> 所有相册</span>
+                        <i class="ph ph-caret-right separator"></i>
+                        <span class="crumb-item current">2024 团建相册</span>
+                    </div>
+                </div>
+
+                <div class="toolbar-actions">
+                    <div class="search-box">
+                        <i class="ph ph-magnifying-glass"></i>
+                        <input type="text" placeholder="搜索照片或相册...">
+                    </div>
+                    <div class="action-divider"></div>
+                    <div class="view-toggles">
+                         <button type="button" class="icon-btn active" title="网格视图" onclick="switchView('grid')"><i class="ph ph-squares-four"></i></button>
+                         <button type="button" class="icon-btn" title="手机预览" onclick="switchView('mobile')"><i class="ph ph-device-mobile"></i></button>
+                    </div>
+                    <div class="action-divider"></div>
+                     <button type="button" class="btn-primary upload-btn" onclick="toggleUploadModal(); document.getElementById('fileInput').click()">
+                         <i class="ph ph-upload-simple"></i> <span class="btn-text">上传</span>
+                     </button>
+                 </div>
+             </header>
+
+            <!-- 网格内容区 -->
+            <div class="content-area">
+                <div class="grid-view">
+                    <!-- 文件夹/相册 Item -->
+                    <div class="grid-item folder-item">
+                        <div class="item-icon-wrapper">
+                            <i class="ph-fill ph-folder"></i>
+                        </div>
+                        <div class="item-info">
+                            <span class="item-name">2023 冰岛之旅</span>
+                            <span class="item-meta">124 张照片</span>
+                        </div>
+                    </div>
+                    
+                    <div class="grid-item folder-item">
+                        <div class="item-icon-wrapper">
+                            <i class="ph-fill ph-folder"></i>
+                        </div>
+                        <div class="item-info">
+                            <span class="item-name">项目 UI 截图</span>
+                            <span class="item-meta">32 张照片</span>
+                        </div>
+                    </div>
+
+                    <!-- 照片 Item -->
+                    <div class="grid-item image-item">
+                        <div class="item-thumb">
+                            <img src="https://images.unsplash.com/photo-1682687220742-aba13b6e50ba?w=400&q=80" alt="预览" loading="lazy">
+                            <div class="item-overlay">
+                                <button type="button" class="action-btn"><i class="ph ph-link"></i></button>
+                                <button type="button" class="action-btn"><i class="ph ph-download-simple"></i></button>
+                            </div>
+                        </div>
+                        <div class="item-info">
+                            <span class="item-name">IMG_8492.jpg</span>
+                        </div>
+                    </div>
+                    
+                    <div class="grid-item image-item">
+                        <div class="item-thumb">
+                            <img src="https://images.unsplash.com/photo-1682687982501-1e58f813f228?w=400&q=80" alt="预览" loading="lazy">
+                            <div class="item-overlay">
+                                <button type="button" class="action-btn"><i class="ph ph-link"></i></button>
+                                <button type="button" class="action-btn"><i class="ph ph-download-simple"></i></button>
+                            </div>
+                        </div>
+                        <div class="item-info">
+                            <span class="item-name">IMG_8493.jpg</span>
+                        </div>
+                    </div>
+                    
+                    <div class="grid-item image-item">
+                        <div class="item-thumb">
+                            <img src="https://images.unsplash.com/photo-1682687218147-9806132dc697?w=400&q=80" alt="预览" loading="lazy">
+                            <div class="item-overlay">
+                                <button type="button" class="action-btn"><i class="ph ph-link"></i></button>
+                                <button type="button" class="action-btn"><i class="ph ph-download-simple"></i></button>
+                            </div>
+                        </div>
+                        <div class="item-info">
+                            <span class="item-name">IMG_8494.jpg</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 苹果风格毛玻璃上传弹窗 -->
+    <div class="upload-modal-overlay" id="uploadModal">
+        <div class="upload-modal">
+            <div class="modal-header">
+                <h3>上传照片</h3>
+                 <button type="button" class="close-btn" onclick="toggleUploadModal()"><i class="ph ph-x"></i></button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="dropzone" id="uploadZone">
+                    <div class="dropzone-content">
+                        <div class="upload-icon-ring">
+                            <i class="ph ph-cloud-arrow-up"></i>
+                        </div>
+                        <h4>将照片拖拽到此处</h4>
+                        <p>支持 JPG, PNG, GIF, WEBP 等格式</p>
+                        <button type="button" class="btn-secondary mt-3" id="chooseFilesBtn" onclick="document.getElementById('fileInput').click()">选择文件</button>
+                    </div>
+                </div>
+
+                <input type="file" id="fileInput" accept="image/*,.zip" multiple hidden>
+
+                <div class="upload-options">
+                    <div class="option-row">
+                        <span>保存到相册</span>
+                        <select class="apple-select" id="upload-album-select">
+                            <option>默认相册</option>
+                            <option>2024 团建相册</option>
+                            <option>新建相册...</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 右键菜单 (Context Menu) -->
+    <div class="context-menu" id="contextMenu">
+        <div class="context-menu-item" onclick="handleContextAction('preview')">
+            <i class="ph ph-eye"></i> <span>预览图片</span>
+        </div>
+        <div class="context-menu-item" onclick="handleContextAction('copy')">
+            <i class="ph ph-link"></i> <span>复制链接</span>
+        </div>
+        <div class="context-menu-item" onclick="handleContextAction('download')">
+            <i class="ph ph-download-simple"></i> <span>下载原始文件</span>
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item danger" onclick="handleContextAction('delete')">
+            <i class="ph ph-trash"></i> <span>删除</span>
+        </div>
+    </div>
+
+    <!-- 底部多选操作栏 (Bottom Action Bar) -->
+    <div class="bottom-action-bar" id="bottomActionBar">
+        <div class="action-bar-info">
+            <span>已选择</span>
+            <span class="count-badge" id="selectedCount">0</span>
+            <span>项</span>
+        </div>
+        <div class="action-bar-buttons">
+            <button type="button" class="action-bar-btn" onclick="handleBatchAction('copy')">
+                <i class="ph ph-link"></i>
+                <span>复制链接</span>
+            </button>
+         <button type="button" class="action-bar-btn" onclick="handleBatchAction('move')">
+                <i class="ph ph-folder-simple-dashed"></i>
+                <span>移动至</span>
+            </button>
+         <button type="button" class="action-bar-btn danger" onclick="handleBatchAction('delete')">
+                <i class="ph ph-trash"></i>
+                <span>删除</span>
+            </button>
+        </div>
+         <button type="button" class="icon-btn" onclick="clearSelection()" style="margin-left: 8px;">
+            <i class="ph ph-x"></i>
+        </button>
+    </div>
+
+     <script src="{{ base }}/static/admin/auth.js"></script>
+     <script src="{{ base }}/static/admin/manager/app.js"></script>
+</body>
+</html>

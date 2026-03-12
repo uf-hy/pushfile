@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>登录 - PushFile</title>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <style>
+        :root {
+            --bg-color: #f5f5f7;
+            --card-bg: rgba(255, 255, 255, 0.8);
+            --text-primary: #1d1d1f;
+            --text-secondary: #86868b;
+            --border-color: rgba(0, 0, 0, 0.1);
+            --primary-color: #0066cc;
+            --primary-hover: #0077ed;
+            --error-color: #ff3b30;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, hsla(210, 100%, 76%, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, hsla(210, 100%, 76%, 0.15) 0px, transparent 50%);
+            color: var(--text-primary);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            -webkit-font-smoothing: antialiased;
+            color-scheme: light only;
+        }
+
+        .login-container {
+            width: 100%;
+            max-width: 400px;
+            padding: 2rem;
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        .login-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 3rem 2.5rem;
+            box-shadow: 
+                0 4px 6px -1px rgba(0, 0, 0, 0.05),
+                0 10px 15px -3px rgba(0, 0, 0, 0.05),
+                0 20px 25px -5px rgba(0, 0, 0, 0.05),
+                inset 0 1px 0 rgba(255, 255, 255, 0.5);
+            border: 1px solid var(--border-color);
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .login-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0) 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .login-card > * {
+            position: relative;
+            z-index: 1;
+        }
+
+        .logo {
+            font-size: 3.5rem;
+            color: var(--primary-color);
+            margin-bottom: 1.2rem;
+            display: inline-block;
+            background: linear-gradient(135deg, var(--primary-color), #40a6ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 4px 6px rgba(0, 102, 204, 0.2));
+            animation: float 6s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        p.subtitle {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 2rem;
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .input-icon {
+            position: absolute;
+            left: 1.2rem;
+            color: var(--text-secondary);
+            font-size: 1.2rem;
+            pointer-events: none;
+            transition: color 0.2s ease;
+        }
+
+        input[type="password"] {
+            width: 100%;
+            padding: 1rem 1.2rem 1rem 3rem;
+            font-size: 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.5);
+            color: var(--text-primary);
+            transition: all 0.2s ease;
+            outline: none;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+        }
+
+        input[type="password"]:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.2);
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        input[type="password"]:focus + .input-icon,
+        input[type="password"]:not(:placeholder-shown) + .input-icon {
+            color: var(--primary-color);
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 1rem;
+            font-size: 1rem;
+            font-weight: 600;
+            color: white;
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(0, 102, 204, 0.3);
+        }
+
+        .login-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(0, 102, 204, 0.4);
+        }
+
+        .login-btn:active {
+            transform: translateY(1px);
+            box-shadow: 0 2px 8px rgba(0, 102, 204, 0.3);
+        }
+
+        .login-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .error-message {
+            color: var(--error-color);
+            font-size: 0.85rem;
+            margin-top: 1rem;
+            min-height: 1.2rem;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .error-message.show {
+            opacity: 1;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-card">
+            <i class="ph-fill ph-paper-plane-tilt logo"></i>
+            <h1>PushFile</h1>
+            <p class="subtitle">请输入访问密码</p>
+            
+            <form id="loginForm">
+                <div class="input-group">
+                    <input type="password" id="passwordInput" placeholder="密码" required autofocus>
+                    <i class="ph ph-lock input-icon"></i>
+                </div>
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1.5rem; cursor: pointer;">
+                    <input type="checkbox" id="rememberMe" style="width: 16px; height: 16px; cursor: pointer;">
+                    记住密码
+                </label>
+                <button type="submit" class="login-btn" id="loginBtn">登录</button>
+                <div class="error-message" id="errorMessage">密码错误，请重试</div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const form = document.getElementById('loginForm');
+            const passwordInput = document.getElementById('passwordInput');
+            const loginBtn = document.getElementById('loginBtn');
+            const errorMessage = document.getElementById('errorMessage');
+            const rememberMe = document.getElementById('rememberMe');
+
+            // 检查是否已经登录
+            const localKey = localStorage.getItem('pushfile_admin_key');
+            const sessionKey = sessionStorage.getItem('pushfile_admin_key');
+            const currentKey = localKey || sessionKey;
+            
+            if (localKey) {
+                rememberMe.checked = true;
+                passwordInput.value = localKey;
+            } else if (sessionKey) {
+                rememberMe.checked = false;
+                passwordInput.value = sessionKey;
+            } else {
+                rememberMe.checked = true; // 默认勾选
+            }
+
+            if (currentKey) {
+                verifyToken(currentKey).then(isValid => {
+                    if (isValid) {
+                        redirectBack();
+                    } else {
+                        // 如果 token 无效，清除存储
+                        localStorage.removeItem('pushfile_admin_key');
+                        sessionStorage.removeItem('pushfile_admin_key');
+                    }
+                });
+            }
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const password = passwordInput.value.trim();
+                
+                if (!password) return;
+
+                loginBtn.disabled = true;
+                loginBtn.textContent = '验证中...';
+                errorMessage.classList.remove('show');
+
+                try {
+                    const isValid = await verifyToken(password);
+                    
+                    if (isValid) {
+                        if (rememberMe.checked) {
+                            localStorage.setItem('pushfile_admin_key', password);
+                            sessionStorage.removeItem('pushfile_admin_key');
+                        } else {
+                            sessionStorage.setItem('pushfile_admin_key', password);
+                            localStorage.removeItem('pushfile_admin_key');
+                        }
+                        redirectBack();
+                    } else {
+                        showError('密码错误，请重试');
+                    }
+                } catch (error) {
+                    showError('网络错误，请稍后重试');
+                } finally {
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = '登录';
+                }
+            });
+
+            function showError(msg) {
+                errorMessage.textContent = msg;
+                errorMessage.classList.add('show');
+                passwordInput.value = '';
+                passwordInput.focus();
+            }
+
+            async function verifyToken(token) {
+                try {
+                    const response = await fetch(`/api/tokens?key=${encodeURIComponent(token)}`);
+                    return response.ok;
+                } catch (e) {
+                    console.error('Token verification failed:', e);
+                    return false;
+                }
+            }
+
+            function redirectBack() {
+                const urlParams = new URLSearchParams(window.location.search);
+                const redirect = urlParams.get('redirect') || '/';
+                window.location.href = redirect;
+            }
+        });
+    </script>
+</body>
+</html>

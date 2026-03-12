@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>九宫格制作 - PushFile</title>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="stylesheet" href="{{ base }}/static/admin/style.css">
+    <link rel="stylesheet" href="{{ base }}/static/admin/grid.css">
+    <style>
+        body { background: #f5f5f7; }
+    </style>
+</head>
+<body>
+    <div class="grid-page">
+        <header class="grid-header">
+            <button type="button" onclick="history.back()" class="back-btn"><i class="ph ph-arrow-left"></i></button>
+            <h1>九宫格制作</h1>
+        </header>
+        <main class="grid-main">
+            <div class="upload-zone" id="uploadZone">
+                <i class="ph ph-image" style="font-size:48px;color:#666"></i>
+                <p>点击或拖拽上传图片</p>
+                <input type="file" id="fileInput" accept="image/*" hidden>
+            </div>
+            <div class="params" id="params" style="display:none">
+                <label>线宽: <input type="range" id="lineWidth" min="1" max="10" value="2"></label>
+                <label>间距: <input type="range" id="gap" min="0" max="20" value="0"></label>
+            </div>
+            <div class="preview" id="preview" style="display:none">
+                <img id="previewImg" alt="预览图">
+            </div>
+            <div class="tiles" id="tiles" style="display:none"></div>
+            <div class="actions" id="actions" style="display:none">
+                <button type="button" class="btn-primary" id="saveBtn">保存到文件夹</button>
+                <button type="button" class="btn-secondary" id="downloadBtn">下载 ZIP</button>
+            </div>
+        </main>
+    </div>
+    <script>window.__BASE__ = '{{ base }}';</script>
+    <script src="{{ base }}/static/admin/auth.js"></script>
+    <script src="{{ base }}/static/admin/grid.js"></script>
+</body>
+</html>

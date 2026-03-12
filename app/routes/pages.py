@@ -78,7 +78,7 @@ def _client_ip(request: Request) -> str:
                     chain.append(ip)
             if chain:
                 while chain and _is_trusted_proxy(chain[-1]):
-                    chain.pop()
+                    _ = chain.pop()
                 if chain:
                     return chain[-1]
         x_real_ip = _parse_ip(request.headers.get("x-real-ip") or "")
@@ -96,10 +96,24 @@ def home(request: Request):
     )
 
 
+@router.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    return templates.TemplateResponse(
+        "admin/login.html", {"request": request, **_common},
+    )
+
+
 @router.get("/manage", response_class=HTMLResponse)
 def manage_page(request: Request):
     return templates.TemplateResponse(
-        "admin/index.html", {"request": request, **_common},
+        "admin/manager/index.html", {"request": request, **_common},
+    )
+
+
+@router.get("/grid", response_class=HTMLResponse)
+def grid_page(request: Request):
+    return templates.TemplateResponse(
+        "admin/grid.html", {"request": request, **_common},
     )
 
 
