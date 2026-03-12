@@ -110,6 +110,13 @@ def manage_page(request: Request):
     )
 
 
+@router.get("/grid", response_class=HTMLResponse)
+def grid_page(request: Request):
+    return templates.TemplateResponse(
+        "admin/grid.html", {"request": request, **_common},
+    )
+
+
 @router.get("/album/{token}", response_class=HTMLResponse)
 def album(request: Request, token: str):
     return _render_album(request, token)
