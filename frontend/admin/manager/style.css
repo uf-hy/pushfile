@@ -1038,3 +1038,11 @@ body.mobile-multi-select .item-checkbox {
 .action-bar-btn.danger:hover {
     color: var(--color-danger);
 }
+
+@media (max-width: 768px) {
+    .search-box,
+    .search-container,
+    [class*="search"] {
+        display: none !important;
+    }
+}
