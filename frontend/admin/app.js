@@ -83,51 +83,71 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadAndRenderStats() {
         if (!window.PushFileAuth || typeof window.PushFileAuth.apiGet !== 'function') return;
         try {
-            const payload = await window.PushFileAuth.apiGet('/api/stats', { base });
-            const { photoCount, albumCount, newVisitors, todayUploads, activities } = resolveStatsPayload(payload);
+            const tokensData = await window.PushFileAuth.apiGet('/api/tokens', { base });
+            let totalPhotos = 0;
+            let albumCount = 0;
+            if (tokensData && tokensData.tokens && Array.isArray(tokensData.tokens)) {
+                albumCount = tokensData.tokens.length;
+                totalPhotos = tokensData.tokens.reduce((sum, t) => sum + (t.count || 0), 0);
+            }
 
             const totalPhotosEl = document.querySelector('.card-manage .stat-item:nth-child(1) .stat-value');
             const albumCountEl = document.querySelector('.card-manage .stat-item:nth-child(3) .stat-value');
             const newVisitorsEl = document.querySelector('.card-manage .stat-item:nth-child(5) .stat-value');
 
-            if (photoCount !== null) setText(totalPhotosEl, formatNumber(photoCount));
-            if (albumCount !== null) setText(albumCountEl, formatNumber(albumCount));
-            if (newVisitors !== null) {
-                const sign = Number(newVisitors) >= 0 ? '+' : '';
-                setText(newVisitorsEl, `${sign}${formatNumber(newVisitors)}`);
+            if (totalPhotos > 0) setText(totalPhotosEl, formatNumber(totalPhotos));
+            if (albumCount > 0) setText(albumCountEl, formatNumber(albumCount));
+
+            const statsData = await window.PushFileAuth.apiGet('/api/stats', { base });
+            let totalViews = 0;
+            let todayViews = 0;
+            const todayStr = new Date().toISOString().slice(0, 10);
+            const recentItems = [];
+            
+            if (statsData && typeof statsData === 'object') {
+                for (const key of Object.keys(statsData)) {
+                    const entry = statsData[key];
+                    if (isStatsEntry(entry)) {
+                        totalViews += toNumber(entry.views) || 0;
+                        const lastVisit = entry.last_visit || '';
+                        if (lastVisit.slice(0, 10) === todayStr) {
+                            todayViews += toNumber(entry.views) || 0;
+                        }
+                        recentItems.push({
+                            title: key.split('/').pop() || key,
+                            views: entry.views,
+                            last_visit: entry.last_visit
+                        });
+                    }
+                }
+            }
+            
+            if (todayViews > 0) {
+                setText(newVisitorsEl, '+' + formatNumber(todayViews));
             }
 
-            if (todayUploads !== null) {
-                const greetingP = document.querySelector('.greeting p');
-                if (greetingP && typeof greetingP.textContent === 'string') {
-                    greetingP.textContent = greetingP.textContent.replace(/\d+/, String(todayUploads));
+            recentItems.sort((a, b) => (b.last_visit || '').localeCompare(a.last_visit || ''));
+            const top5 = recentItems.slice(0, 5);
+            
+            if (top5.length > 0) {
+                const items = document.querySelectorAll('.activity-list .activity-item');
+                for (let i = 0; i < items.length && i < top5.length; i++) {
+                    const item = top5[i];
+                    const titleEl = items[i].querySelector('.activity-title');
+                    const metaEl = items[i].querySelector('.activity-meta');
+                    if (titleEl) setText(titleEl, item.title);
+                    if (metaEl) setText(metaEl, item.views + ' 次访问');
                 }
             }
 
-            if (Array.isArray(activities) && activities.length > 0) {
-                const items = document.querySelectorAll('.activity-list .activity-item');
-                for (let i = 0; i < items.length && i < activities.length; i++) {
-                    const act = activities[i];
-                    if (!isPlainObject(act)) continue;
-                    const title =
-                        (typeof act.title === 'string' && act.title) ||
-                        (typeof act.filename === 'string' && act.filename) ||
-                        (typeof act.name === 'string' && act.name) ||
-                        '';
-                    const meta =
-                        (typeof act.meta === 'string' && act.meta) ||
-                        (typeof act.description === 'string' && act.description) ||
-                        (typeof act.text === 'string' && act.text) ||
-                        '';
-                    if (!title && !meta) continue;
-                    const titleEl = items[i].querySelector('.activity-title');
-                    const metaEl = items[i].querySelector('.activity-meta');
-                    if (title) setText(titleEl, title);
-                    if (meta) setText(metaEl, meta);
+            if (todayViews > 0) {
+                const greetingP = document.querySelector('.greeting p');
+                if (greetingP && typeof greetingP.textContent === 'string') {
+                    greetingP.textContent = greetingP.textContent.replace(/\d+/, String(todayViews));
                 }
             }
         } catch (err) {
-            console.warn('[admin] /api/stats 加载失败', err);
+            console.warn('[admin] 统计数据加载失败', err);
         }
     }
 
