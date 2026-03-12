@@ -40,7 +40,7 @@
                     </div>
                 </div>
                 <div class="header-actions">
-                    <div class="user-avatar">
+                    <div class="user-avatar" onclick="openModal('userMenuModal')" title="账号">
                         <img src="https://ui-avatars.com/api/?name=Admin&background=0D8ABC&color=fff&rounded=true" alt="Admin">
                     </div>
                 </div>
@@ -83,11 +83,11 @@
                         </div>
                     </div>
                     <div class="card-footer">
-                        <button type="button" class="btn btn-primary">
+                        <button type="button" class="btn btn-primary" data-test="upload-btn" onclick="openModal('uploadModal')">
                             <i class="ph ph-upload-simple"></i>
                             上传照片
                         </button>
-                        <button type="button" class="btn btn-secondary" onclick="location.href='/manage'">
+                        <button type="button" class="btn btn-secondary" onclick="go('/manage')">
                             浏览全部
                             <i class="ph ph-arrow-right"></i>
                         </button>
@@ -107,7 +107,7 @@
                     </div>
                     <div class="card-body">
                         <div class="quick-actions">
-                            <div class="action-item" onclick="location.href='/grid'">
+                            <div class="action-item" onclick="go('/grid')">
                                 <div class="action-icon"><i class="ph ph-squares-four"></i></div>
                                 <span>九宫格</span>
                             </div>
@@ -167,11 +167,11 @@
                             <h3>最近活动</h3>
                             <p>照片上传与下载动态</p>
                         </div>
-                        <button type="button" class="btn-text" style="margin-left: auto;">查看全部</button>
+                        <button type="button" class="btn-text" style="margin-left: auto;" onclick="go('/dashboard')">查看全部</button>
                     </div>
                     <div class="card-body">
                         <div class="activity-list">
-                            <div class="activity-item">
+                            <div class="activity-item" onclick="go('/dashboard')">
                                 <div class="activity-icon file-image">
                                     <i class="ph ph-image"></i>
                                 </div>
@@ -180,11 +180,11 @@
                                     <div class="activity-meta">由 Admin 上传 • 10 分钟前 • 2.4 MB</div>
                                 </div>
                                 <div class="activity-action">
-                                    <button type="button" class="icon-btn small"><i class="ph ph-dots-three"></i></button>
+                                    <button type="button" class="icon-btn small" onclick="event.stopPropagation(); openModal('activityActionModal')"><i class="ph ph-dots-three"></i></button>
                                 </div>
                             </div>
                             
-                            <div class="activity-item">
+                            <div class="activity-item" onclick="go('/dashboard')">
                                 <div class="activity-icon file-image">
                                     <i class="ph ph-images"></i>
                                 </div>
@@ -193,7 +193,7 @@
                                     <div class="activity-meta">创建了新相册 • 2 小时前 • 15 张照片</div>
                                 </div>
                                 <div class="activity-action">
-                                    <button type="button" class="icon-btn small"><i class="ph ph-dots-three"></i></button>
+                                    <button type="button" class="icon-btn small" onclick="event.stopPropagation(); openModal('activityActionModal')"><i class="ph ph-dots-three"></i></button>
                                 </div>
                             </div>
                         </div>
@@ -201,6 +201,33 @@
                 </div>
             </div>
         </main>
+    </div>
+
+    <div class="modal" id="uploadModal" style="display:none" onclick="if(event.target===this) closeModal('uploadModal')">
+        <div class="modal-content">
+            <h3>上传照片</h3>
+            <p>功能开发中...</p>
+            <button type="button" class="btn btn-secondary" onclick="closeModal('uploadModal')">关闭</button>
+        </div>
+    </div>
+
+    <div class="modal" id="activityActionModal" style="display:none" onclick="if(event.target===this) closeModal('activityActionModal')">
+        <div class="modal-content">
+            <h3>更多操作</h3>
+            <p>功能开发中...</p>
+            <button type="button" class="btn btn-secondary" onclick="closeModal('activityActionModal')">关闭</button>
+        </div>
+    </div>
+
+    <div class="modal" id="userMenuModal" style="display:none" onclick="if(event.target===this) closeModal('userMenuModal')">
+        <div class="modal-content">
+            <h3>账号</h3>
+            <p>你可以在这里退出登录。</p>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('userMenuModal')">关闭</button>
+                <button type="button" class="btn btn-primary" onclick="logout()">退出登录</button>
+            </div>
+        </div>
     </div>
 
     <script src="{{ base }}/static/admin/auth.js"></script>

@@ -1,3 +1,51 @@
+function getBase() {
+    return window.__BASE__ || '';
+}
+
+function normalizePath(path) {
+    if (!path) return '/';
+    if (typeof path !== 'string') return '/';
+    return path.startsWith('/') ? path : `/${path}`;
+}
+
+window.go = function go(path) {
+    const base = getBase();
+    window.location.href = `${base || ''}${normalizePath(path)}`;
+};
+
+window.openModal = function openModal(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+};
+
+window.closeModal = function closeModal(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = 'none';
+
+    const anyOpen = Array.from(document.querySelectorAll('.modal')).some(m => {
+        const display = m?.style?.display || '';
+        return display && display !== 'none';
+    });
+    if (!anyOpen) document.body.style.overflow = '';
+};
+
+window.logout = function logout() {
+    try {
+        if (window.PushFileAuth && typeof window.PushFileAuth.clearKey === 'function') {
+            window.PushFileAuth.clearKey();
+        } else {
+            localStorage.removeItem('pushfile_admin_key');
+        }
+        sessionStorage.removeItem('pushfile_admin_key');
+    } catch (_) {}
+
+    const base = getBase();
+    window.location.href = `${base || ''}/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     const base = window.__BASE__ || '';
     let guardPromise = Promise.resolve();
