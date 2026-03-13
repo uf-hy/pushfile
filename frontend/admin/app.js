@@ -2,12 +2,10 @@ function getBase() {
     return window.__BASE__ || '';
 }
 
-// 访客模式检测
 function isGuestMode() {
     return sessionStorage.getItem('pushfile_guest_mode') === 'true';
 }
 
-// 数字动画：从 0 上升到目标值
 function animateNumber(el, target, duration = 800, prefix = '') {
     if (!el) return;
     const start = 0;
@@ -24,7 +22,6 @@ function animateNumber(el, target, duration = 800, prefix = '') {
     function update(currentTime) {
         const elapsed = currentTime - startTime;
         const progress = Math.min(elapsed / duration, 1);
-        // easeOutExpo 缓动函数
         const eased = progress === 1 ? 1 : 1 - 2 ** (-10 * progress);
         const current = start + (target - start) * eased;
         el.textContent = prefix + format(current);
@@ -177,14 +174,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (uploadBtn) uploadBtn.classList.add('guest-mode-disabled');
         if (greetingText) greetingText.textContent = '欢迎体验 PushFile，这是演示模式的数据展示。';
 
-        // 显示 mock 数据（带动画）
         animateNumber(statPhotos, mockData.photoCount, 1000);
         animateNumber(statAlbums, mockData.albumCount, 800);
         animateNumber(statVisitors, mockData.todayVisitors, 600, '+');
     }
 
     async function loadAndRenderStats() {
-        // 访客模式：只展示 mock 数据，不调 API
         if (isGuestMode()) {
             applyGuestMode();
             return;
@@ -325,6 +320,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const chooseFolderBtn = document.getElementById('homeChooseFolderBtn');
         const chooseDestBtn = document.getElementById('homeChooseDestBtn');
         const startBtn = document.getElementById('homeUploadStartBtn');
+
+        if (isGuestMode()) {
+            if (startBtn) {
+                startBtn.disabled = true;
+                startBtn.textContent = '访客模式不可上传';
+            }
+            return;
+        }
 
         if (chooseFilesBtn && fileInput) {
             chooseFilesBtn.addEventListener('click', () => fileInput.click());
