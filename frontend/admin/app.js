@@ -2,6 +2,39 @@ function getBase() {
     return window.__BASE__ || '';
 }
 
+// 访客模式检测
+function isGuestMode() {
+    return sessionStorage.getItem('pushfile_guest_mode') === 'true';
+}
+
+// 数字动画：从 0 上升到目标值
+function animateNumber(el, target, duration = 800, prefix = '') {
+    if (!el) return;
+    const start = 0;
+    const startTime = performance.now();
+
+    function format(n) {
+        try {
+            return Number(Math.round(n)).toLocaleString('zh-CN');
+        } catch (_) {
+            return String(Math.round(n));
+        }
+    }
+
+    function update(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        // easeOutExpo 缓动函数
+        const eased = progress === 1 ? 1 : 1 - 2 ** (-10 * progress);
+        const current = start + (target - start) * eased;
+        el.textContent = prefix + format(current);
+        if (progress < 1) {
+            requestAnimationFrame(update);
+        }
+    }
+    requestAnimationFrame(update);
+}
+
 function normalizePath(path) {
     if (!path) return '/';
     if (typeof path !== 'string') return '/';
@@ -128,8 +161,47 @@ document.addEventListener('DOMContentLoaded', () => {
         el.textContent = text;
     }
 
+    const mockData = {
+        photoCount: 1284,
+        albumCount: 12,
+        todayVisitors: 24
+    };
+
+    function applyGuestMode() {
+        const uploadBtn = document.getElementById('uploadBtn');
+        const greetingText = document.getElementById('greetingText');
+        const statPhotos = document.getElementById('statPhotos');
+        const statAlbums = document.getElementById('statAlbums');
+        const statVisitors = document.getElementById('statVisitors');
+
+        if (uploadBtn) uploadBtn.classList.add('guest-mode-disabled');
+        if (greetingText) greetingText.textContent = '欢迎体验 PushFile，这是演示模式的数据展示。';
+
+        // 显示 mock 数据（带动画）
+        animateNumber(statPhotos, mockData.photoCount, 1000);
+        animateNumber(statAlbums, mockData.albumCount, 800);
+        animateNumber(statVisitors, mockData.todayVisitors, 600, '+');
+    }
+
     async function loadAndRenderStats() {
+        // 访客模式：只展示 mock 数据，不调 API
+        if (isGuestMode()) {
+            applyGuestMode();
+            return;
+        }
+
+        const manageCard = document.querySelector('.card-manage');
+        const homepageGreeting = document.querySelector('.greeting h2');
+        if (!manageCard || !homepageGreeting || !homepageGreeting.textContent?.includes('Admin')) {
+            return;
+        }
+
         if (!window.PushFileAuth || typeof window.PushFileAuth.apiGet !== 'function') return;
+
+        const totalPhotosEl = document.getElementById('statPhotos');
+        const albumCountEl = document.getElementById('statAlbums');
+        const newVisitorsEl = document.getElementById('statVisitors');
+
         try {
             const tokensData = await window.PushFileAuth.apiGet('/api/tokens', { base });
             let totalPhotos = 0;
@@ -139,15 +211,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 totalPhotos = tokensData.tokens.reduce((sum, t) => sum + (t.count || 0), 0);
             }
 
-            const totalPhotosEl = document.querySelector('.card-manage .stat-item:nth-child(1) .stat-value');
-            const albumCountEl = document.querySelector('.card-manage .stat-item:nth-child(3) .stat-value');
-            const newVisitorsEl = document.querySelector('.card-manage .stat-item:nth-child(5) .stat-value');
-
-            setText(totalPhotosEl, formatNumber(totalPhotos));
-            setText(albumCountEl, formatNumber(albumCount));
+            // 数字动画展示
+            animateNumber(totalPhotosEl, totalPhotos, 1000);
+            animateNumber(albumCountEl, albumCount, 800);
 
             const statsData = await window.PushFileAuth.apiGet('/api/stats', { base });
-            let totalViews = 0;
             let todayViews = 0;
             const todayStr = new Date().toISOString().slice(0, 10);
             const recentItems = [];
@@ -156,7 +224,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 for (const key of Object.keys(statsData)) {
                     const entry = statsData[key];
                     if (isStatsEntry(entry)) {
-                        totalViews += toNumber(entry.views) || 0;
                         const lastVisit = entry.last_visit || '';
                         if (lastVisit.slice(0, 10) === todayStr) {
                             todayViews += toNumber(entry.views) || 0;
@@ -170,7 +237,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             
-            setText(newVisitorsEl, `+${formatNumber(todayViews)}`);
+            animateNumber(newVisitorsEl, todayViews, 600, '+');
 
             recentItems.sort((a, b) => (b.last_visit || '').localeCompare(a.last_visit || ''));
             const top5 = recentItems.slice(0, 5);
@@ -186,14 +253,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            if (todayViews > 0) {
-                const greetingP = document.querySelector('.greeting p');
-                if (greetingP && typeof greetingP.textContent === 'string') {
-                    greetingP.textContent = greetingP.textContent.replace(/\d+/, String(todayViews));
+            const greetingText = document.getElementById('greetingText');
+            if (greetingText) {
+                if (todayViews > 0) {
+                    greetingText.textContent = `今天有 ${todayViews} 次访问，数据看起来不错。`;
+                } else {
+                    greetingText.textContent = '暂无今日访问数据。';
                 }
             }
         } catch (err) {
             console.warn('[admin] 统计数据加载失败', err);
+            // 加载失败时显示 0
+            animateNumber(totalPhotosEl, 0, 500);
+            animateNumber(albumCountEl, 0, 400);
+            animateNumber(newVisitorsEl, 0, 300, '+');
+            const greetingText = document.getElementById('greetingText');
+            if (greetingText) greetingText.textContent = '数据加载失败，请刷新重试。';
         }
     }
 

@@ -2,7 +2,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Header
 from app.auth import auth_header_key
-from app.storage import get_all_stats, list_tokens_with_counts
+from app.storage import get_all_stats, list_tokens_with_counts, infer_token_title
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
@@ -37,9 +37,12 @@ def api_dashboard(key: str | None = None, x_upload_key: str | None = Header(defa
     activities = []
     for sk, entry in stats.items():
         if isinstance(entry, dict) and "last_visit" in entry:
+            token = str(sk or "")
+            title = infer_token_title(token) or token
             activities.append(
                 {
-                    "name": sk,
+                    "name": token,
+                    "title": title,
                     "views": int(entry.get("views", 0) or 0),
                     "last_visit": str(entry.get("last_visit", "") or ""),
                 }

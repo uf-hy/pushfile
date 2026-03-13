@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 import threading
 import ipaddress
 from collections import Counter, defaultdict, deque
@@ -83,6 +84,66 @@ def get_token_title(token: str) -> str:
     return (load_manifest(token).get("title") or "").strip()
 
 
+def _looks_like_generated_stem(stem: str) -> bool:
+    raw = (stem or "").strip().lower()
+    if not raw:
+        return True
+    if re.fullmatch(r"a-[a-f0-9]{8}", raw):
+        return True
+    if re.fullmatch(r"\d+", raw):
+        return True
+    if re.fullmatch(r"\d+-\d+", raw):
+        return True
+    if re.fullmatch(r"row-\d+-column-\d+", raw):
+        return True
+    if re.fullmatch(r"row-\d+-column", raw):
+        return True
+    if raw in {"cover", "image", "img", "photo", "picture"}:
+        return True
+    return False
+
+
+def _normalize_candidate_title(stem: str) -> str:
+    title = (stem or "").strip()
+    title = re.sub(r"\s*\(\d+\)(?:-\d+)?$", "", title)
+    title = re.sub(r"-\d+$", "", title)
+    return title.strip("-_ ")
+
+
+def infer_token_title(token: str) -> str:
+    explicit = get_token_title(token)
+    if explicit:
+        return explicit
+
+    resolved_path = resolve_slug(token)
+    if resolved_path:
+        display_name = resolved_path.split("/")[-1].strip()
+        if display_name:
+            return display_name
+
+    try:
+        names = list_images(token)
+    except Exception:
+        return ""
+
+    candidates: list[str] = []
+    for name in names:
+        stem = Path(name).stem
+        normalized = _normalize_candidate_title(stem)
+        if not normalized or _looks_like_generated_stem(normalized):
+            continue
+        candidates.append(normalized)
+
+    if not candidates:
+        return ""
+
+    prioritized = [title for title in candidates if re.search(r"[\u4e00-\u9fff]", title)]
+    pool = prioritized or candidates
+    counts = Counter(pool)
+    best = sorted(counts.items(), key=lambda item: (-item[1], -len(item[0]), item[0]))[0][0]
+    return best
+
+
 def set_token_title(token: str, title: str):
     d = load_manifest(token)
     d["title"] = (title or "").strip()
@@ -136,7 +197,7 @@ def list_tokens_with_counts() -> List[dict[str, Any]]:
                 if x.is_file() and x.suffix.lower() in ALLOWED_SUFFIX
             ]
         )
-        out.append({"token": p.name, "count": count})
+        out.append({"token": p.name, "count": count, "title": infer_token_title(p.name)})
     return out
 
 

@@ -179,6 +179,36 @@
             cursor: not-allowed;
         }
 
+        .guest-btn {
+            width: 100%;
+            padding: 0.875rem;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            background: rgba(0, 102, 204, 0.08);
+            border: 1.5px solid rgba(0, 102, 204, 0.3);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: 0.75rem;
+            display: none;
+        }
+
+        .guest-btn.visible {
+            display: block;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .guest-btn:hover {
+            background: rgba(0, 102, 204, 0.12);
+            border-color: rgba(0, 102, 204, 0.5);
+            transform: translateY(-1px);
+        }
+
+        .guest-btn:active {
+            transform: translateY(1px);
+        }
+
         .error-message {
             color: var(--error-color);
             font-size: 0.85rem;
@@ -221,6 +251,9 @@
                     记住密码
                 </label>
                 <button type="submit" class="login-btn" id="loginBtn">登录</button>
+                <button type="button" class="guest-btn" id="guestBtn">
+                    <i class="ph ph-eye" style="margin-right: 6px;"></i>访客模式
+                </button>
                 <div class="error-message" id="errorMessage">密码错误，请重试</div>
             </form>
         </div>
@@ -315,6 +348,33 @@
                 const urlParams = new URLSearchParams(window.location.search);
                 const redirect = urlParams.get('redirect') || '/';
                 window.location.href = redirect;
+            }
+
+            // 访客模式：点击 logo 5 下显示访客按钮
+            const logo = document.querySelector('.logo');
+            const guestBtn = document.getElementById('guestBtn');
+            let clickCount = 0;
+            let clickTimer = null;
+
+            if (logo && guestBtn) {
+                logo.style.cursor = 'pointer';
+                logo.addEventListener('click', () => {
+                    clickCount++;
+                    if (clickTimer) clearTimeout(clickTimer);
+                    clickTimer = setTimeout(() => { clickCount = 0; }, 1500);
+
+                    if (clickCount >= 5) {
+                        guestBtn.classList.add('visible');
+                        clickCount = 0;
+                    }
+                });
+
+                guestBtn.addEventListener('click', () => {
+                    sessionStorage.setItem('pushfile_guest_mode', 'true');
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const redirect = urlParams.get('redirect') || '/';
+                    window.location.href = redirect;
+                });
             }
         });
     </script>
