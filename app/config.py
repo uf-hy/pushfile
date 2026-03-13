@@ -36,6 +36,22 @@ def _resolve_app_version() -> str:
 APP_VERSION = _resolve_app_version()
 
 
+def _resolve_asset_version() -> str:
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(_PROJECT_ROOT),
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        return commit or APP_VERSION or "dev"
+    except Exception:
+        return APP_VERSION or "dev"
+
+
+ASSET_VERSION = _resolve_asset_version()
+
+
 def _resolve_build_time() -> str:
     env_build = (os.environ.get("APP_BUILD_TIME") or "").strip()
     if env_build:

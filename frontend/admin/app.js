@@ -92,65 +92,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
-    function formatNumber(n) {
-        try {
-            return Number(n).toLocaleString('zh-CN');
-        } catch (_) {
-            return String(n);
-        }
-    }
-
-    function pickNumber(obj, keys) {
-        if (!obj || typeof obj !== 'object') return null;
-        for (const k of keys) {
-            const n = toNumber(obj[k]);
-            if (n !== null) return n;
-        }
-        return null;
-    }
-
     function isPlainObject(v) {
         return !!v && typeof v === 'object' && !Array.isArray(v);
     }
 
     function isStatsEntry(v) {
         return isPlainObject(v) && ('views' in v || 'first_visit' in v || 'last_visit' in v);
-    }
-
-    function resolveStatsPayload(payload) {
-        const root = isPlainObject(payload) ? payload : {};
-        const totals = isPlainObject(root.totals) ? root.totals : {};
-
-        const photoCount =
-            pickNumber(root, ['photo_count', 'photos', 'images', 'total_photos', 'total_images', 'total_photo_count']) ??
-            pickNumber(totals, ['photo_count', 'photos', 'images', 'total_photos', 'total_images', 'total_photo_count']);
-
-        let albumCount =
-            pickNumber(root, ['album_count', 'albums', 'total_albums', 'total_album_count']) ??
-            pickNumber(totals, ['album_count', 'albums', 'total_albums', 'total_album_count']);
-
-        if (albumCount === null && isPlainObject(root)) {
-            const keys = Object.keys(root);
-            const entryCount = keys.reduce((acc, k) => (isStatsEntry(root[k]) ? acc + 1 : acc), 0);
-            if (entryCount > 0) albumCount = entryCount;
-        }
-
-        const newVisitors =
-            pickNumber(root, ['today_visit_count', 'new_visitors', 'new_visitor_count', 'today_new_visitors', 'unique_ip_count']) ??
-            pickNumber(totals, ['today_visit_count', 'new_visitors', 'new_visitor_count', 'today_new_visitors', 'unique_ip_count']);
-
-        const todayUploads =
-            pickNumber(root, ['today_upload_count', 'upload_today', 'today_new_files', 'new_files_today']) ??
-            pickNumber(totals, ['today_upload_count', 'upload_today', 'today_new_files', 'new_files_today']);
-
-        const activities =
-            (Array.isArray(root.recent_activities) && root.recent_activities) ||
-            (Array.isArray(root.activities) && root.activities) ||
-            (Array.isArray(root.recent) && root.recent) ||
-            (Array.isArray(totals.recent_activities) && totals.recent_activities) ||
-            null;
-
-        return { photoCount, albumCount, newVisitors, todayUploads, activities };
     }
 
     function setText(el, text) {

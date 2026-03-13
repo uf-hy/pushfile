@@ -7,7 +7,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 from app.auth import safe_token
 from app.storage import list_images, get_token_title, record_visit, resolve_slug, list_images_by_path
-from app.config import FRONTEND_DIR, SITE_DOMAIN, MAX_MB, BASE_PATH, APP_VERSION, APP_BUILD_TIME
+from app.config import FRONTEND_DIR, SITE_DOMAIN, MAX_MB, BASE_PATH, APP_VERSION, APP_BUILD_TIME, ASSET_VERSION
 from app.security import SlidingWindowRateLimiter
 
 router = APIRouter(tags=["pages"])
@@ -19,6 +19,7 @@ _common = {
     "base": BASE_PATH,
     "app_version": APP_VERSION,
     "app_build_time": APP_BUILD_TIME,
+    "asset_version": ASSET_VERSION,
 }
 
 

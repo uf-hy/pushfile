@@ -79,7 +79,6 @@
 
     async function guardPage(options = {}) {
         try {
-            // 访客模式：直接显示页面，不验证登录
             if (sessionStorage.getItem('pushfile_guest_mode') === 'true') {
                 return;
             }
