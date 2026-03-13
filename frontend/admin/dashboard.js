@@ -19,6 +19,33 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function formatChartLabel(index) {
+        return `TOP${index + 1}`;
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+        }[char] || char));
+    }
+
+    function formatChartTitle(title) {
+        const text = String(title || '').trim();
+        if (!text) return '未命名';
+        if (text.length <= 6) return text;
+        const suffixMatch = text.match(/\d+$/);
+        if (suffixMatch) {
+            const suffix = suffixMatch[0];
+            const headLength = Math.max(2, 5 - suffix.length);
+            return `${text.slice(0, headLength)}…${suffix}`;
+        }
+        return `${text.slice(0, 5)}…`;
+    }
+
     async function loadDashboard() {
         if (!window.PushFileAuth || typeof window.PushFileAuth.apiGet !== 'function') return;
         const data = await window.PushFileAuth.apiGet('/api/stats/dashboard', { base });
@@ -46,23 +73,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const normalized = items.slice(0, 12).map((it) => {
             const name = String(it.name || '');
-            const title = name.split('/').pop() || name || '未知';
+            const rawTitle = String(it.title || '').trim();
+            const title = rawTitle || name.split('/').pop() || name || '未知';
             return {
+                name,
                 title,
                 views: Number(it.views ?? 0),
                 last: String(it.last_visit || ''),
             };
         });
 
+        const rankedByViews = [...normalized].sort((a, b) => {
+            if (b.views !== a.views) return b.views - a.views;
+            return (b.last || '').localeCompare(a.last || '');
+        });
+
         if (list) {
             list.innerHTML = normalized.map((it) => {
-                const meta = `${formatNumber(it.views)} 次访问${it.last ? ' • ' + it.last.replace('T', ' ').slice(0, 19) : ''}`;
+                const lastVisitText = it.last ? ` • ${it.last.replace('T', ' ').slice(0, 19)}` : '';
+                const meta = `${formatNumber(it.views)} 次访问${lastVisitText}`;
                 return `
                     <div class="activity-item" onclick="go('/manage')">
                         <div class="activity-icon file-image"><i class="ph ph-chart-line-up"></i></div>
                         <div class="activity-content">
-                            <div class="activity-title">${it.title}</div>
-                            <div class="activity-meta">${meta}</div>
+                            <div class="activity-title">${escapeHtml(it.title)}</div>
+                            <div class="activity-meta">${escapeHtml(meta)}</div>
                         </div>
                     </div>
                 `;
@@ -72,15 +107,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const maxViews = Math.max(...normalized.map(it => it.views), 1);
         const barChart = document.getElementById('dashboardBarChart');
         if (barChart) {
-            barChart.innerHTML = normalized.slice(0, 6).map((it, index) => {
+            barChart.innerHTML = rankedByViews.slice(0, 5).map((it, index) => {
                 const height = Math.max(12, Math.round((it.views / maxViews) * 100));
+                const chartLabel = formatChartLabel(index);
+                const chartTitle = formatChartTitle(it.title);
                 return `
-                    <div class="dashboard-bar-item ${index === 0 ? 'is-active' : ''}">
+                    <div class="dashboard-bar-item">
                         <div class="dashboard-bar-value">${formatNumber(it.views)}</div>
                         <div class="dashboard-bar-track">
                             <div class="dashboard-bar-fill" style="height:${height}%"></div>
                         </div>
-                        <div class="dashboard-bar-label">${it.title}</div>
+                        <div class="dashboard-bar-rank">${chartLabel}</div>
+                        <div class="dashboard-bar-label" title="${escapeHtml(it.title)}">${escapeHtml(chartTitle)}</div>
                     </div>
                 `;
             }).join('');
@@ -88,11 +126,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const rankList = document.getElementById('dashboardRankList');
         if (rankList) {
-            rankList.innerHTML = normalized.slice(0, 5).map((it, index) => `
+            rankList.innerHTML = rankedByViews.slice(0, 5).map((it, index) => `
                 <div class="dashboard-rank-item" onclick="go('/manage')">
                     <div class="dashboard-rank-order">${index + 1}</div>
                     <div class="dashboard-rank-main">
-                        <div class="dashboard-rank-title">${it.title}</div>
+                        <div class="dashboard-rank-title">${escapeHtml(it.title)}</div>
                         <div class="dashboard-rank-meta">${formatNumber(it.views)} 次访问</div>
                     </div>
                 </div>
