@@ -5,12 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>九宫格制作 - PushFile</title>
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
-    <link rel="stylesheet" href="{{ base }}/static/admin/style.css">
-    <link rel="stylesheet" href="{{ base }}/static/admin/grid.css">
-    <link rel="stylesheet" href="{{ base }}/static/admin/components/FolderSelector.css">
-    <style>
-        body { background: #f5f5f7; }
-    </style>
+    <link rel="stylesheet" href="{{ base }}/static/admin/style.css?v={{ asset_version }}">
+    <link rel="stylesheet" href="{{ base }}/static/admin/grid.css?v={{ asset_version }}">
+    <link rel="stylesheet" href="{{ base }}/static/admin/components/FolderSelector.css?v={{ asset_version }}">
 </head>
 <body>
     <div class="grid-page">
@@ -19,28 +16,139 @@
             <h1>九宫格制作</h1>
         </header>
         <main class="grid-main">
-            <div class="upload-zone" id="uploadZone">
-                <i class="ph ph-image" style="font-size:48px;color:#666"></i>
-                <p>点击或拖拽上传图片</p>
-                <input type="file" id="fileInput" accept="image/*" hidden>
+            <div class="empty-layout" id="emptyLayout">
+                <div class="upload-zone" id="uploadZone">
+                    <div class="upload-icon"><i class="ph ph-image"></i></div>
+                    <div class="upload-text">
+                        <div class="upload-title" id="uploadTitle">点击或拖拽上传图片</div>
+                        <div class="upload-sub" id="uploadSub">支持 JPG / PNG，上传后可随时更换</div>
+                    </div>
+                    <input type="file" id="fileInput" accept="image/*" hidden>
+                </div>
+
+                <section class="intro" id="intro">
+                    <div class="intro-card">
+                        <div class="intro-title">怎么用</div>
+                        <ol class="intro-steps">
+                            <li>上传一张图片</li>
+                            <li>调分割线 / 间距 / 背景（预览会实时更新）</li>
+                            <li>下载 ZIP（9 张小图 + 预览图），也可<span class="nowrap">保存到文件夹</span></li>
+                        </ol>
+                        <div class="intro-chips">
+                            <span class="chip"><i class="ph ph-check-circle"></i>9 张切图原样导出</span>
+                            <span class="chip"><i class="ph ph-check-circle"></i>分割线不覆盖图片像素</span>
+                            <span class="chip"><i class="ph ph-check-circle"></i>PNG 支持透明背景</span>
+                        </div>
+                    </div>
+                </section>
             </div>
-            <div class="params" id="params" style="display:none">
-                <label>线宽: <input type="range" id="lineWidth" min="1" max="10" value="2"></label>
-                <label>间距: <input type="range" id="gap" min="0" max="20" value="0"></label>
-            </div>
-            <div class="preview" id="preview" style="display:none">
-                <img id="previewImg" alt="预览图">
-            </div>
-            <div class="tiles" id="tiles" style="display:none"></div>
+
+            <section class="panel" id="panel" style="display:none">
+                <div class="panel-card">
+                    <div class="panel-header">
+                        <div class="panel-title">参数</div>
+                        <div class="panel-actions">
+                            <button type="button" class="btn btn-secondary" id="resetBtn"><i class="ph ph-arrow-counter-clockwise"></i>重置</button>
+                        </div>
+                    </div>
+
+                    <div class="control-grid">
+                        <div class="control">
+                            <div class="control-header">
+                                <div class="control-label">分割线</div>
+                                <div class="control-value">
+                                    <input class="number" type="number" id="lineWidthNumber" min="0" max="40" step="1" value="8">
+                                    <span class="unit">px</span>
+                                </div>
+                            </div>
+                            <input type="range" id="lineWidth" min="0" max="40" value="8">
+                        </div>
+
+                        <div class="control">
+                            <div class="control-header">
+                                <div class="control-label">间距</div>
+                                <div class="control-value">
+                                    <input class="number" type="number" id="gapNumber" min="0" max="60" step="1" value="12">
+                                    <span class="unit">px</span>
+                                </div>
+                            </div>
+                            <input type="range" id="gap" min="0" max="60" value="12">
+                        </div>
+
+                        <div class="control">
+                            <div class="control-header">
+                                <div class="control-label">外边距</div>
+                                <div class="control-value">
+                                    <input class="number" type="number" id="paddingNumber" min="0" max="120" step="1" value="0">
+                                    <span class="unit">px</span>
+                                </div>
+                            </div>
+                            <input type="range" id="padding" min="0" max="120" value="0">
+                        </div>
+
+                        <div class="control control-row">
+                            <div class="control-label">线色</div>
+                            <div class="control-value">
+                                <input type="color" id="lineColor" value="#ffffff" aria-label="线色">
+                                <input class="text" type="text" id="lineColorText" value="#ffffff" spellcheck="false">
+                            </div>
+                        </div>
+
+                        <div class="control control-row">
+                            <div class="control-label">背景</div>
+                            <div class="control-value">
+                                <input type="color" id="bgColor" value="#ffffff" aria-label="背景色">
+                                <input class="text" type="text" id="bgColorText" value="#ffffff" spellcheck="false">
+                            </div>
+                        </div>
+
+                        <div class="control control-row">
+                            <div class="control-label">格式</div>
+                            <div class="control-value">
+                                <select id="outputFormat" class="select">
+                                    <option value="JPEG">JPG</option>
+                                    <option value="PNG">PNG</option>
+                                </select>
+                                <label class="toggle">
+                                    <input type="checkbox" id="transparentBg">
+                                    <span>透明背景</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="preview" id="preview" style="display:none">
+                <div class="preview-header">
+                    <div class="preview-title">预览</div>
+                    <div class="preview-actions">
+                        <button type="button" class="btn btn-secondary" id="downloadPreviewBtn"><i class="ph ph-download-simple"></i>下载预览图</button>
+                    </div>
+                </div>
+                <div class="preview-canvas-wrap">
+                    <canvas id="previewCanvas"></canvas>
+                </div>
+                <div class="preview-meta" id="previewMeta"></div>
+            </section>
+
+            <section class="tiles" id="tiles" style="display:none">
+                <div class="tiles-header">
+                    <div class="tiles-title">九宫格小图</div>
+                    <div class="tiles-meta" id="tilesMeta"></div>
+                </div>
+                <div class="tiles-grid" id="tilesGrid"></div>
+            </section>
+
             <div class="actions" id="actions" style="display:none">
-                <button type="button" class="btn-primary" id="saveBtn">保存到文件夹</button>
-                <button type="button" class="btn-secondary" id="downloadBtn">下载 ZIP</button>
+                <button type="button" class="btn btn-primary" id="saveBtn"><i class="ph ph-folder-simple"></i>保存到文件夹</button>
+                <button type="button" class="btn btn-secondary" id="downloadBtn"><i class="ph ph-archive"></i>下载 ZIP</button>
             </div>
         </main>
     </div>
     <script>window.__BASE__ = '{{ base }}';</script>
-    <script src="{{ base }}/static/admin/auth.js"></script>
-    <script src="{{ base }}/static/admin/components/FolderSelector.js"></script>
-    <script src="{{ base }}/static/admin/grid.js"></script>
+    <script src="{{ base }}/static/admin/auth.js?v={{ asset_version }}"></script>
+    <script src="{{ base }}/static/admin/components/FolderSelector.js?v={{ asset_version }}"></script>
+    <script src="{{ base }}/static/admin/grid.js?v={{ asset_version }}"></script>
 </body>
 </html>
