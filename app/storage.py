@@ -10,17 +10,22 @@ from pathlib import Path
 from typing import Any, List
 from app.config import BASE_DIR
 from app.auth import TOKEN_RE, token_dir, resolve_dir
+from app.users import (
+    LEGACY_USER_ID,
+    SYSTEM_DIR,
+    apply_user_scope,
+    get_current_root,
+    get_current_user_id,
+    get_root_for_user_id,
+    slug_owner_key,
+)
 
 ALLOWED_SUFFIX = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 MANIFEST = ".manifest.json"
 FOLDER_ORDER_FILE = ".folder_order.json"
 ARCHIVE_DIRNAME = "_archived"
-STATS_FILE = BASE_DIR / "_stats.json"
-VISITS_FILE = BASE_DIR / "_visits.jsonl"
-VISITS_OLD_FILE = BASE_DIR / "_visits.old.jsonl"
 _VISITS_MAX_BYTES = 10 * 1024 * 1024
 _IP2REGION_DB_PATH = Path("/app/data/ip2region.xdb")
-SLUGS_FILE = BASE_DIR / "_slugs.json"
 _stats_lock = threading.Lock()
 _visits_lock = threading.Lock()
 _slugs_lock = threading.Lock()
@@ -28,6 +33,26 @@ _SLUG_SALT = os.environ.get("SLUG_SALT", "xaihub-photo-2026")
 _ip2region_lock = threading.Lock()
 _ip2region_searcher = None
 _ip2region_unavailable = False
+
+
+def _current_root() -> Path:
+    return get_current_root().resolve()
+
+
+def _stats_file() -> Path:
+    return _current_root() / "_stats.json"
+
+
+def _visits_file() -> Path:
+    return _current_root() / "_visits.jsonl"
+
+
+def _visits_old_file() -> Path:
+    return _current_root() / "_visits.old.jsonl"
+
+
+def _slugs_file() -> Path:
+    return (SYSTEM_DIR / "_slugs.json").resolve()
 
 
 def list_raw_images(token: str) -> List[str]:
@@ -180,12 +205,14 @@ def append_in_order(token: str, name: str):
 
 
 def list_tokens_with_counts() -> List[dict[str, Any]]:
-    if not BASE_DIR.exists():
+    root = _current_root()
+    if not root.exists():
         return []
     out = []
-    for p in sorted(BASE_DIR.iterdir()):
+    for p in sorted(root.iterdir()):
         if (
             not p.is_dir()
+            or p.is_symlink()
             or p.name.startswith("_")
             or not TOKEN_RE.match(p.name)
         ):
@@ -297,8 +324,22 @@ def remove_subfolder_from_order(parent_dir: Path, folder_name: str):
     save_subfolder_order(parent_dir, base)
 
 
+def rename_subfolder_in_order(parent_dir: Path, old_name: str, new_name: str):
+    prev = load_subfolder_order(parent_dir)
+    if not prev:
+        return
+    next_order: list[str] = []
+    seen = set()
+    for name in prev:
+        mapped = new_name if name == old_name else name
+        if mapped and mapped not in seen:
+            next_order.append(mapped)
+            seen.add(mapped)
+    save_subfolder_order(parent_dir, next_order)
+
+
 def build_tree(root: Path | None = None, rel: str = "") -> list[dict[str, Any]]:
-    root = root or BASE_DIR
+    root = root or _current_root()
     if not root.exists():
         return []
     items = []
@@ -307,7 +348,7 @@ def build_tree(root: Path | None = None, rel: str = "") -> list[dict[str, Any]]:
         children = build_tree(p, child_rel)
         has_images = _count_images(p) > 0
         is_album = has_images and not children
-        slug = get_or_create_slug(child_rel) if is_album else None
+        slug = get_or_create_slug(child_rel)
         node = {
             "name": p.name,
             "path": child_rel,
@@ -344,16 +385,19 @@ def list_images_by_path(path: str) -> List[str]:
 # ── 访问统计 ──
 
 def _load_stats() -> dict[str, Any]:
-    if STATS_FILE.exists():
+    stats_file = _stats_file()
+    if stats_file.exists():
         try:
-            return json.loads(STATS_FILE.read_text(encoding="utf-8"))
+            return json.loads(stats_file.read_text(encoding="utf-8"))
         except Exception:
             pass
     return {}
 
 
 def _save_stats(data: dict[str, Any]):
-    STATS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    stats_file = _stats_file()
+    stats_file.parent.mkdir(parents=True, exist_ok=True)
+    stats_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _utc_now_z() -> str:
@@ -454,15 +498,17 @@ def _geoip_lookup(ip: str) -> tuple[str, str, str]:
 
 
 def _rotate_visits_if_needed():
+    visits_file = _visits_file()
+    visits_old_file = _visits_old_file()
     try:
-        if VISITS_FILE.exists() and VISITS_FILE.stat().st_size >= _VISITS_MAX_BYTES:
+        if visits_file.exists() and visits_file.stat().st_size >= _VISITS_MAX_BYTES:
             try:
-                if VISITS_OLD_FILE.exists():
-                    VISITS_OLD_FILE.unlink()
+                if visits_old_file.exists():
+                    visits_old_file.unlink()
             except Exception:
                 pass
             try:
-                VISITS_FILE.replace(VISITS_OLD_FILE)
+                visits_file.replace(visits_old_file)
             except Exception:
                 pass
     except Exception:
@@ -481,10 +527,11 @@ def _append_visit_record(token: str, ip: str, ua: str, time_z: str):
         "time": time_z,
     }
     line = json.dumps(rec, ensure_ascii=False, separators=(",", ":")) + "\n"
+    visits_file = _visits_file()
     with _visits_lock:
         _rotate_visits_if_needed()
-        VISITS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(VISITS_FILE, "a", encoding="utf-8") as f:
+        visits_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(visits_file, "a", encoding="utf-8") as f:
             f.write(line)
 
 
@@ -534,8 +581,8 @@ def _iter_jsonl(path: Path):
 
 def iter_visit_records():
     # Old file first, then current file. Both are capped by rotation (10MB each).
-    yield from _iter_jsonl(VISITS_OLD_FILE)
-    yield from _iter_jsonl(VISITS_FILE)
+    yield from _iter_jsonl(_visits_old_file())
+    yield from _iter_jsonl(_visits_file())
 
 
 def _normalize_city(city: str, ip: str) -> str:
@@ -620,41 +667,63 @@ def get_analytics(limit: int = 1000, include_local: bool = False) -> dict[str, A
 
 
 def _load_slugs() -> dict[str, Any]:
-    if SLUGS_FILE.exists():
+    slugs_file = _slugs_file()
+    if slugs_file.exists():
         try:
-            return json.loads(SLUGS_FILE.read_text(encoding="utf-8"))
+            return json.loads(slugs_file.read_text(encoding="utf-8"))
         except Exception:
             pass
     return {"slug_to_path": {}, "path_to_slug": {}}
 
 
 def _save_slugs(data: dict[str, Any]):
-    SLUGS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    slugs_file = _slugs_file()
+    slugs_file.parent.mkdir(parents=True, exist_ok=True)
+    slugs_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _make_slug(path: str) -> str:
-    h = hashlib.sha256((_SLUG_SALT + "|" + path).encode()).hexdigest()[:8]
+def _slug_entry_owner(entry: Any) -> str:
+    if isinstance(entry, dict):
+        return str(entry.get("owner") or LEGACY_USER_ID)
+    return LEGACY_USER_ID
+
+
+def _slug_entry_path(entry: Any) -> str:
+    if isinstance(entry, dict):
+        return str(entry.get("path") or "")
+    return str(entry or "")
+
+
+def _make_slug(path: str, owner_id: str | None = None) -> str:
+    owner = owner_id or get_current_user_id()
+    seed = f"{_SLUG_SALT}|{path}" if owner == LEGACY_USER_ID else f"{_SLUG_SALT}|{owner}|{path}"
+    h = hashlib.sha256(seed.encode()).hexdigest()[:8]
     return f"a-{h}"
 
 
 def get_or_create_slug(path: str) -> str:
+    owner = get_current_user_id()
+    key = slug_owner_key(path, owner)
     with _slugs_lock:
         data = _load_slugs()
-        existing = data["path_to_slug"].get(path)
+        existing = data["path_to_slug"].get(key)
         if existing:
-            _ensure_symlink(existing, path)
+            _ensure_symlink(existing, path, owner)
             return existing
-        slug = _make_slug(path)
-        data["slug_to_path"][slug] = path
-        data["path_to_slug"][path] = slug
+        slug = _make_slug(path, owner)
+        data["slug_to_path"][slug] = path if owner == LEGACY_USER_ID else {"owner": owner, "path": path}
+        data["path_to_slug"][key] = slug
         _save_slugs(data)
-        _ensure_symlink(slug, path)
+        _ensure_symlink(slug, path, owner)
         return slug
 
 
-def _ensure_symlink(slug: str, path: str):
-    link = BASE_DIR / slug
-    target = BASE_DIR / path
+def _ensure_symlink(slug: str, path: str, owner_id: str | None = None):
+    owner = owner_id or get_current_user_id()
+    root = get_root_for_user_id(owner)
+    root.mkdir(parents=True, exist_ok=True)
+    link = root / slug
+    target = root / path
     if link.is_symlink():
         if link.resolve() == target.resolve():
             return
@@ -669,8 +738,100 @@ def _ensure_symlink(slug: str, path: str):
 
 def resolve_slug(slug: str) -> str | None:
     data = _load_slugs()
-    return data["slug_to_path"].get(slug)
+    entry = data["slug_to_path"].get(slug)
+    if entry is None:
+        return None
+    owner = _slug_entry_owner(entry)
+    apply_user_scope(owner)
+    return _slug_entry_path(entry)
 
 
 def get_all_slugs() -> dict[str, Any]:
     return _load_slugs()
+
+
+def rename_slug_paths(old_path: str, new_path: str):
+    old_path = old_path.strip().strip("/")
+    new_path = new_path.strip().strip("/")
+    if not old_path or not new_path or old_path == new_path:
+        return
+
+    with _slugs_lock:
+        data = _load_slugs()
+        slug_to_path = data.get("slug_to_path", {})
+        path_to_slug = data.get("path_to_slug", {})
+        owner = get_current_user_id()
+        owner_key_old = slug_owner_key(old_path, owner)
+
+        updates: list[tuple[str, str, str]] = []
+        prefix = f"{old_path}/"
+        for slug, entry in list(slug_to_path.items()):
+            if _slug_entry_owner(entry) != owner:
+                continue
+            path = _slug_entry_path(entry)
+            if path == old_path:
+                replacement = new_path
+            elif path.startswith(prefix):
+                replacement = f"{new_path}/{path[len(prefix):]}"
+            else:
+                continue
+            updates.append((slug, path, replacement))
+
+        if not updates:
+            return
+
+        for slug, old_item_path, new_item_path in updates:
+            slug_to_path[slug] = new_item_path if owner == LEGACY_USER_ID else {"owner": owner, "path": new_item_path}
+            path_to_slug.pop(slug_owner_key(old_item_path, owner), None)
+            path_to_slug[slug_owner_key(new_item_path, owner)] = slug
+
+        data["slug_to_path"] = slug_to_path
+        data["path_to_slug"] = path_to_slug
+        _save_slugs(data)
+
+        for slug, _old_item_path, new_item_path in updates:
+            root = get_root_for_user_id(owner)
+            link = root / slug
+            if link.is_symlink():
+                try:
+                    link.unlink()
+                except OSError:
+                    pass
+            _ensure_symlink(slug, new_item_path, owner)
+
+
+def remove_slug_paths(path_prefix: str):
+    path_prefix = path_prefix.strip().strip("/")
+    if not path_prefix:
+        return
+
+    with _slugs_lock:
+        data = _load_slugs()
+        slug_to_path = data.get("slug_to_path", {})
+        path_to_slug = data.get("path_to_slug", {})
+        owner = get_current_user_id()
+        prefix = f"{path_prefix}/"
+        to_remove = []
+        for slug, entry in list(slug_to_path.items()):
+            if _slug_entry_owner(entry) != owner:
+                continue
+            path = _slug_entry_path(entry)
+            if path == path_prefix or path.startswith(prefix):
+                to_remove.append((slug, path))
+
+        if not to_remove:
+            return
+
+        for slug, path in to_remove:
+            slug_to_path.pop(slug, None)
+            path_to_slug.pop(slug_owner_key(path, owner), None)
+            link = get_root_for_user_id(owner) / slug
+            if link.is_symlink():
+                try:
+                    link.unlink()
+                except OSError:
+                    pass
+
+        data["slug_to_path"] = slug_to_path
+        data["path_to_slug"] = path_to_slug
+        _save_slugs(data)

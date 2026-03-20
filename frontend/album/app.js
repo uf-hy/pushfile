@@ -91,49 +91,23 @@ function trigger(url, name) {
   a.remove();
 }
 
+function zipUrl() {
+  return `${base}/z/${encodeURIComponent(token)}`;
+}
+
 async function downloadAll(e) {
   e.preventDefault();
   if (!files.length) return;
   if (__androidInApp) return;
-  try {
-    if (window.showDirectoryPicker) {
-      const dir = await window.showDirectoryPicker();
-      showOv();
-      for (let i = 0; i < files.length; i++) {
-        const src = files[i];
-        setP(i, files.length, src);
-        const r = await fetch(downloadUrl(src));
-        if (!r.ok) continue;
-        const fh = await dir.getFileHandle(toJpgName(src), {create: true});
-        const ws = await fh.createWritable();
-        const rd = r.body.getReader();
-        while (true) {
-          const {done, value} = await rd.read();
-          if (done) break;
-          await ws.write(value);
-        }
-        await ws.close();
-        setP(i + 1, files.length, src);
-      }
-      document.getElementById('ovTitle').textContent = '下载完成';
-      document.getElementById('ovDesc').textContent = '所有图片已保存';
-      setTimeout(hideOv, 800);
-      return;
-    }
-  } catch (err) {
-    console.warn(err);
-  }
   showOv();
-  for (let i = 0; i < files.length; i++) {
-    const src = files[i];
-    setP(i, files.length, src);
-    trigger(downloadUrl(src), toJpgName(src));
-    await new Promise(r => setTimeout(r, 350));
-    setP(i + 1, files.length, src);
-  }
-  document.getElementById('ovTitle').textContent = '已触发下载';
-  document.getElementById('ovDesc').textContent = '浏览器将逐个保存图片';
-  setTimeout(hideOv, 800);
+  document.getElementById('ovTitle').textContent = '正在打包';
+  document.getElementById('ovDesc').textContent = '正在生成 ZIP，请稍候…';
+  setP(0, 1, 'ZIP');
+  trigger(zipUrl(), `${document.title || 'album'}.zip`);
+  setP(1, 1, 'ZIP');
+  document.getElementById('ovTitle').textContent = '已开始下载';
+  document.getElementById('ovDesc').textContent = 'ZIP 文件已交给浏览器下载';
+  setTimeout(hideOv, 900);
 }
 
 if (isIOS()) {

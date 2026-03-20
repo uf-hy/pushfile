@@ -32,6 +32,26 @@ function animateNumber(el, target, duration = 800, prefix = '') {
     requestAnimationFrame(update);
 }
 
+function showToast(message) {
+    let toast = document.getElementById('globalAdminToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'globalAdminToast';
+        toast.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(18px);background:rgba(28,28,30,0.9);color:#fff;padding:12px 16px;border-radius:14px;font-size:13px;font-weight:600;z-index:10020;opacity:0;pointer-events:none;transition:all .25s ease;box-shadow:0 12px 28px rgba(0,0,0,.18);backdrop-filter:blur(12px);max-width:min(88vw,420px);text-align:center;';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateX(-50%) translateY(0)';
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(-50%) translateY(18px)';
+    }, 2200);
+}
+
+window.showToast = showToast;
+
 function normalizePath(path) {
     if (!path) return '/';
     if (typeof path !== 'string') return '/';
@@ -107,6 +127,70 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!s) return '';
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
+
+    async function loadUserPanel() {
+        const summary = document.getElementById('userMenuSummary');
+        const listEl = document.getElementById('userListPanel');
+        const avatarImg = document.querySelector('.user-avatar img');
+        if (!summary || !listEl || !window.PushFileAuth) return;
+        try {
+            const me = await window.PushFileAuth.apiGet('/api/auth/me', { base });
+            const username = me?.user?.username || 'admin';
+            summary.textContent = `当前账号：${username}`;
+            if (avatarImg) {
+                avatarImg.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=0D8ABC&color=fff&rounded=true`;
+                avatarImg.alt = username;
+            }
+            const usersResp = await window.PushFileAuth.apiGet('/api/auth/users', { base });
+            const users = usersResp?.users || [];
+            if (!users.length) {
+                listEl.innerHTML = '<div style="font-size:13px;color:var(--color-text-secondary);">暂无可见用户</div>';
+                return;
+            }
+            listEl.innerHTML = users.map((item) => `
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--color-border);border-radius:14px;background:rgba(245,245,247,0.72);">
+                    <div>
+                        <div style="font-size:14px;font-weight:600;">${escapeHtml(item.username)}</div>
+                        <div style="font-size:12px;color:var(--color-text-secondary);">${item.is_legacy ? 'legacy 空间' : '独立空间'}</div>
+                    </div>
+                    <div style="font-size:12px;color:${item.is_active ? 'var(--color-primary)' : 'var(--color-text-secondary)'};font-weight:600;">${item.is_active ? '启用' : '停用'}</div>
+                </div>
+            `).join('');
+        } catch (err) {
+            console.error('load user panel failed', err);
+            summary.textContent = '读取账号失败';
+            listEl.innerHTML = '<div style="font-size:13px;color:var(--color-text-secondary);">无法读取用户列表</div>';
+        }
+    }
+
+    window.openUserMenu = async function openUserMenu() {
+        openModal('userMenuModal');
+        await loadUserPanel();
+    };
+
+    window.createManagerUser = async function createManagerUser() {
+        const usernameInput = document.getElementById('newManagerUsername');
+        const passwordInput = document.getElementById('newManagerPassword');
+        const username = usernameInput?.value.trim() || '';
+        const password = passwordInput?.value.trim() || '';
+        if (!username || !password) {
+            showToast('请输入用户名和密码');
+            return;
+        }
+        try {
+            const resp = await window.PushFileAuth.apiPost('/api/auth/users', JSON.stringify({ username, password }), { base });
+            if (!resp || resp.ok !== true) {
+                throw new Error(resp?.detail || '创建失败');
+            }
+            if (usernameInput) usernameInput.value = '';
+            if (passwordInput) passwordInput.value = '';
+            showToast(`已创建用户：${username}`);
+            await loadUserPanel();
+        } catch (err) {
+            console.error('create user failed', err);
+            showToast(`创建失败：${err?.message || '请稍后重试'}`);
+        }
+    };
 
     function setChartSummary(dailyData) {
         const days = (dailyData?.days || []).slice(-7);
@@ -456,12 +540,12 @@ document.addEventListener('DOMContentLoaded', () => {
             startBtn.addEventListener('click', async () => {
                 if (!window.PushFileAuth || typeof window.PushFileAuth.apiPost !== 'function') return;
                 if (!homeUpload.files || homeUpload.files.length === 0) {
-                    alert('请先选择要上传的文件');
+                    showToast('请先选择要上传的文件');
                     return;
                 }
                 const { destination, folderName } = splitPath(homeUpload.selectedPath);
                 if (!folderName) {
-                    alert('请先选择一个具体的保存位置（可在根目录下新建文件夹）');
+                    showToast('请先选择一个具体的保存位置（可在根目录下新建文件夹）');
                     return;
                 }
 
@@ -497,12 +581,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (!r || r.ok !== true) throw new Error((r && r.detail) || '上传失败');
                     }
 
-                    alert('上传成功');
+                    showToast('上传成功');
                     resetHomeUploadState();
                     closeModal('uploadModal');
                 } catch (err) {
                     console.error(err);
-                    alert(err && err.message ? err.message : '上传失败');
+                    showToast(err && err.message ? err.message : '上传失败');
                 } finally {
                     startBtn.disabled = false;
                     startBtn.textContent = '开始上传';

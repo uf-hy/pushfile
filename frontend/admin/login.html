@@ -126,6 +126,7 @@
             transition: color 0.2s ease;
         }
 
+        input[type="text"],
         input[type="password"] {
             width: 100%;
             padding: 1rem 1.2rem 1rem 3rem;
@@ -139,12 +140,15 @@
             box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
         }
 
+        input[type="text"]:focus,
         input[type="password"]:focus {
             border-color: var(--primary-color);
             box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.2);
             background: rgba(255, 255, 255, 0.8);
         }
 
+        input[type="text"]:focus + .input-icon,
+        input[type="text"]:not(:placeholder-shown) + .input-icon,
         input[type="password"]:focus + .input-icon,
         input[type="password"]:not(:placeholder-shown) + .input-icon {
             color: var(--primary-color);
@@ -239,9 +243,13 @@
         <div class="login-card">
             <i class="ph-fill ph-paper-plane-tilt logo"></i>
             <h1>PushFile</h1>
-            <p class="subtitle">请输入访问密码</p>
+            <p class="subtitle">请输入账号和密码</p>
             
             <form id="loginForm">
+                <div class="input-group">
+                    <input type="text" id="usernameInput" placeholder="账号（默认 admin）" autocomplete="username">
+                    <i class="ph ph-user input-icon"></i>
+                </div>
                 <div class="input-group">
                     <input type="password" id="passwordInput" placeholder="密码" required>
                     <i class="ph ph-lock input-icon"></i>
@@ -263,6 +271,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             const base = '{{ base }}' || '';
             const form = document.getElementById('loginForm');
+            const usernameInput = document.getElementById('usernameInput');
             const passwordInput = document.getElementById('passwordInput');
             const loginBtn = document.getElementById('loginBtn');
             const errorMessage = document.getElementById('errorMessage');
@@ -281,15 +290,38 @@
             const localKey = localStorage.getItem('pushfile_admin_key');
             const sessionKey = sessionStorage.getItem('pushfile_admin_key');
             const currentKey = localKey || sessionKey;
-            
+
+            function parseCredential(key) {
+                const raw = String(key || '');
+                if (!raw.includes(':')) {
+                    return { username: 'admin', password: raw };
+                }
+                const idx = raw.indexOf(':');
+                return {
+                    username: raw.slice(0, idx) || 'admin',
+                    password: raw.slice(idx + 1),
+                };
+            }
+
+            function buildCredential(username, password) {
+                const u = (username || '').trim() || 'admin';
+                if (u === 'admin') return password;
+                return `${u}:${password}`;
+            }
+             
             if (localKey) {
                 rememberMe.checked = true;
-                passwordInput.value = localKey;
+                const parsed = parseCredential(localKey);
+                usernameInput.value = parsed.username;
+                passwordInput.value = parsed.password;
             } else if (sessionKey) {
                 rememberMe.checked = false;
-                passwordInput.value = sessionKey;
+                const parsed = parseCredential(sessionKey);
+                usernameInput.value = parsed.username;
+                passwordInput.value = parsed.password;
             } else {
                 rememberMe.checked = true; // 默认勾选
+                usernameInput.value = 'admin';
             }
 
             if (currentKey) {
@@ -305,28 +337,30 @@
 
             form.addEventListener('submit', async (e) => {
                 e.preventDefault();
+                const username = usernameInput.value.trim();
                 const password = passwordInput.value.trim();
                 
                 if (!password) return;
+                const credential = buildCredential(username, password);
 
                 loginBtn.disabled = true;
                 loginBtn.textContent = '验证中...';
                 errorMessage.classList.remove('show');
 
                 try {
-                    const isValid = await verifyToken(password);
+                    const isValid = await verifyToken(credential, username, password);
                     
                     if (isValid) {
                         if (rememberMe.checked) {
-                            localStorage.setItem('pushfile_admin_key', password);
+                            localStorage.setItem('pushfile_admin_key', credential);
                             sessionStorage.removeItem('pushfile_admin_key');
                         } else {
-                            sessionStorage.setItem('pushfile_admin_key', password);
+                            sessionStorage.setItem('pushfile_admin_key', credential);
                             localStorage.removeItem('pushfile_admin_key');
                         }
                         redirectBack();
                     } else {
-                        showError('密码错误，请重试');
+                        showError('账号或密码错误，请重试');
                     }
                 } catch {
                     showError('网络错误，请稍后重试');
@@ -340,15 +374,18 @@
                 errorMessage.textContent = msg;
                 errorMessage.classList.add('show');
                 passwordInput.value = '';
-                passwordInput.focus();
+                (usernameInput.value.trim() ? passwordInput : usernameInput).focus();
             }
 
-            async function verifyToken(token) {
+            async function verifyToken(token, username, password) {
                 try {
+                    const payload = (username || password)
+                        ? { username: (username || '').trim() || 'admin', password }
+                        : { key: token };
                     const response = await fetch(withBase('/api/auth/login'), {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ key: token }),
+                        body: JSON.stringify(payload),
                     });
                     return response.ok;
                 } catch (e) {

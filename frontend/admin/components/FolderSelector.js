@@ -9,6 +9,13 @@ class FolderSelector {
         this.selectedPath = ''; // Default to root
         this.init();
     }
+    notify(message) {
+        if (typeof window.showToast === 'function') {
+            window.showToast(message);
+            return;
+        }
+        console.warn(message);
+    }
     init() {
         this.overlay = document.createElement('div');
         this.overlay.className = 'folder-selector-overlay';
@@ -187,7 +194,7 @@ class FolderSelector {
                 { base: this.options.base || '' }
             );
             if (!data || data.ok !== true) {
-                alert(`创建失败: ${(data && data.detail) || '未知错误'}`);
+                this.notify(`创建失败: ${(data && data.detail) || '未知错误'}`);
                 return;
             }
             this.selectedPath = data.path || path;
@@ -197,7 +204,7 @@ class FolderSelector {
             this.newFolderContainer.classList.remove('show');
         } catch (error) {
             console.error('Error creating folder:', error);
-            alert('创建文件夹失败，请检查网络连接');
+            this.notify('创建文件夹失败，请检查网络连接');
         } finally {
             this.createFolderBtn.disabled = false;
             this.createFolderBtn.textContent = '新建';

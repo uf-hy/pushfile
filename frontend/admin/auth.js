@@ -6,15 +6,22 @@
     }
 
     function getKey() {
-        return localStorage.getItem(STORAGE_KEY) || '';
+        return localStorage.getItem(STORAGE_KEY) || sessionStorage.getItem(STORAGE_KEY) || '';
     }
 
-    function setKey(key) {
-        localStorage.setItem(STORAGE_KEY, key);
+    function setKey(key, remember = true) {
+        if (remember) {
+            localStorage.setItem(STORAGE_KEY, key);
+            sessionStorage.removeItem(STORAGE_KEY);
+            return;
+        }
+        sessionStorage.setItem(STORAGE_KEY, key);
+        localStorage.removeItem(STORAGE_KEY);
     }
 
     function clearKey() {
         localStorage.removeItem(STORAGE_KEY);
+        sessionStorage.removeItem(STORAGE_KEY);
     }
 
     async function validateKey(key, base = '') {

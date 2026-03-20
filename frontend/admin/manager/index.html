@@ -18,8 +18,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <!-- 基础样式复用和专用样式 -->
-    <link rel="stylesheet" href="{{ base }}/static/admin/manager/style.css">
-    <link rel="stylesheet" href="{{ base }}/static/admin/components/FolderSelector.css">
+    <link rel="stylesheet" href="{{ base }}/static/admin/manager/style.css?v={{ asset_version }}">
+    <link rel="stylesheet" href="{{ base }}/static/admin/components/FolderSelector.css?v={{ asset_version }}">
 </head>
     <script>
         window.__BASE__ = '{{ base }}';
@@ -50,7 +50,26 @@
                 </div>
 
                 <div class="nav-group">
-                    <div class="nav-title">我的相册</div>
+                    <div class="nav-title-row">
+                        <div class="nav-title">我的相册</div>
+                        <div class="nav-title-actions">
+                            <button type="button" class="sidebar-mini-btn" id="createRootFolderBtn" title="新建根文件夹">
+                                <i class="ph ph-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="folder-create-panel" id="folderCreatePanel" hidden>
+                        <div class="folder-create-meta" id="folderCreateMeta">新建到根目录</div>
+                        <div class="folder-create-row">
+                            <input type="text" id="folderCreateInput" placeholder="输入文件夹名称">
+                            <button type="button" class="sidebar-mini-btn primary" id="folderCreateSubmit" title="确认创建">
+                                <i class="ph ph-check"></i>
+                            </button>
+                            <button type="button" class="sidebar-mini-btn" id="folderCreateCancel" title="取消">
+                                <i class="ph ph-x"></i>
+                            </button>
+                        </div>
+                    </div>
                     <div id="album-list">
                         <!-- 相册列表由 JS 动态渲染 -->
                         <div style="padding: 12px; color: var(--color-text-secondary); font-size: 12px; text-align: center;">加载中...</div>
@@ -71,6 +90,7 @@
                 </div>
             </div>
         </aside>
+        <div class="sidebar-resizer" id="sidebarResizer" aria-hidden="true"></div>
 
         <!-- 右侧主内容区 -->
         <main class="main-view">
@@ -226,18 +246,17 @@
 
     <!-- 右键菜单 (Context Menu) -->
     <div class="context-menu" id="contextMenu">
-        <div class="context-menu-item" onclick="handleContextAction('preview')">
-            <i class="ph ph-eye"></i> <span>预览图片</span>
-        </div>
-        <div class="context-menu-item" onclick="handleContextAction('copy')">
-            <i class="ph ph-link"></i> <span>复制链接</span>
-        </div>
-        <div class="context-menu-item" onclick="handleContextAction('download')">
-            <i class="ph ph-download-simple"></i> <span>下载原始文件</span>
-        </div>
-        <div class="context-menu-divider"></div>
-        <div class="context-menu-item danger" onclick="handleContextAction('delete')">
-            <i class="ph ph-trash"></i> <span>删除</span>
+        <div class="context-menu-list" id="contextMenuList"></div>
+    </div>
+
+    <div class="modal" id="actionDialog">
+        <div class="modal-content manager-dialog">
+            <h3 id="actionDialogTitle">确认操作</h3>
+            <p id="actionDialogMessage">确定继续吗？</p>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" id="actionDialogCancel">取消</button>
+                <button type="button" class="btn btn-primary" id="actionDialogConfirm">确定</button>
+            </div>
         </div>
     </div>
 
@@ -271,8 +290,8 @@
         </button>
     </div>
 
-     <script src="{{ base }}/static/admin/auth.js"></script>
-     <script src="{{ base }}/static/admin/components/FolderSelector.js"></script>
-     <script src="{{ base }}/static/admin/manager/app.js"></script>
+     <script src="{{ base }}/static/admin/auth.js?v={{ asset_version }}"></script>
+     <script src="{{ base }}/static/admin/components/FolderSelector.js?v={{ asset_version }}"></script>
+     <script src="{{ base }}/static/admin/manager/app.js?v={{ asset_version }}"></script>
  </body>
  </html>

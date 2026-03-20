@@ -7,8 +7,16 @@ const state = {
     base: window.__BASE__ || '',
     tokens: [],
     currentToken: null,
+    currentPath: '',
+    currentTitle: '',
     currentFiles: [],
+    currentFolders: [],
     folderTree: [],
+    expandedFolders: new Set(),
+    sidebarTreeReady: false,
+    folderPanelMode: 'create',
+    createFolderParentPath: '',
+    renameFolderPath: '',
     uploadTargetPath: '',
     pendingUploadFiles: [],
     pendingUploadPaths: []
@@ -47,6 +55,14 @@ async function initApp() {
         await window.PushFileAuth.guardPage({ base: state.base });
         state.key = window.PushFileAuth.getKey();
     }
+
+    const savedSidebarWidth = localStorage.getItem('pf_manager_sidebar_width');
+    if (savedSidebarWidth) {
+        const n = Number(savedSidebarWidth);
+        if (Number.isFinite(n)) {
+            document.documentElement.style.setProperty('--sidebar-width', `${Math.min(520, Math.max(220, n))}px`);
+        }
+    }
     
     try {
         await loadTokens();
@@ -65,12 +81,13 @@ async function loadTokens() {
         
         function flattenTree(nodes) {
             for (const node of nodes) {
-                if (node.is_album) {
+                if (node.slug) {
                     state.tokens.push({
                         token: node.slug,
                         title: node.name,
                         path: node.path,
-                        count: node.image_count
+                        count: node.image_count,
+                        isAlbum: !!node.is_album,
                     });
                 }
                 if (node.children && node.children.length > 0) {
@@ -79,22 +96,50 @@ async function loadTokens() {
             }
         }
         flattenTree(state.folderTree);
+
+        const current = state.currentToken
+            ? state.tokens.find(t => t.token === state.currentToken)
+            : null;
+        const target = current || state.tokens[0] || null;
+        state.currentToken = target ? target.token : null;
+        syncExpandedFolders(state.folderTree, target ? target.path : '');
         
         renderSidebarTree(state.folderTree);
         
-        if (state.tokens.length > 0) {
-            const current = state.currentToken
-                ? state.tokens.find(t => t.token === state.currentToken)
-                : null;
-            const target = current || state.tokens[0];
-            await loadAlbum(target.token, target.title || target.token);
+        if (target) {
+            await loadAlbum(target.token, target.title || target.token, { skipSidebarRender: true });
+        } else {
+            clearCurrentAlbumState();
         }
     }
 }
 
 function getCurrentAlbumPath() {
+    if (state.currentPath) return state.currentPath;
     const t = state.tokens.find(x => x.token === state.currentToken);
     return (t && typeof t.path === 'string') ? t.path : '';
+}
+
+function findNodeByPath(nodes, targetPath) {
+    for (const node of nodes || []) {
+        if (node.path === targetPath) return node;
+        if (node.children && node.children.length > 0) {
+            const found = findNodeByPath(node.children, targetPath);
+            if (found) return found;
+        }
+    }
+    return null;
+}
+
+function findNodeBySlug(nodes, slug) {
+    for (const node of nodes || []) {
+        if (node.slug === slug) return node;
+        if (node.children && node.children.length > 0) {
+            const found = findNodeBySlug(node.children, slug);
+            if (found) return found;
+        }
+    }
+    return null;
 }
 
 function splitPath(path) {
@@ -106,31 +151,293 @@ function splitPath(path) {
     };
 }
 
+function escapeHtml(value) {
+    if (value == null) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function collectFolderPaths(nodes, out = new Set()) {
+    for (const node of nodes || []) {
+        if (!node.is_album && node.path) out.add(node.path);
+        if (node.children && node.children.length > 0) collectFolderPaths(node.children, out);
+    }
+    return out;
+}
+
+function addCurrentAncestors(nodes, currentPath, out) {
+    if (!currentPath) return out;
+    for (const node of nodes || []) {
+        if (!node.is_album && node.path && (currentPath === node.path || currentPath.startsWith(`${node.path}/`))) {
+            out.add(node.path);
+            if (node.children && node.children.length > 0) addCurrentAncestors(node.children, currentPath, out);
+        }
+    }
+    return out;
+}
+
+function buildInitialExpandedFolders(tree, currentPath) {
+    return addCurrentAncestors(tree, currentPath, new Set());
+}
+
+function syncExpandedFolders(tree, currentPath) {
+    const available = collectFolderPaths(tree);
+    if (!state.sidebarTreeReady) {
+        state.expandedFolders = buildInitialExpandedFolders(tree, currentPath);
+        state.sidebarTreeReady = true;
+        return;
+    }
+    const next = new Set([...state.expandedFolders].filter(path => available.has(path)));
+    addCurrentAncestors(tree, currentPath, next);
+    state.expandedFolders = next;
+}
+
+function openCreateFolderPanel(parentPath = '') {
+    state.folderPanelMode = 'create';
+    state.createFolderParentPath = parentPath || '';
+    state.renameFolderPath = '';
+    const panel = document.getElementById('folderCreatePanel');
+    const meta = document.getElementById('folderCreateMeta');
+    const input = document.getElementById('folderCreateInput');
+    const submit = document.getElementById('folderCreateSubmit');
+    if (!panel || !meta || !input) return;
+    meta.textContent = parentPath ? `新建到 /${parentPath}` : '新建到根目录';
+    input.placeholder = '输入文件夹名称';
+    if (submit) submit.title = '确认创建';
+    panel.hidden = false;
+    input.value = '';
+    input.focus();
+}
+
+function openRenameFolderPanel(path, currentName) {
+    state.folderPanelMode = 'rename';
+    state.renameFolderPath = path || '';
+    state.createFolderParentPath = '';
+    const panel = document.getElementById('folderCreatePanel');
+    const meta = document.getElementById('folderCreateMeta');
+    const input = document.getElementById('folderCreateInput');
+    const submit = document.getElementById('folderCreateSubmit');
+    if (!panel || !meta || !input) return;
+    meta.textContent = `重命名 /${path}`;
+    input.placeholder = '输入新的文件夹名称';
+    if (submit) submit.title = '确认重命名';
+    panel.hidden = false;
+    input.value = currentName || '';
+    input.focus();
+    input.select();
+}
+
+function closeCreateFolderPanel() {
+    const panel = document.getElementById('folderCreatePanel');
+    const input = document.getElementById('folderCreateInput');
+    state.folderPanelMode = 'create';
+    state.createFolderParentPath = '';
+    state.renameFolderPath = '';
+    if (panel) panel.hidden = true;
+    if (input) input.value = '';
+}
+
+async function submitFolderPanel() {
+    if (state.folderPanelMode === 'rename') {
+        await submitRenameFolder();
+        return;
+    }
+
+    const input = document.getElementById('folderCreateInput');
+    if (!input) return;
+    const name = input.value.trim();
+    if (!name) {
+        showToast('请输入文件夹名称');
+        input.focus();
+        return;
+    }
+    if (/[/\\]/.test(name)) {
+        showToast('文件夹名称不能包含斜杠');
+        input.focus();
+        return;
+    }
+
+    const path = state.createFolderParentPath ? `${state.createFolderParentPath}/${name}` : name;
+    try {
+        const data = await api.post('/api/folders/create', JSON.stringify({ path }));
+        if (!data || data.ok !== true) {
+            throw new Error((data && (data.detail || data.message)) || '创建失败');
+        }
+        if (state.createFolderParentPath) {
+            state.expandedFolders.add(state.createFolderParentPath);
+        }
+        closeCreateFolderPanel();
+        showToast(`已创建文件夹：${name}`);
+        await loadTokens();
+    } catch (err) {
+        console.error('create folder failed:', err);
+        showToast(`创建失败：${getErrorMessage(err)}`);
+    }
+}
+
+async function submitRenameFolder() {
+    const input = document.getElementById('folderCreateInput');
+    if (!input) return;
+    const newName = input.value.trim();
+    const path = state.renameFolderPath;
+    const currentName = String(path || '').split('/').filter(Boolean).pop() || '';
+    if (!path) {
+        closeCreateFolderPanel();
+        return;
+    }
+    if (!newName) {
+        showToast('请输入新的文件夹名称');
+        input.focus();
+        return;
+    }
+    if (/[/\\]/.test(newName)) {
+        showToast('文件夹名称不能包含斜杠');
+        input.focus();
+        return;
+    }
+    if (newName === currentName) {
+        closeCreateFolderPanel();
+        return;
+    }
+
+    try {
+        const data = await api.post('/api/folders/rename', JSON.stringify({ path, new_name: newName }));
+        if (!data || data.ok !== true) {
+            throw new Error((data && (data.detail || data.message)) || '重命名失败');
+        }
+        closeCreateFolderPanel();
+        showToast(`已重命名为：${newName}`);
+        await loadTokens();
+    } catch (err) {
+        console.error('rename folder failed:', err);
+        showToast(`重命名失败：${getErrorMessage(err)}`);
+    }
+}
+
+function requestDeleteFolder(path, name) {
+    const label = name || path || '该文件夹';
+    showActionDialog({
+        title: '删除文件夹',
+        message: `确定删除“${label}”吗？其中内容也会一起删除。`,
+        confirmText: '删除',
+        danger: true,
+        onConfirm: async () => {
+            hideActionDialog();
+            await deleteFolderByPath(path, label);
+        }
+    });
+}
+
+async function deleteFolderByPath(path, name) {
+    const label = name || path || '该文件夹';
+    try {
+        const data = await api.post('/api/folders/delete', JSON.stringify({ path }));
+        if (!data || data.ok !== true) {
+            throw new Error((data && (data.detail || data.message)) || '删除失败');
+        }
+        const currentPath = getCurrentAlbumPath();
+        if (currentPath && (currentPath === path || currentPath.startsWith(`${path}/`))) {
+            state.currentToken = null;
+        }
+        state.expandedFolders.delete(path);
+        showToast(`已删除文件夹：${label}`);
+        await loadTokens();
+    } catch (err) {
+        console.error('delete folder failed:', err);
+        showToast(`删除失败：${getErrorMessage(err)}`);
+    }
+}
+
+function toggleFolderExpand(path) {
+    if (!path) return;
+    if (state.expandedFolders.has(path)) {
+        state.expandedFolders.delete(path);
+    } else {
+        state.expandedFolders.add(path);
+    }
+    renderSidebarTree(state.folderTree);
+}
+
+function getFolderLinkText(node) {
+    if (!node) return '';
+    if (node.image_count && node.image_count > 0) return `<span class="tree-count">${node.image_count}</span>`;
+    if (node.children && node.children.length > 0) return `<span class="tree-count">${node.children.length}</span>`;
+    return '';
+}
+
 function renderSidebarTree(tree) {
     const container = document.getElementById('album-list');
     if (!container) return;
-    
+
     function buildTreeHtml(nodes, level = 0) {
         let html = '';
         for (const node of nodes) {
-            const paddingLeft = level * 16 + 12;
-            
+            const paddingLeft = level * 16 + 8;
+            const path = node.path || '';
+            const name = escapeHtml(node.name || '未命名');
+            const activeClass = node.slug === state.currentToken ? ' active' : '';
+            const isFolderOnly = !node.is_album;
+            const iconClass = node.is_album ? 'ph-fill ph-image' : 'ph-fill ph-folder';
+            const iconColor = node.is_album ? '#82b1ff' : '#ffd54f';
+            const countHtml = getFolderLinkText(node);
             if (node.is_album) {
-                const countHtml = node.image_count !== undefined ? `<span style="margin-left:auto;font-size:12px;color:var(--color-text-secondary)">${node.image_count}</span>` : '';
                 html += `
-                    <a href="#" class="nav-item" data-token="${node.slug}" onclick="loadAlbum('${node.slug}', '${node.name}')" style="padding-left: ${paddingLeft}px">
-                        <i class="ph-fill ph-image" style="color: #82b1ff;"></i>
-                        <span>${node.name}</span>
-                        ${countHtml}
-                    </a>
-                `;
-            } else {
-                html += `
-                    <div class="nav-folder" style="padding-left: ${paddingLeft}px; padding-top: 8px; padding-bottom: 4px; display: flex; align-items: center; gap: 8px; color: var(--color-text-main); font-size: 13px; font-weight: 600;">
-                        <i class="ph-fill ph-folder" style="color: #ffd54f;"></i>
-                        <span>${node.name}</span>
+                    <div class="tree-node is-album-node" data-path="${escapeHtml(path)}">
+                        <div class="tree-row is-album${activeClass}" style="padding-left:${paddingLeft}px">
+                            <span class="tree-spacer"></span>
+                            <button type="button" class="tree-link" data-action="open-folder" data-token="${escapeHtml(node.slug)}" data-path="${escapeHtml(path)}" data-title="${name}">
+                                <i class="${iconClass}" style="color:${iconColor};"></i>
+                                <span class="tree-name">${name}</span>
+                                ${countHtml}
+                            </button>
+                            <div class="tree-row-actions">
+                                <button type="button" class="tree-action-btn" data-action="rename-folder" data-path="${escapeHtml(path)}" data-name="${name}" title="重命名文件夹">
+                                    <i class="ph ph-pencil-simple"></i>
+                                </button>
+                                <button type="button" class="tree-action-btn danger" data-action="delete-folder" data-path="${escapeHtml(path)}" data-name="${name}" title="删除文件夹">
+                                    <i class="ph ph-trash"></i>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 `;
+            } else {
+                const isExpanded = state.expandedFolders.has(path);
+                const childrenHtml = node.children && node.children.length > 0
+                    ? buildTreeHtml(node.children, level + 1)
+                    : '';
+                html += `
+                    <div class="tree-node is-folder-node ${isExpanded ? 'is-expanded' : 'is-collapsed'}" data-path="${escapeHtml(path)}">
+                        <div class="tree-row is-folder${activeClass}" style="padding-left:${paddingLeft}px">
+                            <button type="button" class="tree-toggle" data-action="toggle-folder" data-path="${escapeHtml(path)}" title="${isExpanded ? '折叠' : '展开'}">
+                                <i class="ph ph-caret-right"></i>
+                            </button>
+                            <button type="button" class="tree-link" data-action="open-folder" data-token="${escapeHtml(node.slug)}" data-path="${escapeHtml(path)}" data-title="${name}">
+                                <i class="${iconClass}" style="color:${iconColor};"></i>
+                                <span class="tree-name">${name}</span>
+                                ${countHtml}
+                            </button>
+                            <div class="tree-row-actions">
+                                <button type="button" class="tree-action-btn" data-action="create-child-folder" data-path="${escapeHtml(path)}" data-name="${name}" title="新建子文件夹">
+                                    <i class="ph ph-plus"></i>
+                                </button>
+                                <button type="button" class="tree-action-btn" data-action="rename-folder" data-path="${escapeHtml(path)}" data-name="${name}" title="重命名文件夹">
+                                    <i class="ph ph-pencil-simple"></i>
+                                </button>
+                                <button type="button" class="tree-action-btn danger" data-action="delete-folder" data-path="${escapeHtml(path)}" data-name="${name}" title="删除文件夹">
+                                    <i class="ph ph-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="tree-children">
+                            ${childrenHtml}
+                        </div>
+                    </div>
+                `;
+                continue;
             }
             
             if (node.children && node.children.length > 0) {
@@ -144,26 +451,57 @@ function renderSidebarTree(tree) {
 }
 
 // 加载具体相册内容
-async function loadAlbum(token, title) {
-    state.currentToken = token;
-    updateBreadcrumbs(title || token);
+function clearCurrentAlbumState() {
+    state.currentToken = null;
+    state.currentPath = '';
+    state.currentTitle = '';
+    state.currentFiles = [];
+    state.currentFolders = [];
+    state.uploadTargetPath = '';
+    updateBreadcrumbs('未选择相册');
+    const display = document.getElementById('uploadDestDisplay');
+    if (display) {
+        display.textContent = '未选择';
+    }
+    renderGridView();
+    clearSelection();
+    renderSidebarTree(state.folderTree);
+}
 
-    state.uploadTargetPath = getCurrentAlbumPath();
+async function loadAlbum(token, title, options = {}) {
+    const skipSidebarRender = !!options.skipSidebarRender;
+    const node = findNodeBySlug(state.folderTree, token);
+    const currentPath = node?.path || getCurrentAlbumPath();
+    const currentTitle = node?.name || title || token;
+
+    state.currentToken = token;
+    state.currentPath = currentPath || '';
+    state.currentTitle = currentTitle;
+    updateBreadcrumbs(currentTitle);
+
+    if (currentPath) {
+        addCurrentAncestors(state.folderTree, currentPath, state.expandedFolders);
+    }
+
+    state.uploadTargetPath = currentPath || '';
+    if (!skipSidebarRender) {
+        renderSidebarTree(state.folderTree);
+    }
     const display = document.getElementById('uploadDestDisplay');
     if (display) {
         display.textContent = state.uploadTargetPath ? `/${state.uploadTargetPath}` : '未选择';
     }
-    
-    // 更新侧边栏激活状态
-    document.querySelectorAll('.nav-item[data-token]').forEach(item => {
-        item.classList.toggle('active', item.dataset.token === token);
-    });
 
-    const data = await api.get(`/api/manage/${token}`);
-    if (data.files) {
-        state.currentFiles = data.files;
+    if (!currentPath) {
+        clearCurrentAlbumState();
+        return;
+    }
+
+    const data = await api.get(`/api/folders/list?path=${encodeURIComponent(currentPath)}`);
+    if (data && data.ok) {
+        state.currentFiles = data.files || [];
+        state.currentFolders = data.subfolders || [];
         renderGridView();
-        // 切换目录时清空选择
         clearSelection();
     }
 }
@@ -172,40 +510,62 @@ async function loadAlbum(token, title) {
 function renderGridView() {
     const container = document.querySelector('.grid-view') || document.querySelector('.mobile-view');
     if (!container) return;
+
+    const folderCards = state.currentFolders.map((folderName) => {
+        const childPath = state.currentPath ? `${state.currentPath}/${folderName}` : folderName;
+        const childNode = findNodeByPath(state.folderTree, childPath);
+        const childToken = childNode?.slug || '';
+        const childCount = childNode?.image_count || 0;
+        return `
+            <button type="button" class="grid-item folder-item" data-action="open-folder-card" data-folder-token="${escapeHtml(childToken)}" data-folder-title="${escapeHtml(folderName)}" data-folder-path="${escapeHtml(childPath)}">
+                <div class="item-icon-wrapper">
+                    <i class="ph-fill ph-folder"></i>
+                </div>
+                <div class="item-info">
+                    <span class="item-name" title="${escapeHtml(folderName)}">${escapeHtml(folderName)}</span>
+                    <span class="item-meta">${childCount} 张照片</span>
+                </div>
+            </button>
+        `;
+    }).join('');
     
-    if (state.currentFiles.length === 0) {
+    if (state.currentFiles.length === 0 && state.currentFolders.length === 0) {
         container.innerHTML = `
             <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--color-text-secondary);">
                 <i class="ph ph-empty" style="font-size: 48px; margin-bottom: 16px;"></i>
-                <p>相册是空的喵～</p>
+                <p>这个文件夹还是空的喵～</p>
             </div>
         `;
         return;
     }
 
-    container.innerHTML = state.currentFiles.map(file => {
+    const fileCards = state.currentFiles.map(file => {
+        const safeFile = escapeHtml(file);
         const isVideo = file.toLowerCase().match(/\.(mp4|mov|webm)$/);
-        const url = `${state.base}/d/${state.currentToken}/${file}`;
+        const url = `${state.base}/d/${encodeURIComponent(state.currentToken)}/${encodeURIComponent(file)}`;
+        const safeUrl = escapeHtml(url);
         
         let mediaHtml = isVideo 
             ? `<div style="width:100%;height:100%;background:#f0f0f0;display:flex;align-items:center;justify-content:center"><i class="ph-fill ph-video-camera" style="font-size:32px;color:#999"></i></div>`
-            : `<img src="${url}" alt="${file}" loading="lazy" draggable="false">`;
-            
+            : `<img src="${safeUrl}" alt="${safeFile}" loading="lazy" draggable="false">`;
+             
         return `
-            <div class="grid-item image-item" data-file="${file}" data-url="${url}" draggable="true">
+            <div class="grid-item image-item" data-file="${safeFile}" data-url="${safeUrl}" draggable="true">
                 <div class="item-checkbox" onclick="event.stopPropagation(); toggleSelect(this.closest('.grid-item'))"><i class="ph-bold ph-check"></i></div>
-                <div class="item-thumb" onclick="handleItemClick(event, this.closest('.grid-item'))">
+                <div class="item-thumb" data-action="preview-image">
                     ${mediaHtml}
                     <div class="item-overlay">
-                        <button class="action-btn" onclick="event.stopPropagation(); copyUrl('${url}')"><i class="ph ph-link"></i></button>
+                        <button class="action-btn" type="button" data-action="copy-image-link"><i class="ph ph-link"></i></button>
                     </div>
                 </div>
                 <div class="item-info">
-                    <span class="item-name" title="${file}">${file}</span>
+                    <span class="item-name" title="${safeFile}">${safeFile}</span>
                 </div>
             </div>
         `;
     }).join('');
+
+    container.innerHTML = folderCards + fileCards;
 
     if (isMobile) {
         document.body.classList.add('mobile-multi-select');
@@ -246,7 +606,7 @@ function setupDragAndDrop() {
 
     let draggedItem = null;
 
-    const items = container.querySelectorAll('.grid-item');
+    const items = container.querySelectorAll('.image-item');
     items.forEach(item => {
         item.addEventListener('dragstart', function(e) {
             draggedItem = this;
@@ -277,7 +637,7 @@ function setupDragAndDrop() {
             this.classList.remove('drag-over');
             
             if (this !== draggedItem && draggedItem) {
-                const allItems = [...container.querySelectorAll('.grid-item')];
+                const allItems = [...container.querySelectorAll('.image-item')];
                 const draggedIndex = allItems.indexOf(draggedItem);
                 const droppedIndex = allItems.indexOf(this);
                 
@@ -287,11 +647,11 @@ function setupDragAndDrop() {
                     this.parentNode.insertBefore(draggedItem, this);
                 }
 
-                const newFiles = [...container.querySelectorAll('.grid-item')].map(el => el.dataset.file);
+                const newFiles = [...container.querySelectorAll('.image-item')].map(el => el.dataset.file).filter(Boolean);
                 state.currentFiles = newFiles;
 
                 try {
-                    await api.post(`/api/manage/${state.currentToken}/order`, JSON.stringify({ files: newFiles }));
+                    await api.post(`/api/manage/${state.currentToken}/order`, JSON.stringify({ names: newFiles }));
                 } catch (err) {
                     console.error('Failed to save order:', err);
                 }
@@ -401,10 +761,114 @@ async function copyUrl(url) {
     const fullUrl = new URL(url, window.location.origin).href;
     try {
         await navigator.clipboard.writeText(fullUrl);
-        alert('链接已复制喵！');
-    } catch (err) {
-        prompt('请复制链接:', fullUrl);
+        showToast('链接已复制喵！');
+    } catch (_err) {
+        const input = document.createElement('input');
+        input.value = fullUrl;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+        showToast(`链接已复制: ${fullUrl}`);
     }
+}
+
+const actionDialogState = {
+    onConfirm: null,
+};
+
+function showActionDialog({ title, message, confirmText = '确定', danger = false, onConfirm }) {
+    const modal = document.getElementById('actionDialog');
+    const titleEl = document.getElementById('actionDialogTitle');
+    const messageEl = document.getElementById('actionDialogMessage');
+    const confirmBtn = document.getElementById('actionDialogConfirm');
+    if (!modal || !titleEl || !messageEl || !confirmBtn) return;
+    titleEl.textContent = title || '确认操作';
+    messageEl.textContent = message || '确定继续吗？';
+    confirmBtn.textContent = confirmText;
+    confirmBtn.classList.toggle('danger', !!danger);
+    actionDialogState.onConfirm = onConfirm || null;
+    modal.style.display = 'flex';
+}
+
+function hideActionDialog() {
+    const modal = document.getElementById('actionDialog');
+    if (modal) modal.style.display = 'none';
+    actionDialogState.onConfirm = null;
+}
+
+function getCurrentShareLink(token = state.currentToken) {
+    if (!token) return '';
+    const base = (state.base || '').replace(/\/$/, '');
+    return `${window.location.origin}${base}/d/${token}`;
+}
+
+function showMoveSelector(names) {
+    const files = Array.isArray(names) ? names.filter(Boolean) : [];
+    if (!files.length) return;
+    const picker = new FolderSelector({
+        base: state.base,
+        title: files.length === 1 ? '移动到哪个文件夹' : `移动 ${files.length} 个文件到…`,
+        onSelect: async (selectedPath) => {
+            const dest = (selectedPath || '').trim();
+            if (!dest) {
+                showToast('请选择目标文件夹');
+                return;
+            }
+            try {
+                const data = await api.post(
+                    `/api/manage/${state.currentToken}/batch-move`,
+                    JSON.stringify({ dest, names: files })
+                );
+                if (!data || !data.ok) {
+                    throw new Error((data && (data.detail || data.message)) || '移动失败');
+                }
+                const movedCount = (data.moved || []).length;
+                const skippedCount = (data.skipped || []).length;
+                showToast(`移动完成：成功 ${movedCount}，跳过 ${skippedCount}`);
+                await loadTokens();
+                clearSelection();
+            } catch (e) {
+                console.error('batch-move failed:', e);
+                showToast(`移动失败：${getErrorMessage(e)}`);
+            }
+        }
+    });
+    picker.show();
+}
+
+function renderContextMenuItems(items) {
+    const list = document.getElementById('contextMenuList');
+    if (!list) return;
+    list.innerHTML = items.map((item) => {
+        if (item.type === 'divider') {
+            return '<div class="context-menu-divider"></div>';
+        }
+        const dangerClass = item.danger ? ' danger' : '';
+        return `<div class="context-menu-item${dangerClass}" data-action="${escapeHtml(item.action)}"><i class="ph ${escapeHtml(item.icon)}"></i><span>${escapeHtml(item.label)}</span></div>`;
+    }).join('');
+}
+
+function buildContextMenuItems(target) {
+    if (!target) return [];
+    if (target.kind === 'folder') {
+        return [
+            { action: 'open-folder', icon: 'ph-folder-open', label: '打开' },
+            { action: 'copy-folder-link', icon: 'ph-link', label: '复制链接' },
+            { action: 'new-subfolder', icon: 'ph-folder-plus', label: '新建子文件夹' },
+            { action: 'rename-folder', icon: 'ph-pencil-simple', label: '重命名' },
+            { type: 'divider' },
+            { action: 'delete-folder', icon: 'ph-trash', label: '删除', danger: true },
+        ];
+    }
+    return [
+        { action: 'preview', icon: 'ph-eye', label: '预览图片' },
+        { action: 'copy', icon: 'ph-link', label: '复制链接' },
+        { action: 'download', icon: 'ph-download-simple', label: '下载原始文件' },
+        { action: 'move-one', icon: 'ph-folder-simple-dashed', label: '移动至…' },
+        { type: 'divider' },
+        { action: 'delete', icon: 'ph-trash', label: '删除', danger: true },
+    ];
 }
 
 function copyCurrentLink() {
@@ -505,12 +969,39 @@ window.handleItemClick = function(e, itemEl) {
     previewImage(itemEl.dataset.url);
 };
 
-// 右键菜单逻辑
+function getFolderContextTarget(folderEl) {
+    if (!folderEl) return null;
+    const token = folderEl.getAttribute('data-folder-token') || folderEl.getAttribute('data-token') || '';
+    const title = folderEl.getAttribute('data-folder-title') || folderEl.getAttribute('data-title') || folderEl.getAttribute('data-name') || '';
+    const path = folderEl.getAttribute('data-folder-path') || folderEl.getAttribute('data-path') || '';
+    if (!token && !path) return null;
+    return { kind: 'folder', token, title, path, element: folderEl };
+}
+
 document.addEventListener('contextmenu', function(e) {
-    const itemEl = e.target.closest('.grid-item');
-    if (itemEl) {
+    const imageEl = e.target.closest('.image-item');
+    if (imageEl) {
         e.preventDefault();
-        showContextMenu(e, itemEl, false);
+        showContextMenu(e, { kind: 'image', element: imageEl, file: imageEl.dataset.file, url: imageEl.dataset.url }, false);
+        return;
+    }
+    const folderCard = e.target.closest('[data-action="open-folder-card"]');
+    if (folderCard) {
+        const target = getFolderContextTarget(folderCard);
+        if (target) {
+            e.preventDefault();
+            showContextMenu(e, target, false);
+            return;
+        }
+    }
+    const treeRow = e.target.closest('.tree-row');
+    if (treeRow) {
+        const treeFolder = treeRow.querySelector('[data-action="open-folder"]');
+        const target = getFolderContextTarget(treeFolder);
+        if (target) {
+            e.preventDefault();
+            showContextMenu(e, target, false);
+        }
     }
 });
 
@@ -523,19 +1014,46 @@ document.addEventListener('click', function(e) {
             contextMenuTarget = null;
         }
     }
+
+    const folderCard = e.target.closest('[data-action="open-folder-card"]');
+    if (folderCard) {
+        const token = folderCard.getAttribute('data-folder-token') || '';
+        const title = folderCard.getAttribute('data-folder-title') || '';
+        if (token) {
+            loadAlbum(token, title || token);
+        }
+        return;
+    }
+
+    const previewEl = e.target.closest('[data-action="preview-image"]');
+    if (previewEl) {
+        const item = previewEl.closest('.image-item');
+        if (item) {
+            handleItemClick(e, item);
+        }
+        return;
+    }
+
+    const copyEl = e.target.closest('[data-action="copy-image-link"]');
+    if (copyEl) {
+        e.preventDefault();
+        e.stopPropagation();
+        const item = copyEl.closest('.image-item');
+        if (item?.dataset.url) {
+            copyUrl(item.dataset.url);
+        }
+    }
 });
 
 function showContextMenu(e, itemEl, centerForMobile) {
     const menu = document.getElementById('contextMenu');
     if (!menu) return;
-    
+    renderContextMenuItems(buildContextMenuItems(itemEl));
     contextMenuTarget = itemEl;
-    
-    // 如果是在多选中右键了一个未选中的项，先清空再选中它
-    const file = itemEl.dataset.file;
-    if (selectedFiles.size > 0 && !selectedFiles.has(file)) {
+
+    if (itemEl.kind === 'image' && selectedFiles.size > 0 && !selectedFiles.has(itemEl.file)) {
         clearSelection();
-        toggleSelect(itemEl);
+        toggleSelect(itemEl.element);
     }
     
     menu.classList.add('active');
@@ -587,10 +1105,36 @@ window.handleContextAction = function(action) {
     
     if (!contextMenuTarget) return;
     
-    const file = contextMenuTarget.dataset.file;
-    const url = contextMenuTarget.dataset.url;
+    const file = contextMenuTarget.file;
+    const url = contextMenuTarget.url;
     
     switch (action) {
+        case 'open-folder':
+            if (contextMenuTarget.token) {
+                loadAlbum(contextMenuTarget.token, contextMenuTarget.title || contextMenuTarget.token);
+            }
+            break;
+        case 'copy-folder-link':
+            copyUrl(getCurrentShareLink(contextMenuTarget.token));
+            break;
+        case 'new-subfolder':
+            openCreateFolderPanel(contextMenuTarget.path || '');
+            break;
+        case 'rename-folder':
+            openRenameFolderPanel(contextMenuTarget.path || '', contextMenuTarget.title || '');
+            break;
+        case 'delete-folder':
+            showActionDialog({
+                title: '删除文件夹',
+                message: `确定删除“${contextMenuTarget.title || contextMenuTarget.path}”吗？其中内容也会一起删除。`,
+                confirmText: '删除',
+                danger: true,
+                onConfirm: async () => {
+                    hideActionDialog();
+                    await deleteFolderByPath(contextMenuTarget.path || '', contextMenuTarget.title || '');
+                }
+            });
+            break;
         case 'preview':
             previewImage(url);
             break;
@@ -600,26 +1144,34 @@ window.handleContextAction = function(action) {
         case 'download':
             window.open(url, '_blank');
             break;
+        case 'move-one':
+            showMoveSelector([file]);
+            break;
         case 'delete':
-            if (confirm(`确定要删除 ${file} 喵？`)) {
-                (async () => {
+            showActionDialog({
+                title: '删除文件',
+                message: `确定要删除 ${file} 吗？此操作不可恢复。`,
+                confirmText: '删除',
+                danger: true,
+                onConfirm: async () => {
+                    hideActionDialog();
                     try {
                         const data = await api.post(
                             `/api/manage/${state.currentToken}/delete`,
                             JSON.stringify({ name: file })
                         );
                         if (!data || !data.ok) {
-                            alert('删除失败，请重试');
+                            showToast('删除失败，请重试');
                             return;
                         }
                         await loadTokens();
                         clearSelection();
                     } catch (e) {
                         console.error('delete failed:', e);
-                        alert('删除失败，请重试');
+                        showToast('删除失败，请重试');
                     }
-                })();
-            }
+                }
+            });
             break;
     }
 };
@@ -642,57 +1194,41 @@ window.handleBatchAction = function(action) {
         case 'copy': {
             const urls = files.map(f => new URL(`${state.base}/d/${state.currentToken}/${f}`, window.location.origin).href);
             navigator.clipboard.writeText(urls.join(String.fromCharCode(10)))
-                .then(() => alert(`已复制 ${count} 个链接喵！`))
-                .catch(() => alert('复制失败，请重试'));
+                .then(() => showToast(`已复制 ${count} 个链接喵！`))
+                .catch(() => showToast('复制失败，请重试'));
             clearSelection();
             break;
         }
         case 'move':
-            (async () => {
-                const dest = (prompt('移动到哪个文件夹路径？（相对根目录，可填子目录）') || '').trim();
-                if (!dest) return;
-                try {
-                    const data = await api.post(
-                        `/api/manage/${state.currentToken}/batch-move`,
-                        JSON.stringify({ dest: dest, names: files })
-                    );
-                    if (!data || !data.ok) {
-                        alert('移动失败，请重试');
-                        return;
-                    }
-                    const movedCount = (data.moved || []).length;
-                    const skippedCount = (data.skipped || []).length;
-                    alert(`移动完成喵！成功: ${movedCount}，跳过: ${skippedCount}`);
-                    await loadTokens();
-                    clearSelection();
-                } catch (e) {
-                    console.error('batch-move failed:', e);
-                    alert('移动失败，请重试');
-                }
-            })();
+            showMoveSelector(files);
             break;
         case 'delete':
-            if (confirm(`确定要删除选中的 ${count} 个文件喵？不可恢复哦！`)) {
-                (async () => {
+            showActionDialog({
+                title: '批量删除',
+                message: `确定要删除选中的 ${count} 个文件吗？此操作不可恢复。`,
+                confirmText: '删除',
+                danger: true,
+                onConfirm: async () => {
+                    hideActionDialog();
                     try {
                         const data = await api.post(
                             `/api/manage/${state.currentToken}/batch-delete`,
                             JSON.stringify({ names: files })
                         );
                         if (!data || !data.ok) {
-                            alert('删除失败，请重试');
+                            showToast('删除失败，请重试');
                             return;
                         }
                         const deletedCount = data.count ?? (data.deleted || []).length;
-                        alert(`删除完成喵！成功删除 ${deletedCount} 个文件`);
+                        showToast(`删除完成喵！成功删除 ${deletedCount} 个文件`);
                         await loadTokens();
                         clearSelection();
                     } catch (e) {
                         console.error('batch-delete failed:', e);
-                        alert('删除失败，请重试');
+                        showToast('删除失败，请重试');
                     }
-                })();
-            }
+                }
+            });
             break;
     }
 };
@@ -740,6 +1276,16 @@ function setupEventListeners() {
     const sidebarToggle = document.querySelector('.sidebar-toggle');
     const sidebar = document.querySelector('.sidebar');
     const overlay = document.querySelector('.sidebar-overlay');
+    const sidebarResizer = document.getElementById('sidebarResizer');
+    const createRootFolderBtn = document.getElementById('createRootFolderBtn');
+    const folderCreateSubmit = document.getElementById('folderCreateSubmit');
+    const folderCreateCancel = document.getElementById('folderCreateCancel');
+    const folderCreateInput = document.getElementById('folderCreateInput');
+    const albumList = document.getElementById('album-list');
+    const contextMenuList = document.getElementById('contextMenuList');
+    const actionDialog = document.getElementById('actionDialog');
+    const actionDialogCancel = document.getElementById('actionDialogCancel');
+    const actionDialogConfirm = document.getElementById('actionDialogConfirm');
     
     function toggleSidebar() {
         if(sidebar) sidebar.classList.toggle('open');
@@ -749,6 +1295,130 @@ function setupEventListeners() {
     if (sidebarToggle && sidebar && overlay) {
         sidebarToggle.addEventListener('click', toggleSidebar);
         overlay.addEventListener('click', toggleSidebar);
+    }
+
+    if (sidebarResizer) {
+        let isResizing = false;
+        let startX = 0;
+        let startWidth = 0;
+
+        const onMove = (e) => {
+            if (!isResizing) return;
+            const next = Math.min(520, Math.max(220, startWidth + (e.clientX - startX)));
+            document.documentElement.style.setProperty('--sidebar-width', `${next}px`);
+        };
+
+        const onUp = () => {
+            if (!isResizing) return;
+            isResizing = false;
+            const widthValue = getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width').trim();
+            const widthNumber = Number(String(widthValue).replace('px', ''));
+            if (Number.isFinite(widthNumber)) {
+                localStorage.setItem('pf_manager_sidebar_width', String(widthNumber));
+            }
+            document.body.classList.remove('is-resizing-sidebar');
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+
+        sidebarResizer.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            isResizing = true;
+            startX = e.clientX;
+            startWidth = sidebar ? sidebar.getBoundingClientRect().width : 320;
+            document.body.classList.add('is-resizing-sidebar');
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+        });
+    }
+
+    if (createRootFolderBtn) {
+        createRootFolderBtn.addEventListener('click', () => openCreateFolderPanel(''));
+    }
+
+    if (folderCreateSubmit) {
+        folderCreateSubmit.addEventListener('click', submitFolderPanel);
+    }
+
+    if (folderCreateCancel) {
+        folderCreateCancel.addEventListener('click', closeCreateFolderPanel);
+    }
+
+    if (folderCreateInput) {
+        folderCreateInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                submitFolderPanel();
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                closeCreateFolderPanel();
+            }
+        });
+    }
+
+    if (albumList) {
+        albumList.addEventListener('click', async (e) => {
+            const actionEl = e.target.closest('[data-action]');
+            if (!actionEl || !albumList.contains(actionEl)) return;
+            e.preventDefault();
+            e.stopPropagation();
+
+            const action = actionEl.dataset.action;
+            const path = actionEl.dataset.path || '';
+            const name = actionEl.dataset.name || '';
+            const token = actionEl.dataset.token || '';
+            const title = actionEl.dataset.title || name || '';
+
+            if (action === 'toggle-folder') {
+                toggleFolderExpand(path);
+                return;
+            }
+            if (action === 'open-folder') {
+                await loadAlbum(token, title || token);
+                return;
+            }
+            if (action === 'create-child-folder') {
+                openCreateFolderPanel(path);
+                return;
+            }
+            if (action === 'rename-folder') {
+                openRenameFolderPanel(path, name || title);
+                return;
+            }
+            if (action === 'delete-folder') {
+                requestDeleteFolder(path, name || title);
+            }
+        });
+    }
+
+    if (contextMenuList) {
+        contextMenuList.addEventListener('click', (e) => {
+            const item = e.target.closest('.context-menu-item[data-action]');
+            if (!item) return;
+            handleContextAction(item.getAttribute('data-action') || '');
+        });
+    }
+
+    if (actionDialogCancel) {
+        actionDialogCancel.addEventListener('click', hideActionDialog);
+    }
+
+    if (actionDialogConfirm) {
+        actionDialogConfirm.addEventListener('click', async () => {
+            const handler = actionDialogState.onConfirm;
+            if (typeof handler === 'function') {
+                await handler();
+            }
+        });
+    }
+
+    if (actionDialog) {
+        actionDialog.addEventListener('click', (e) => {
+            if (e.target === actionDialog) {
+                hideActionDialog();
+            }
+        });
     }
 
     const fileInput = document.getElementById('fileInput');

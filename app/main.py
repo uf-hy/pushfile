@@ -5,8 +5,10 @@ from fastapi.responses import PlainTextResponse
 from app.logging_config import setup_logging, access_log_middleware
 from app.routes import tokens, manage, upload, pages, folders, stats, health, files, api, grid, auth
 from app.config import BASE_PATH, FRONTEND_DIR
+from app.users import init_user_store
 
 setup_logging()
+init_user_store()
 
 
 class StripBasePathMiddleware:

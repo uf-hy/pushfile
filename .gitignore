@@ -12,3 +12,4 @@ _stats.json
 _visits.jsonl
 _visits.old.jsonl
 _slugs.json
+.sisyphus/
