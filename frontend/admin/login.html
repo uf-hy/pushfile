@@ -297,7 +297,6 @@
                     if (isValid) {
                         redirectBack();
                     } else {
-                        // 如果 token 无效，清除存储
                         localStorage.removeItem('pushfile_admin_key');
                         sessionStorage.removeItem('pushfile_admin_key');
                     }
@@ -346,7 +345,11 @@
 
             async function verifyToken(token) {
                 try {
-                    const response = await fetch(`${withBase('/api/tokens')}?key=${encodeURIComponent(token)}`);
+                    const response = await fetch(withBase('/api/auth/login'), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key: token }),
+                    });
                     return response.ok;
                 } catch (e) {
                     console.error('Token verification failed:', e);

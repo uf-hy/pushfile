@@ -19,10 +19,11 @@
 
     async function validateKey(key, base = '') {
         try {
-            const url = new URL((base || '') + '/api/tokens', window.location.origin);
-            url.searchParams.append('key', key);
-            const res = await fetch(url);
-            if (res.status === 401) return false;
+            const res = await fetch((base || '') + '/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key }),
+            });
             return res.ok;
         } catch (_) {
             return true;
@@ -54,6 +55,7 @@
         const res = await fetch(url);
         if (res.status === 401) {
             clearKey();
+            await fetch((base || '') + '/api/auth/logout', { method: 'POST' });
             return apiGet(path, options);
         }
         return res.json();
@@ -72,6 +74,7 @@
         });
         if (res.status === 401) {
             clearKey();
+            await fetch((base || '') + '/api/auth/logout', { method: 'POST' });
             return apiPost(path, body, options);
         }
         return res.json();
@@ -85,6 +88,7 @@
             await ensureKey(options);
         } finally {
             document.documentElement.style.visibility = 'visible';
+            window.scrollTo(0, 0);
         }
     }
 

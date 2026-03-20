@@ -73,7 +73,9 @@ window.logout = function logout() {
     } catch (_) {}
 
     const base = getBase();
-    window.location.href = `${base || ''}/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+    fetch(`${base || ''}/api/auth/logout`, { method: 'POST' }).finally(() => {
+        window.location.href = `${base || ''}/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+    });
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -96,125 +98,244 @@ document.addEventListener('DOMContentLoaded', () => {
         return !!v && typeof v === 'object' && !Array.isArray(v);
     }
 
-    function isStatsEntry(v) {
-        return isPlainObject(v) && ('views' in v || 'first_visit' in v || 'last_visit' in v);
-    }
-
     function setText(el, text) {
         if (!el) return;
         el.textContent = text;
     }
 
-    const mockData = {
-        photoCount: 1284,
-        albumCount: 12,
-        todayVisitors: 24
-    };
-
-    function applyGuestMode() {
-        const uploadBtn = document.getElementById('uploadBtn');
-        const greetingText = document.getElementById('greetingText');
-        const statPhotos = document.getElementById('statPhotos');
-        const statAlbums = document.getElementById('statAlbums');
-        const statVisitors = document.getElementById('statVisitors');
-
-        if (uploadBtn) uploadBtn.classList.add('guest-mode-disabled');
-        if (greetingText) greetingText.textContent = '欢迎体验 PushFile，这是演示模式的数据展示。';
-
-        animateNumber(statPhotos, mockData.photoCount, 1000);
-        animateNumber(statAlbums, mockData.albumCount, 800);
-        animateNumber(statVisitors, mockData.todayVisitors, 600, '+');
+    function escapeHtml(s) {
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
-    async function loadAndRenderStats() {
-        if (isGuestMode()) {
-            applyGuestMode();
+    function setChartSummary(dailyData) {
+        const days = (dailyData?.days || []).slice(-7);
+        const todayEl = document.getElementById('chartTodayValue');
+        const todayMetaEl = document.getElementById('chartTodayMeta');
+        const weekEl = document.getElementById('chartWeekValue');
+        const peakEl = document.getElementById('chartPeakValue');
+        const peakMetaEl = document.getElementById('chartPeakMeta');
+        if (!todayEl || !todayMetaEl || !weekEl || !peakEl || !peakMetaEl) return;
+
+        if (days.length === 0) {
+            todayEl.textContent = '-';
+            todayMetaEl.textContent = '暂无数据';
+            weekEl.textContent = '-';
+            peakEl.textContent = '-';
+            peakMetaEl.textContent = '暂无峰值';
             return;
         }
+
+        const total = days.reduce((sum, d) => sum + (Number(d.views) || 0), 0);
+        const peak = days.reduce((best, d) => ((Number(d.views) || 0) > (Number(best.views) || 0) ? d : best), days[0]);
+        const today = days[days.length - 1];
+        const parts = String(peak.date || '').split('-');
+        const peakLabel = parts.length === 3 ? `${Number(parts[1])}/${Number(parts[2])}` : '最近';
+
+        todayEl.textContent = String(Number(today.views) || 0);
+        todayMetaEl.textContent = peak.date === today.date ? '也是最近峰值' : '较峰值仍有空间';
+        weekEl.textContent = String(total);
+        peakEl.textContent = String(Number(peak.views) || 0);
+        peakMetaEl.textContent = `${peakLabel} 达到峰值`;
+    }
+
+    async function loadDashboard() {
+        if (!window.PushFileAuth || typeof window.PushFileAuth.apiGet !== 'function') return;
 
         const manageCard = document.querySelector('.card-manage');
         const homepageGreeting = document.querySelector('.greeting h2');
         if (!manageCard || !homepageGreeting || !homepageGreeting.textContent?.includes('Admin')) {
+            triggerEntranceAnimations();
             return;
         }
-
-        if (!window.PushFileAuth || typeof window.PushFileAuth.apiGet !== 'function') return;
 
         const totalPhotosEl = document.getElementById('statPhotos');
         const albumCountEl = document.getElementById('statAlbums');
         const newVisitorsEl = document.getElementById('statVisitors');
 
         try {
-            const tokensData = await window.PushFileAuth.apiGet('/api/tokens', { base });
-            let totalPhotos = 0;
-            let albumCount = 0;
-            if (tokensData && tokensData.tokens && Array.isArray(tokensData.tokens)) {
-                albumCount = tokensData.tokens.length;
-                totalPhotos = tokensData.tokens.reduce((sum, t) => sum + (t.count || 0), 0);
-            }
+            const [data, dailyData] = await Promise.all([
+                window.PushFileAuth.apiGet('/api/stats/dashboard', { base }),
+                window.PushFileAuth.apiGet('/api/stats/daily', { base })
+            ]);
 
-            // 数字动画展示
-            animateNumber(totalPhotosEl, totalPhotos, 1000);
+            const photoCount = toNumber(data?.photo_count) || 0;
+            const albumCount = toNumber(data?.album_count) || 0;
+            const todayVisits = toNumber(data?.today_visits) || 0;
+
+            animateNumber(totalPhotosEl, photoCount, 1000);
             animateNumber(albumCountEl, albumCount, 800);
+            animateNumber(newVisitorsEl, todayVisits, 600, '+');
 
-            const statsData = await window.PushFileAuth.apiGet('/api/stats', { base });
-            let todayViews = 0;
-            const todayStr = new Date().toISOString().slice(0, 10);
-            const recentItems = [];
-            
-            if (statsData && typeof statsData === 'object') {
-                for (const key of Object.keys(statsData)) {
-                    const entry = statsData[key];
-                    if (isStatsEntry(entry)) {
-                        const lastVisit = entry.last_visit || '';
-                        if (lastVisit.slice(0, 10) === todayStr) {
-                            todayViews += toNumber(entry.views) || 0;
-                        }
-                        recentItems.push({
-                            title: key.split('/').pop() || key,
-                            views: entry.views,
-                            last_visit: entry.last_visit
-                        });
-                    }
-                }
-            }
-            
-            animateNumber(newVisitorsEl, todayViews, 600, '+');
+            initDailyChart(dailyData);
+            setChartSummary(dailyData);
 
-            recentItems.sort((a, b) => (b.last_visit || '').localeCompare(a.last_visit || ''));
-            const top5 = recentItems.slice(0, 5);
-            
-            if (top5.length > 0) {
-                const items = document.querySelectorAll('.activity-list .activity-item');
-                for (let i = 0; i < items.length && i < top5.length; i++) {
-                    const item = top5[i];
-                    const titleEl = items[i].querySelector('.activity-title');
-                    const metaEl = items[i].querySelector('.activity-meta');
-                    if (titleEl) setText(titleEl, item.title);
-                    if (metaEl) setText(metaEl, `${item.views} 次访问`);
+            const activities = data?.recent_activities || [];
+
+            const listEl = document.getElementById('activityList');
+            if (listEl) {
+                if (activities.length === 0) {
+                    listEl.innerHTML = '<div style="padding:16px;text-align:center;color:var(--color-text-secondary);font-size:13px;">暂无活动记录</div>';
+                } else {
+                    listEl.innerHTML = activities.slice(0, 5).map(a => `
+                        <div class="activity-item" onclick="go('/manage/dashboard')">
+                            <div class="activity-icon file-image"><i class="ph ph-image"></i></div>
+                            <div class="activity-content">
+                                <div class="activity-title">${escapeHtml(a.title || a.name)}</div>
+                                <div class="activity-meta">${a.views || 0} 次访问</div>
+                            </div>
+                        </div>
+                    `).join('');
                 }
             }
 
             const greetingText = document.getElementById('greetingText');
             if (greetingText) {
-                if (todayViews > 0) {
-                    greetingText.textContent = `今天有 ${todayViews} 次访问，数据看起来不错。`;
+                if (todayVisits > 0) {
+                    greetingText.textContent = `今天有 ${todayVisits} 次访问，数据看起来不错。`;
                 } else {
                     greetingText.textContent = '暂无今日访问数据。';
                 }
             }
         } catch (err) {
-            console.warn('[admin] 统计数据加载失败', err);
-            // 加载失败时显示 0
+            console.warn('[admin] dashboard 数据加载失败', err);
             animateNumber(totalPhotosEl, 0, 500);
             animateNumber(albumCountEl, 0, 400);
             animateNumber(newVisitorsEl, 0, 300, '+');
+            setChartSummary({ days: [] });
             const greetingText = document.getElementById('greetingText');
             if (greetingText) greetingText.textContent = '数据加载失败，请刷新重试。';
         }
+
+        triggerEntranceAnimations();
     }
 
-    guardPromise.then(loadAndRenderStats);
+    function initDailyChart(dailyData) {
+        const canvas = document.getElementById('dailyChart');
+        if (!canvas || typeof Chart === 'undefined') return;
+
+        if (window._dailyChartInstance) window._dailyChartInstance.destroy();
+
+        const days = (dailyData?.days || []).slice(-7);
+        if (days.length === 0) return;
+        
+        const todayStr = new Date().toLocaleDateString('sv-SE', {timeZone: 'Asia/Shanghai'});
+        const labels = days.map(d => {
+            if (d.date === todayStr) return '今天';
+            const parts = d.date.split('-');
+            return `${parseInt(parts[1])}/${parseInt(parts[2])}`;
+        });
+        
+        const bgColors = days.map(d => d.date === todayStr ? '#FFB13A' : '#ECEEF3');
+        const borderColors = days.map(d => d.date === todayStr ? '#FF9500' : '#E2E6EE');
+        const values = days.map(d => Number(d.views) || 0);
+        const labelPlugin = {
+            id: 'pushfileValueLabels',
+            afterDatasetsDraw(chart) {
+                const { ctx } = chart;
+                const meta = chart.getDatasetMeta(0);
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                meta.data.forEach((bar, index) => {
+                    const value = values[index];
+                    const { x, y, base } = bar.getProps(['x', 'y', 'base'], true);
+                    const textY = Math.min(y, base) - 8;
+                    ctx.fillStyle = days[index].date === todayStr ? '#FF9500' : '#8A8E96';
+                    ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", sans-serif';
+                    ctx.fillText(String(value), x, textY);
+                });
+                ctx.restore();
+            }
+        };
+
+        window._dailyChartInstance = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: bgColors,
+                    borderColor: borderColors,
+                    borderWidth: 1,
+                    borderRadius: 10,
+                    borderSkipped: false,
+                    hoverBackgroundColor: days.map(d => d.date === todayStr ? '#FFAA29' : '#E3E6ED'),
+                    hoverBorderColor: days.map(d => d.date === todayStr ? '#FF9500' : '#D5D9E3'),
+                    barPercentage: 0.58,
+                    categoryPercentage: 0.82,
+                    maxBarThickness: 28,
+                }]
+            },
+            plugins: [labelPlugin],
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: {
+                    padding: { top: 24, right: 6, bottom: 0, left: 6 }
+                },
+                animation: {
+                    duration: 800,
+                    easing: 'easeOutQuart',
+                    delay: function(context) {
+                        return context.dataIndex * 80;
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#FFFFFF',
+                        titleColor: '#1D1D1F',
+                        bodyColor: '#86868B',
+                        titleFont: { size: 12 },
+                        bodyFont: { size: 12 },
+                        padding: 10,
+                        cornerRadius: 12,
+                        borderColor: 'rgba(0,0,0,0.06)',
+                        borderWidth: 1,
+                        displayColors: false,
+                        callbacks: {
+                            title: function(items) {
+                                const index = items[0].dataIndex;
+                                const d = days[index];
+                                return d && d.date === todayStr ? `${d.date} · 今天` : (d ? d.date : items[0].label);
+                            },
+                            label: function(item) {
+                                return item.raw + ' 次访问';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false, drawBorder: false },
+                        ticks: {
+                            font: { size: 12, weight: '600' },
+                            color: '#9AA0AA',
+                            padding: 10,
+                        },
+                        border: { display: false }
+                    },
+                    y: {
+                        display: false,
+                        border: { display: false },
+                        beginAtZero: true,
+                    }
+                }
+            }
+        });
+    }
+
+    function triggerEntranceAnimations() {
+        const cards = document.querySelectorAll('.bento-card');
+        cards.forEach((card, index) => {
+            setTimeout(() => {
+                card.classList.add('animate-in');
+            }, index * 100 + 100);
+        });
+    }
+
+    guardPromise.then(loadDashboard);
 
     const homeUpload = {
         selectedPath: '',
@@ -243,7 +364,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return `<div style="width:100%;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:var(--color-bg);border:1px solid var(--color-border);"><img src="${url}" style="width:100%;height:100%;object-fit:cover;display:block;"></div>`;
             }
             const name = (f && f.name) ? f.name : '文件';
-            return `<div style="width:100%;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:var(--color-bg);border:1px solid var(--color-border);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--color-text-secondary);padding:6px;text-align:center;">${name}</div>`;
+            return `<div style="width:100%;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:var(--color-bg);border:1px solid var(--color-border);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--color-text-secondary);padding:6px;text-align:center;">${escapeHtml(name)}</div>`;
         }).join('');
     }
 
@@ -393,11 +514,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     guardPromise.then(initHomeUpload);
-    // 简单的交互动画逻辑
-    
-    // 1. 按钮点击波纹效果 (Apple 风格的轻微缩放)
+
     const buttons = document.querySelectorAll('.btn, .icon-btn, .action-item, .activity-item');
-    
     buttons.forEach(btn => {
         btn.addEventListener('mousedown', function() {
             this.style.transform = 'scale(0.96)';
@@ -415,36 +533,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // 2. 统计图表动画
-    const bars = document.querySelectorAll('.bar');
-    
-    // 初始状态设为 0
-    bars.forEach(bar => {
-        const targetHeight = bar.style.height;
-        bar.dataset.targetHeight = targetHeight;
-        bar.style.height = '0%';
-    });
-    
-    // 延迟触发动画，产生生长效果
-    setTimeout(() => {
-        bars.forEach((bar, index) => {
-            setTimeout(() => {
-                bar.style.height = bar.dataset.targetHeight;
-            }, index * 100); // 错开动画时间
-        });
-    }, 500);
-
-    // 3. 卡片 3D 悬浮效果 (可选，增加高级感)
-    const cards = document.querySelectorAll('.bento-card');
-    
-    // 4. Bento Grid 卡片错峰入场动画 (Stagger Animation)
-    cards.forEach((card, index) => {
-        setTimeout(() => {
-            card.classList.add('animate-in');
-        }, index * 100 + 100); // 基础延迟 100ms，每个卡片间隔 100ms
-    });
-    
-    cards.forEach(card => {
+    const allCards = document.querySelectorAll('.bento-card');
+    allCards.forEach(card => {
         card.addEventListener('mousemove', e => {
             const rect = card.getBoundingClientRect();
             const x = e.clientX - rect.left;

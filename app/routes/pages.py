@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 from app.auth import safe_token
+from app.routes.auth import require_auth
 from app.storage import list_images, get_token_title, record_visit, resolve_slug, list_images_by_path
 from app.config import FRONTEND_DIR, SITE_DOMAIN, MAX_MB, BASE_PATH, APP_VERSION, APP_BUILD_TIME, ASSET_VERSION
 from app.security import SlidingWindowRateLimiter
@@ -93,7 +94,7 @@ def _client_ip(request: Request) -> str:
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):
     return templates.TemplateResponse(
-        "admin/index.html", {"request": request, **_common},
+        "landing/index.html", {"request": request, **_common},
     )
 
 
@@ -106,23 +107,50 @@ def login_page(request: Request):
 
 @router.get("/manage", response_class=HTMLResponse)
 def manage_page(request: Request):
+    guard = require_auth(request)
+    if guard:
+        return guard
+    return templates.TemplateResponse(
+        "admin/index.html", {"request": request, **_common},
+    )
+
+
+@router.get("/manage/album", response_class=HTMLResponse)
+def manage_album_page(request: Request):
+    guard = require_auth(request)
+    if guard:
+        return guard
     return templates.TemplateResponse(
         "admin/manager/index.html", {"request": request, **_common},
     )
 
 
-@router.get("/grid", response_class=HTMLResponse)
+@router.get("/manage/grid", response_class=HTMLResponse)
 def grid_page(request: Request):
+    guard = require_auth(request)
+    if guard:
+        return guard
     return templates.TemplateResponse(
         "admin/grid.html", {"request": request, **_common},
     )
 
 
-@router.get("/dashboard", response_class=HTMLResponse)
-def dashboard_page(request: Request):
+@router.get("/manage/dashboard", response_class=HTMLResponse)
+def manage_dashboard_page(request: Request):
+    guard = require_auth(request)
+    if guard:
+        return guard
     return templates.TemplateResponse(
         "admin/dashboard.html", {"request": request, **_common},
     )
+
+
+@router.get("/grid")
+@router.get("/dashboard")
+def legacy_redirect(request: Request):
+    from starlette.responses import RedirectResponse
+    path = request.url.path
+    return RedirectResponse(url=f"/manage{path}", status_code=301)
 
 
 @router.get("/album/{token}", response_class=HTMLResponse)

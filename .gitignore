@@ -8,3 +8,7 @@ __pycache__/
 uv.lock
 doc/
 visual-loop/
+_stats.json
+_visits.jsonl
+_visits.old.jsonl
+_slugs.json

@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import PlainTextResponse
 from app.logging_config import setup_logging, access_log_middleware
-from app.routes import tokens, manage, upload, pages, folders, stats, health, files, api, grid
+from app.routes import tokens, manage, upload, pages, folders, stats, health, files, api, grid, auth
 from app.config import BASE_PATH, FRONTEND_DIR
 
 setup_logging()
@@ -59,6 +59,7 @@ def robots_txt():
     )
 
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(files.router)
 app.include_router(pages.router)
 app.include_router(tokens.router)
