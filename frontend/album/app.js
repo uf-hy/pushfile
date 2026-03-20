@@ -2,6 +2,36 @@ const files = window.albumFiles || [];
 const token = window.albumToken || '';
 const base = window.__BASE__ || '';
 let lbIdx = 0;
+const __androidInApp = /FBAN|FBAV|Instagram|MicroMessenger|Line\//i.test(navigator.userAgent || '');
+
+function getInappBarClosedKey() {
+  return `pushfile_inapp_bar_closed_${token}`;
+}
+
+function updateInappBarHeight() {
+  const bar = document.getElementById('inappBar');
+  if (!bar || bar.style.display === 'none') return;
+  const h = Math.ceil(bar.getBoundingClientRect().height || 56);
+  document.documentElement.style.setProperty('--inapp-bar-h', `${h}px`);
+}
+
+function closeInappBar() {
+  const bar = document.getElementById('inappBar');
+  if (bar) bar.style.display = 'none';
+  document.body.classList.remove('has-inapp-bar');
+  sessionStorage.setItem(getInappBarClosedKey(), '1');
+}
+
+async function copyLink() {
+  const url = window.location.href;
+  const status = document.getElementById('inappCopyStatus');
+  try {
+    await navigator.clipboard.writeText(url);
+    if (status) status.textContent = '已复制';
+  } catch (_) {
+    if (status) status.textContent = '复制失败';
+  }
+}
 
 function isIOS() {
   return /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);

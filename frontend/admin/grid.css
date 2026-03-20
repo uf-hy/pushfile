@@ -468,12 +468,54 @@ input[type="range"]::-moz-range-thumb {
 
 @media (max-width: 768px) {
     .grid-main { padding: 16px; }
-    .upload-zone { padding: 30px 16px; justify-content: flex-start; }
+    .upload-zone { padding: 28px 16px; justify-content: flex-start; }
     .upload-icon { width: 48px; height: 48px; border-radius: 16px; font-size: 26px; }
     .control-grid { grid-template-columns: 1fr; }
     .control-row { grid-column: span 1; flex-direction: column; align-items: flex-start; }
+    .panel-actions {
+        width: 100%;
+        justify-content: stretch;
+        flex-wrap: wrap;
+    }
+    .panel-actions .btn,
+    .control-row .select,
+    .control-row .text,
+    .control-row .number {
+        width: 100%;
+    }
+    .control {
+        padding: 10px;
+    }
+    .tiles-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
     .actions { flex-direction: column; }
     .actions { bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+}
+
+@media (max-width: 520px) {
+    .grid-main {
+        padding: 12px;
+        padding-bottom: 110px;
+    }
+    .upload-zone {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    .upload-text {
+        text-align: left;
+    }
+    .tiles-grid {
+        gap: 8px;
+    }
+    .actions {
+        gap: 10px;
+        padding: 10px;
+    }
+    .actions .btn {
+        min-height: 44px;
+    }
 }
 
 @media (min-width: 960px) {

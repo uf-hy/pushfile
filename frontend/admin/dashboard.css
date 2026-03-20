@@ -205,12 +205,12 @@
     .dashboard-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         grid-auto-rows: minmax(160px, auto);
-        gap: 16px;
+        gap: 14px;
     }
 
     .dashboard-grid .bento-card {
         min-height: auto;
-        padding: 20px;
+        padding: 18px;
     }
 
     .dashboard-grid .bento-card.span-2 {
@@ -235,7 +235,7 @@
     }
 
     .dashboard-card--stat .card-header h3 {
-        font-size: 16px;
+        font-size: 15px;
         line-height: 1.25;
         word-break: keep-all;
     }
@@ -247,7 +247,7 @@
     }
 
     .dashboard-grid .big-stat {
-        font-size: 28px;
+        font-size: 24px;
     }
 
     .dashboard-bar-chart {
@@ -277,5 +277,48 @@
     .dashboard-bar-rank {
         font-size: 11px;
         line-height: 1.2;
+    }
+
+    .dashboard-rank-item {
+        padding: 10px 12px;
+        gap: 10px;
+    }
+
+    .dashboard-rank-title {
+        font-size: 13px;
+    }
+
+    .dashboard-rank-meta {
+        font-size: 11px;
+    }
+
+    .dashboard-card--recent .activity-item {
+        padding: 12px;
+    }
+}
+
+@media (max-width: 520px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .dashboard-grid .bento-card.span-2,
+    .dashboard-card--chart,
+    .dashboard-card--rank,
+    .dashboard-card--recent {
+        grid-column: span 1;
+    }
+
+    .dashboard-card--stat .card-header {
+        flex-direction: row;
+        align-items: center;
+    }
+
+    .dashboard-bar-chart {
+        gap: 10px;
+    }
+
+    .dashboard-bar-item {
+        flex: 0 0 52px;
     }
 }
