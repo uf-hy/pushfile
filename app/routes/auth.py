@@ -97,7 +97,16 @@ def api_auth_logout(request: Request, response: Response):
 @router.get("/me")
 def api_auth_me(request: Request):
     user = _current_user_or_401(request)
-    return {"ok": True, "user": {"id": user["id"], "username": user["username"], "is_legacy": user["is_legacy"]}}
+    return {
+        "ok": True,
+        "user": {
+            "id": user["id"],
+            "username": user["username"],
+            "is_legacy": user["is_legacy"],
+            "role": user["role"],
+            "is_admin": is_admin_user(user),
+        },
+    }
 
 
 @router.get("/users")

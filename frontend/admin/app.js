@@ -132,16 +132,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const summary = document.getElementById('userMenuSummary');
         const listEl = document.getElementById('userListPanel');
         const avatarImg = document.querySelector('.user-avatar img');
+        const createSection = document.getElementById('userCreateSection');
         if (!summary || !listEl || !window.PushFileAuth) return;
         try {
             const me = await window.PushFileAuth.apiGet('/api/auth/me', { base });
             const username = me?.user?.username || 'admin';
+            const isAdmin = !!me?.user?.is_admin;
             summary.textContent = `当前账号：${username}`;
+            if (createSection) {
+                createSection.style.display = isAdmin ? 'grid' : 'none';
+            }
             if (avatarImg) {
                 avatarImg.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=0D8ABC&color=fff&rounded=true`;
                 avatarImg.alt = username;
             }
-            const usersResp = await window.PushFileAuth.apiGet('/api/auth/users', { base });
+            const usersResp = isAdmin
+                ? await window.PushFileAuth.apiGet('/api/auth/users', { base })
+                : { users: [{ username, is_legacy: !!me?.user?.is_legacy, is_active: true }] };
             const users = usersResp?.users || [];
             if (!users.length) {
                 listEl.innerHTML = '<div style="font-size:13px;color:var(--color-text-secondary);">暂无可见用户</div>';
@@ -159,6 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             console.error('load user panel failed', err);
             summary.textContent = '读取账号失败';
+            if (createSection) createSection.style.display = 'none';
             listEl.innerHTML = '<div style="font-size:13px;color:var(--color-text-secondary);">无法读取用户列表</div>';
         }
     }
