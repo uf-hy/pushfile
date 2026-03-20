@@ -803,6 +803,12 @@ function getCurrentShareLink(token = state.currentToken) {
     return `${window.location.origin}${base}/d/${token}`;
 }
 
+function getCurrentFileDownloadLink(file) {
+    if (!state.currentToken || !file) return '';
+    const base = (state.base || '').replace(/\/$/, '');
+    return `${window.location.origin}${base}/f/${encodeURIComponent(state.currentToken)}/${encodeURIComponent(file)}`;
+}
+
 function showMoveSelector(names) {
     const files = Array.isArray(names) ? names.filter(Boolean) : [];
     if (!files.length) return;
@@ -1142,7 +1148,7 @@ window.handleContextAction = function(action) {
             copyUrl(url);
             break;
         case 'download':
-            window.open(url, '_blank');
+            window.open(getCurrentFileDownloadLink(file), '_blank');
             break;
         case 'move-one':
             showMoveSelector([file]);
@@ -1192,7 +1198,7 @@ window.handleBatchAction = function(action) {
             }
             break;
         case 'copy': {
-            const urls = files.map(f => new URL(`${state.base}/d/${state.currentToken}/${f}`, window.location.origin).href);
+            const urls = files.map(f => getCurrentFileDownloadLink(f)).filter(Boolean);
             navigator.clipboard.writeText(urls.join(String.fromCharCode(10)))
                 .then(() => showToast(`已复制 ${count} 个链接喵！`))
                 .catch(() => showToast('复制失败，请重试'));

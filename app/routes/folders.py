@@ -5,6 +5,7 @@ from app.auth import safe_path, resolve_dir, auth_header_key, auth_query_key
 from app.storage import (
     build_tree,
     list_images_by_path,
+    ordered_child_dirs,
     remove_slug_paths,
     rename_slug_paths,
     rename_subfolder_in_order,
@@ -52,10 +53,7 @@ def api_folder_list(path: str, key: str):
         "ok": True,
         "path": path,
         "files": list_images_by_path(path),
-        "subfolders": sorted(
-            p.name for p in d.iterdir()
-            if p.is_dir() and not p.name.startswith(("_", "."))
-        ),
+        "subfolders": [p.name for p in ordered_child_dirs(d)],
     }
 
 
