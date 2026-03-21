@@ -19,11 +19,8 @@ const __androidInApp = __inappEnv.isAndroid && __inappEnv.inApp;
 
 function isMobileDevice() {
   const ua = navigator.userAgent || '';
-  const touchCapable = navigator.maxTouchPoints > 0 || ('ontouchstart' in window);
-  const coarsePointer = window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(hover: none)').matches;
   return /Android|iPhone|iPad|iPod|Mobile/i.test(ua)
-    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-    || (touchCapable && coarsePointer);
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
 
 function getInappBarClosedKey() {
