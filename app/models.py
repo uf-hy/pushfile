@@ -27,6 +27,11 @@ class BatchMovePayload(BaseModel):
     dest: str
 
 
+class BatchExportPayload(BaseModel):
+    names: List[str]
+    mode: str = "deliverable"
+
+
 class CreateTokenPayload(BaseModel):
     token: str
 

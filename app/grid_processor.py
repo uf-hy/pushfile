@@ -1,15 +1,7 @@
-"""九宫格图片处理模块
-
-功能：
-1. 将图片分割成 3x3 九宫格
-2. 在图片上绘制网格线（朋友圈风格）
-3. 支持透明度处理和 JPEG 输出
-"""
-
 from __future__ import annotations
 
 import io
-from typing import Tuple
+from typing import Tuple, Optional
 
 from PIL import Image, ImageDraw
 
@@ -58,6 +50,99 @@ def convert_to_rgb(
     return alpha_composite.convert("RGB")
 
 
+def _clamp_int(v: int, lo: int, hi: int) -> int:
+    return max(lo, min(hi, int(v)))
+
+
+def _normalize_rgba(color: Tuple[int, int, int, int]) -> Tuple[int, int, int, int]:
+    r, g, b, a = color
+    return (
+        _clamp_int(r, 0, 255),
+        _clamp_int(g, 0, 255),
+        _clamp_int(b, 0, 255),
+        _clamp_int(a, 0, 255),
+    )
+
+
+def compose_nine_grid_preview(
+    source_image: Image.Image,
+    line_color: Tuple[int, int, int, int] = (255, 255, 255, 255),
+    line_width: int = 2,
+    gap: int = 0,
+    padding: int = 0,
+    bg_color: Optional[Tuple[int, int, int, int]] = (255, 255, 255, 255),
+) -> Image.Image:
+    lw = max(0, int(line_width))
+    gp = max(0, int(gap))
+    pd = max(0, int(padding))
+    sep = gp + lw
+
+    tiles = split_into_grid(source_image, grid_size=3)
+
+    w, h = source_image.size
+    tile_w = w // 3
+    tile_h = h // 3
+    col_widths = [tile_w, tile_w, w - tile_w * 2]
+    row_heights = [tile_h, tile_h, h - tile_h * 2]
+
+    out_w = sum(col_widths) + sep * 2 + pd * 2
+    out_h = sum(row_heights) + sep * 2 + pd * 2
+
+    if bg_color is None:
+        bg = (0, 0, 0, 0)
+    else:
+        bg = _normalize_rgba(bg_color)
+    canvas = Image.new("RGBA", (out_w, out_h), bg)
+
+    idx = 0
+    y = pd
+    for r in range(3):
+        x = pd
+        for c in range(3):
+            tile = tiles[idx]
+            idx += 1
+            if tile.mode != "RGBA":
+                tile = tile.convert("RGBA")
+            canvas.paste(tile, (x, y))
+            x += col_widths[c]
+            if c < 2:
+                x += sep
+        y += row_heights[r]
+        if r < 2:
+            y += sep
+
+    if sep > 0 and lw > 0:
+        draw = ImageDraw.Draw(canvas)
+        lc = _normalize_rgba(line_color)
+
+        content_w = sum(col_widths) + sep * 2
+        content_h = sum(row_heights) + sep * 2
+        content_left = pd
+        content_top = pd
+
+        x1 = content_left + col_widths[0]
+        x2 = content_left + col_widths[0] + sep + col_widths[1]
+        for x_sep in (x1, x2):
+            line_left = x_sep + (sep - lw) // 2
+            line_right = line_left + lw
+            draw.rectangle(
+                [(line_left, content_top), (line_right - 1, content_top + content_h - 1)],
+                fill=lc,
+            )
+
+        y1 = content_top + row_heights[0]
+        y2 = content_top + row_heights[0] + sep + row_heights[1]
+        for y_sep in (y1, y2):
+            line_top = y_sep + (sep - lw) // 2
+            line_bottom = line_top + lw
+            draw.rectangle(
+                [(content_left, line_top), (content_left + content_w - 1, line_bottom - 1)],
+                fill=lc,
+            )
+
+    return canvas
+
+
 def draw_grid_lines(
     image: Image.Image,
     line_color: Tuple[int, int, int, int] = (255, 255, 255, 255),
@@ -65,61 +150,14 @@ def draw_grid_lines(
     gap: int = 0,
     bg_color: Tuple[int, int, int] = (255, 255, 255),
 ) -> Image.Image:
-    """在图片上绘制九宫格网格线
-
-    Args:
-        image: PIL Image 对象
-        line_color: 线条颜色 (R, G, B, A)，默认白色
-        line_width: 线条宽度（像素）
-        gap: 网格间距（像素），0 表示无间距
-        bg_color: 间距背景色 (R, G, B)
-
-    Returns:
-        带网格线的 Image 对象
-    """
-    if image.mode != "RGBA":
-        img = image.convert("RGBA")
-    else:
-        img = image.copy()
-
-    orig_w, orig_h = img.size
-
-    if gap > 0:
-        cell_w = (orig_w - gap * 4) // 3
-        cell_h = (orig_h - gap * 4) // 3
-        result = Image.new("RGBA", (orig_w, orig_h), (*bg_color, 255))
-        for row in range(3):
-            for col in range(3):
-                src_left = col * (orig_w // 3)
-                src_upper = row * (orig_h // 3)
-                src_right = (col + 1) * (orig_w // 3) if col < 2 else orig_w
-                src_lower = (row + 1) * (orig_h // 3) if row < 2 else orig_h
-                cell = img.crop((src_left, src_upper, src_right, src_lower))
-                cell = cell.resize((cell_w, cell_h), Image.Resampling.LANCZOS)
-                dst_left = col * (cell_w + gap) + gap
-                dst_upper = row * (cell_h + gap) + gap
-                result.paste(cell, (dst_left, dst_upper))
-        draw = ImageDraw.Draw(result)
-        for row in range(3):
-            for col in range(3):
-                left = col * (cell_w + gap) + gap
-                upper = row * (cell_h + gap) + gap
-                right = left + cell_w
-                lower = upper + cell_h
-                draw.rectangle(
-                    [(left, upper), (right, lower)],
-                    outline=line_color[:3],
-                    width=line_width,
-                )
-        return result
-    else:
-        draw = ImageDraw.Draw(img)
-        for i in range(1, 3):
-            x = round(i * orig_w / 3)
-            draw.line([(x, 0), (x, orig_h)], fill=line_color, width=line_width)
-            y = round(i * orig_h / 3)
-            draw.line([(0, y), (orig_w, y)], fill=line_color, width=line_width)
-        return img
+    return compose_nine_grid_preview(
+        source_image=image,
+        line_color=line_color,
+        line_width=line_width,
+        gap=gap,
+        padding=0,
+        bg_color=(*bg_color, 255),
+    )
 
 
 def split_into_grid(image: Image.Image, grid_size: int = 3) -> list[Image.Image]:
@@ -156,6 +194,8 @@ def process_nine_grid(
     gap: int = 0,
     line_color: Tuple[int, int, int, int] = (255, 255, 255, 255),
     bg_color: Tuple[int, int, int] = (255, 255, 255),
+    padding: int = 0,
+    transparent_bg: bool = False,
     output_format: str = "JPEG",
     quality: int = 95,
 ) -> Tuple[bytes, list[bytes]]:
@@ -174,9 +214,20 @@ def process_nine_grid(
     Returns:
         (预览图字节, [9张分割图字节列表])
     """
-    # 处理预览图
     if draw_grid:
-        preview = draw_grid_lines(source_image, line_color, line_width, gap)
+        preview_bg: Optional[Tuple[int, int, int, int]]
+        if transparent_bg and output_format.upper() == "PNG":
+            preview_bg = None
+        else:
+            preview_bg = (*bg_color, 255)
+        preview = compose_nine_grid_preview(
+            source_image=source_image,
+            line_color=line_color,
+            line_width=line_width,
+            gap=gap,
+            padding=padding,
+            bg_color=preview_bg,
+        )
     else:
         preview = source_image.copy()
 
@@ -206,13 +257,28 @@ def generate_grid_preview(
     line_width: int = 2,
     gap: int = 0,
     line_color: Tuple[int, int, int, int] = (255, 255, 255, 255),
+    bg_color: Tuple[int, int, int] = (255, 255, 255),
+    padding: int = 0,
+    transparent_bg: bool = False,
     output_format: str = "JPEG",
     quality: int = 95,
 ) -> bytes:
-    preview = draw_grid_lines(source_image, line_color, line_width, gap)
+    preview_bg: Optional[Tuple[int, int, int, int]]
+    if transparent_bg and output_format.upper() == "PNG":
+        preview_bg = None
+    else:
+        preview_bg = (*bg_color, 255)
+    preview = compose_nine_grid_preview(
+        source_image=source_image,
+        line_color=line_color,
+        line_width=line_width,
+        gap=gap,
+        padding=padding,
+        bg_color=preview_bg,
+    )
     buffer = io.BytesIO()
     if output_format.upper() == "JPEG":
-        preview = convert_to_rgb(preview)
+        preview = convert_to_rgb(preview, bg_color)
         preview.save(buffer, format="JPEG", quality=quality, subsampling=0)
     else:
         if preview.mode != "RGBA":

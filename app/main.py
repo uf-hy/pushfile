@@ -1,12 +1,23 @@
+import logging
 import mimetypes
+from .analytics_store import init_analytics_store
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import PlainTextResponse
 from app.logging_config import setup_logging, access_log_middleware
-from app.routes import tokens, manage, upload, pages, folders, stats, health, files, api, grid
+from app.routes import tokens, manage, upload, pages, folders, stats, health, files, api, grid, auth, trash
 from app.config import BASE_PATH, FRONTEND_DIR
+from app.metadata_store import init_metadata_store
+from app.users import init_user_store
 
 setup_logging()
+logger = logging.getLogger(__name__)
+init_user_store()
+init_metadata_store()
+try:
+    init_analytics_store()
+except Exception:
+    logger.exception("analytics store init failed")
 
 
 class StripBasePathMiddleware:
@@ -59,12 +70,14 @@ def robots_txt():
     )
 
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(files.router)
 app.include_router(pages.router)
 app.include_router(tokens.router)
 app.include_router(manage.router)
 app.include_router(upload.router)
 app.include_router(folders.router)
+app.include_router(trash.router)
 app.include_router(stats.router)
 app.include_router(api.router)
 app.include_router(grid.router)

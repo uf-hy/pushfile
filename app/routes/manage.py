@@ -1,9 +1,15 @@
+import io
 import hashlib
 import time
+import zipfile
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Header
+from urllib.parse import quote
+
+from fastapi import APIRouter, HTTPException, Header, Response
+from fastapi.responses import FileResponse
 from app.auth import safe_token, safe_name, safe_path, auth_query_key, auth_header_key, token_dir, resolve_dir, SAFE_NAME_RE
 from app.models import (
+    BatchExportPayload,
     RenamePayload,
     DeletePayload,
     BatchDeletePayload,
@@ -17,13 +23,42 @@ from app.storage import (
     get_token_title,
     set_token_title,
     update_order,
+    move_file_to_trash,
     rename_in_order,
     remove_in_order,
     ALLOWED_SUFFIX,
 )
-from app.image_variants import remove_variants_for_source
+from app.image_variants import ensure_download_jpeg, remove_variants_for_source
 
 router = APIRouter(prefix="/api/manage", tags=["manage"])
+
+
+def _resolve_manage_dir(token: str) -> Path:
+    token = safe_token(token)
+    from app.storage import resolve_slug
+
+    real_path = resolve_slug(token)
+    if real_path:
+        return resolve_dir(real_path).resolve()
+    return token_dir(token).resolve()
+
+
+def _safe_export_zip_name(name: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch in {"-", "_"} or '\u4e00' <= ch <= '\u9fff' else "-" for ch in (name or "").strip())
+    cleaned = cleaned.strip("-_")
+    return cleaned[:80] or "album"
+
+
+def _dedupe_export_name(name: str, used: set[str]) -> str:
+    candidate = name
+    stem = Path(name).stem
+    suffix = Path(name).suffix
+    i = 1
+    while candidate in used:
+        candidate = f"{stem}-{i}{suffix}"
+        i += 1
+    used.add(candidate)
+    return candidate
 
 
 @router.get("/{token}")
@@ -106,10 +141,8 @@ def api_manage_delete(
         raise HTTPException(status_code=404, detail="file not found")
     if f.suffix.lower() not in ALLOWED_SUFFIX:
         raise HTTPException(status_code=400, detail="file type not allowed")
-    remove_variants_for_source(f)
-    f.unlink()
-    remove_in_order(token, name)
-    return {"ok": True, "deleted": name}
+    trash_item = move_file_to_trash(token, name)
+    return {"ok": True, "deleted": name, "mode": "trash", "trash_item": trash_item}
 
 
 @router.post("/{token}/batch-delete")
@@ -123,6 +156,7 @@ def api_manage_batch_delete(
     names = [safe_name(x) for x in payload.names]
     d = token_dir(token).resolve()
     deleted = []
+    trashed = []
     for name in names:
         f = (d / name).resolve()
         if (
@@ -131,11 +165,10 @@ def api_manage_batch_delete(
             and f.is_file()
             and f.suffix.lower() in ALLOWED_SUFFIX
         ):
-            remove_variants_for_source(f)
-            f.unlink()
+            trash_item = move_file_to_trash(token, name)
             deleted.append(name)
-            remove_in_order(token, name)
-    return {"ok": True, "deleted": deleted, "count": len(deleted)}
+            trashed.append(trash_item)
+    return {"ok": True, "deleted": deleted, "count": len(deleted), "mode": "trash", "trash_items": trashed}
 
 
 @router.post("/{token}/batch-move")
@@ -247,3 +280,61 @@ def api_manage_batch_rename(
         remove_variants_for_source(d / old)
         rename_in_order(token, old, mapping[old])
     return {"ok": True, "renamed": [{"old": k, "new": v} for k, v in mapping.items()]}
+
+
+@router.post("/{token}/export")
+def api_manage_export(
+    token: str,
+    payload: BatchExportPayload,
+    x_upload_key: str | None = Header(default=None),
+):
+    auth_header_key(x_upload_key)
+    token = safe_token(token)
+    mode = "original" if str(payload.mode or "").strip().lower() == "original" else "deliverable"
+    names = [safe_name(x) for x in payload.names]
+    if not names:
+        raise HTTPException(status_code=400, detail="names required")
+
+    folder_dir = _resolve_manage_dir(token)
+    files: list[Path] = []
+    for name in names:
+        src = (folder_dir / name).resolve()
+        if not src.is_relative_to(folder_dir) or not src.exists() or not src.is_file():
+            raise HTTPException(status_code=404, detail=f"file not found: {name}")
+        if src.suffix.lower() not in ALLOWED_SUFFIX:
+            raise HTTPException(status_code=400, detail=f"file type not allowed: {name}")
+        files.append(src)
+
+    if len(files) == 1:
+        source = files[0]
+        if mode == "original":
+            return FileResponse(source, filename=source.name, content_disposition_type="attachment")
+        try:
+            jpg = ensure_download_jpeg(source)
+            return FileResponse(jpg, media_type="image/jpeg", filename=f"{source.stem}.jpg", content_disposition_type="attachment")
+        except Exception:
+            return FileResponse(source, filename=source.name, content_disposition_type="attachment")
+
+    buf = io.BytesIO()
+    used_names: set[str] = set()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for source in files:
+            if mode == "original":
+                zf.write(source, arcname=_dedupe_export_name(source.name, used_names))
+                continue
+            try:
+                jpg = ensure_download_jpeg(source)
+                out_name = _dedupe_export_name(f"{source.stem}.jpg", used_names)
+                zf.writestr(out_name, jpg.read_bytes())
+            except Exception:
+                zf.write(source, arcname=_dedupe_export_name(source.name, used_names))
+
+    zip_label = _safe_export_zip_name(folder_dir.name)
+    suffix = "原图" if mode == "original" else "图片"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename=export.zip; filename*=UTF-8''{quote(f'{zip_label}-{suffix}')}.zip"
+        },
+    )

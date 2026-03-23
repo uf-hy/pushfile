@@ -1,12 +1,16 @@
+import io
+import re
+import zipfile
 from email.utils import parsedate
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 
 from app.auth import safe_name, safe_token, token_dir, resolve_dir
 from app.image_variants import ensure_download_jpeg, ensure_thumb_avif
-from app.storage import ALLOWED_SUFFIX, resolve_slug
+from app.storage import ALLOWED_SUFFIX, list_images, list_images_by_path, resolve_slug
 
 router = APIRouter(tags=["files"])
 
@@ -80,6 +84,34 @@ def _file_response(path: Path, **kwargs) -> FileResponse:
     return FileResponse(path, **kwargs)
 
 
+def _resolve_album(token: str) -> tuple[str | None, Path, list[str]]:
+    token = safe_token(token)
+    real_path = resolve_slug(token)
+    if real_path:
+        folder_dir = resolve_dir(real_path).resolve()
+        return real_path, folder_dir, list_images_by_path(real_path)
+    folder_dir = token_dir(token).resolve()
+    return None, folder_dir, list_images(token)
+
+
+def _safe_zip_name(name: str) -> str:
+    cleaned = re.sub(r"[^\w\-\u4e00-\u9fff]+", "-", (name or "").strip())
+    cleaned = cleaned.strip("-_")
+    return cleaned[:80] or "album"
+
+
+def _dedupe_zip_name(name: str, used: set[str]) -> str:
+    candidate = name
+    stem = Path(name).stem
+    suffix = Path(name).suffix
+    i = 1
+    while candidate in used:
+        candidate = f"{stem}-{i}{suffix}"
+        i += 1
+    used.add(candidate)
+    return candidate
+
+
 @router.get("/d/{token}/{filename}")
 def serve_image(request: Request, token: str, filename: str):
     f = _resolve_file(token, filename)
@@ -137,3 +169,31 @@ def download_image(request: Request, token: str, filename: str):
             headers={"Cache-Control": "public, max-age=86400"},
         )
         return _with_304(request, resp)
+
+
+@router.get("/z/{token}")
+def download_album_zip(token: str):
+    real_path, folder_dir, files = _resolve_album(token)
+    if not files:
+        raise HTTPException(status_code=404, detail="album not found")
+
+    display_name = (real_path.split("/")[-1] if real_path else folder_dir.name) or token
+    zip_name = _safe_zip_name(display_name)
+    buf = io.BytesIO()
+    used_names: set[str] = set()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file in files:
+            source_path = _resolve_file(token, file)
+            try:
+                jpg = ensure_download_jpeg(source_path)
+                out_name = _dedupe_zip_name(f"{Path(source_path.name).stem}.jpg", used_names)
+                zf.writestr(out_name, jpg.read_bytes())
+            except Exception:
+                zf.write(source_path, arcname=_dedupe_zip_name(source_path.name, used_names))
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename=album.zip; filename*=UTF-8''{quote(zip_name)}.zip"
+        },
+    )

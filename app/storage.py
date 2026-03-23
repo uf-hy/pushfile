@@ -1,25 +1,48 @@
 import hashlib
 import json
 import os
+import re
+import secrets
+import shutil
 import threading
 import ipaddress
 from collections import Counter, defaultdict, deque
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, List
-from app.config import BASE_DIR
+from .analytics_store import get_stats_rollups, iter_sqlite_visit_events, record_sqlite_visit, seed_stats_rollup
+from app.config import BASE_DIR, REGION_TRACE_ENABLED, ANALYTICS_READ_SQLITE, ANALYTICS_WRITE_LEGACY, ANALYTICS_WRITE_SQLITE
 from app.auth import TOKEN_RE, token_dir, resolve_dir
+from app.image_variants import remove_variants_for_source
+from app.metadata_store import (
+    create_trash_entry,
+    delete_trash_entry,
+    get_trash_entry,
+    list_trash_entries,
+    load_folder_order_record,
+    load_manifest_record,
+    load_slugs_snapshot,
+    metadata_backend,
+    save_folder_order_record,
+    save_manifest_record,
+    save_slugs_snapshot,
+)
+from app.users import (
+    LEGACY_USER_ID,
+    SYSTEM_DIR,
+    apply_user_scope,
+    get_current_root,
+    get_current_user_id,
+    get_root_for_user_id,
+    slug_owner_key,
+)
 
 ALLOWED_SUFFIX = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 MANIFEST = ".manifest.json"
 FOLDER_ORDER_FILE = ".folder_order.json"
 ARCHIVE_DIRNAME = "_archived"
-STATS_FILE = BASE_DIR / "_stats.json"
-VISITS_FILE = BASE_DIR / "_visits.jsonl"
-VISITS_OLD_FILE = BASE_DIR / "_visits.old.jsonl"
 _VISITS_MAX_BYTES = 10 * 1024 * 1024
 _IP2REGION_DB_PATH = Path("/app/data/ip2region.xdb")
-SLUGS_FILE = BASE_DIR / "_slugs.json"
 _stats_lock = threading.Lock()
 _visits_lock = threading.Lock()
 _slugs_lock = threading.Lock()
@@ -27,6 +50,39 @@ _SLUG_SALT = os.environ.get("SLUG_SALT", "xaihub-photo-2026")
 _ip2region_lock = threading.Lock()
 _ip2region_searcher = None
 _ip2region_unavailable = False
+_analytics_excluded_nets: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+for _net in (os.environ.get("ANALYTICS_EXCLUDED_NETS") or "").split(","):
+    _net = _net.strip()
+    if not _net:
+        continue
+    try:
+        _analytics_excluded_nets.append(ipaddress.ip_network(_net, strict=False))
+    except ValueError:
+        continue
+
+
+def _current_root() -> Path:
+    return get_current_root().resolve()
+
+
+def _owner_id() -> str:
+    return get_current_user_id()
+
+
+def _stats_file() -> Path:
+    return _current_root() / "_stats.json"
+
+
+def _visits_file() -> Path:
+    return _current_root() / "_visits.jsonl"
+
+
+def _visits_old_file() -> Path:
+    return _current_root() / "_visits.old.jsonl"
+
+
+def _slugs_file() -> Path:
+    return (SYSTEM_DIR / "_slugs.json").resolve()
 
 
 def list_raw_images(token: str) -> List[str]:
@@ -44,7 +100,7 @@ def manifest_path(token: str) -> Path:
     return token_dir(token) / MANIFEST
 
 
-def load_manifest(token: str) -> dict[str, Any]:
+def _load_manifest_from_fs(token: str) -> dict[str, Any]:
     p = manifest_path(token)
     if not p.exists():
         return {"order": [], "title": ""}
@@ -61,10 +117,30 @@ def load_manifest(token: str) -> dict[str, Any]:
         return {"order": [], "title": ""}
 
 
+def load_manifest(token: str) -> dict[str, Any]:
+    backend = metadata_backend()
+    owner = _owner_id()
+    if backend == "sqlite":
+        record = load_manifest_record(owner, token)
+        if record is not None:
+            return record
+        data = _load_manifest_from_fs(token)
+        if data.get("order") or data.get("title"):
+            save_manifest_record(owner, token, data)
+        return data
+
+    data = _load_manifest_from_fs(token)
+    if backend == "dual":
+        save_manifest_record(owner, token, data)
+    return data
+
+
 def save_manifest(token: str, data: dict[str, Any]):
     p = manifest_path(token)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    if metadata_backend() in {"dual", "sqlite"}:
+        save_manifest_record(_owner_id(), token, data)
 
 
 def list_images(token: str) -> List[str]:
@@ -81,6 +157,66 @@ def list_images(token: str) -> List[str]:
 
 def get_token_title(token: str) -> str:
     return (load_manifest(token).get("title") or "").strip()
+
+
+def _looks_like_generated_stem(stem: str) -> bool:
+    raw = (stem or "").strip().lower()
+    if not raw:
+        return True
+    if re.fullmatch(r"a-[a-f0-9]{8}", raw):
+        return True
+    if re.fullmatch(r"\d+", raw):
+        return True
+    if re.fullmatch(r"\d+-\d+", raw):
+        return True
+    if re.fullmatch(r"row-\d+-column-\d+", raw):
+        return True
+    if re.fullmatch(r"row-\d+-column", raw):
+        return True
+    if raw in {"cover", "image", "img", "photo", "picture"}:
+        return True
+    return False
+
+
+def _normalize_candidate_title(stem: str) -> str:
+    title = (stem or "").strip()
+    title = re.sub(r"\s*\(\d+\)(?:-\d+)?$", "", title)
+    title = re.sub(r"-\d+$", "", title)
+    return title.strip("-_ ")
+
+
+def infer_token_title(token: str) -> str:
+    explicit = get_token_title(token)
+    if explicit:
+        return explicit
+
+    resolved_path = resolve_slug(token)
+    if resolved_path:
+        display_name = resolved_path.split("/")[-1].strip()
+        if display_name:
+            return display_name
+
+    try:
+        names = list_images(token)
+    except Exception:
+        return ""
+
+    candidates: list[str] = []
+    for name in names:
+        stem = Path(name).stem
+        normalized = _normalize_candidate_title(stem)
+        if not normalized or _looks_like_generated_stem(normalized):
+            continue
+        candidates.append(normalized)
+
+    if not candidates:
+        return ""
+
+    prioritized = [title for title in candidates if re.search(r"[\u4e00-\u9fff]", title)]
+    pool = prioritized or candidates
+    counts = Counter(pool)
+    best = sorted(counts.items(), key=lambda item: (-item[1], -len(item[0]), item[0]))[0][0]
+    return best
 
 
 def set_token_title(token: str, title: str):
@@ -119,12 +255,14 @@ def append_in_order(token: str, name: str):
 
 
 def list_tokens_with_counts() -> List[dict[str, Any]]:
-    if not BASE_DIR.exists():
+    root = _current_root()
+    if not root.exists():
         return []
     out = []
-    for p in sorted(BASE_DIR.iterdir()):
+    for p in sorted(root.iterdir()):
         if (
             not p.is_dir()
+            or p.is_symlink()
             or p.name.startswith("_")
             or not TOKEN_RE.match(p.name)
         ):
@@ -136,7 +274,7 @@ def list_tokens_with_counts() -> List[dict[str, Any]]:
                 if x.is_file() and x.suffix.lower() in ALLOWED_SUFFIX
             ]
         )
-        out.append({"token": p.name, "count": count})
+        out.append({"token": p.name, "count": count, "title": infer_token_title(p.name)})
     return out
 
 
@@ -155,7 +293,7 @@ def _list_visible_child_dirs(d: Path) -> list[Path]:
     return out
 
 
-def load_subfolder_order(d: Path) -> list[str]:
+def _load_subfolder_order_from_fs(d: Path) -> list[str]:
     p = d / FOLDER_ORDER_FILE
     if not p.exists():
         return []
@@ -168,9 +306,37 @@ def load_subfolder_order(d: Path) -> list[str]:
         return []
 
 
+def load_subfolder_order(d: Path) -> list[str]:
+    backend = metadata_backend()
+    rel_path = ""
+    try:
+        rel_path = d.resolve().relative_to(_current_root()).as_posix()
+    except Exception:
+        rel_path = ""
+    if backend == "sqlite" and rel_path:
+        record = load_folder_order_record(_owner_id(), rel_path)
+        if record is not None:
+            return record
+        order = _load_subfolder_order_from_fs(d)
+        if order:
+            save_folder_order_record(_owner_id(), rel_path, order)
+        return order
+
+    order = _load_subfolder_order_from_fs(d)
+    if backend == "dual" and rel_path:
+        save_folder_order_record(_owner_id(), rel_path, order)
+    return order
+
+
 def save_subfolder_order(d: Path, order: list[str]):
     p = d / FOLDER_ORDER_FILE
     p.write_text(json.dumps(order, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        rel_path = d.resolve().relative_to(_current_root()).as_posix()
+    except Exception:
+        rel_path = ""
+    if rel_path and metadata_backend() in {"dual", "sqlite"}:
+        save_folder_order_record(_owner_id(), rel_path, order)
 
 
 def ordered_child_dirs(d: Path) -> list[Path]:
@@ -236,8 +402,22 @@ def remove_subfolder_from_order(parent_dir: Path, folder_name: str):
     save_subfolder_order(parent_dir, base)
 
 
+def rename_subfolder_in_order(parent_dir: Path, old_name: str, new_name: str):
+    prev = load_subfolder_order(parent_dir)
+    if not prev:
+        return
+    next_order: list[str] = []
+    seen = set()
+    for name in prev:
+        mapped = new_name if name == old_name else name
+        if mapped and mapped not in seen:
+            next_order.append(mapped)
+            seen.add(mapped)
+    save_subfolder_order(parent_dir, next_order)
+
+
 def build_tree(root: Path | None = None, rel: str = "") -> list[dict[str, Any]]:
-    root = root or BASE_DIR
+    root = root or _current_root()
     if not root.exists():
         return []
     items = []
@@ -246,7 +426,7 @@ def build_tree(root: Path | None = None, rel: str = "") -> list[dict[str, Any]]:
         children = build_tree(p, child_rel)
         has_images = _count_images(p) > 0
         is_album = has_images and not children
-        slug = get_or_create_slug(child_rel) if is_album else None
+        slug = get_or_create_slug(child_rel)
         node = {
             "name": p.name,
             "path": child_rel,
@@ -280,19 +460,192 @@ def list_images_by_path(path: str) -> List[str]:
     return raw
 
 
+def search_manager_items(query: str, path: str = "", scope: str = "subtree", limit: int = 200) -> list[dict[str, Any]]:
+    needle = str(query or "").strip().lower()
+    if not needle:
+        return []
+
+    scope_value = "global" if scope == "global" else "subtree"
+    base_path = str(path or "").strip().strip("/")
+    results: list[dict[str, Any]] = []
+
+    def within_scope(node_path: str) -> bool:
+        if scope_value == "global" or not base_path:
+            return True
+        return node_path == base_path or node_path.startswith(f"{base_path}/")
+
+    def walk(nodes: list[dict[str, Any]]) -> None:
+        for node in nodes or []:
+            node_path = str(node.get("path") or "")
+            node_name = str(node.get("name") or "")
+            node_slug = str(node.get("slug") or "")
+            if within_scope(node_path):
+                searchable_path = node_path.lower()
+                searchable_name = node_name.lower()
+                if node_slug and (needle in searchable_name or needle in searchable_path):
+                    results.append(
+                        {
+                            "kind": "folder",
+                            "name": node_name,
+                            "path": node_path,
+                            "token": node_slug,
+                            "image_count": int(node.get("image_count") or 0),
+                        }
+                    )
+                    if len(results) >= limit:
+                        return
+
+                if node_slug:
+                    for file_name in list_images_by_path(node_path):
+                        full_path = f"{node_path}/{file_name}" if node_path else file_name
+                        if needle in file_name.lower() or needle in full_path.lower():
+                            results.append(
+                                {
+                                    "kind": "file",
+                                    "name": file_name,
+                                    "path": node_path,
+                                    "full_path": full_path,
+                                    "token": node_slug,
+                                }
+                            )
+                            if len(results) >= limit:
+                                return
+
+            children = node.get("children")
+            if isinstance(children, list) and children:
+                walk(children)
+                if len(results) >= limit:
+                    return
+
+    walk(build_tree())
+    return results
+
+
+def _trash_root() -> Path:
+    root = (_current_root() / ARCHIVE_DIRNAME / "trash").resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _make_trash_target(kind: str, display_name: str) -> tuple[Path, str]:
+    safe_name = re.sub(r"[^\w\-.\u4e00-\u9fff]+", "-", (display_name or "item").strip())
+    safe_name = safe_name.strip("-_") or kind
+    target_dir = (_trash_root() / kind / f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(4)}-{safe_name}").resolve()
+    rel_path = target_dir.relative_to(_current_root()).as_posix()
+    return target_dir, rel_path
+
+
+def move_file_to_trash(token: str, name: str) -> dict[str, Any]:
+    d = token_dir(token).resolve()
+    src = (d / name).resolve()
+    root = _current_root()
+    original_rel_path = src.relative_to(root).as_posix()
+    target_dir, trash_rel_path = _make_trash_target("files", name)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = (target_dir / src.name).resolve()
+    remove_variants_for_source(src)
+    shutil.move(str(src), str(target))
+    remove_in_order(token, name)
+    return create_trash_entry(
+        _owner_id(),
+        item_type="file",
+        original_rel_path=original_rel_path,
+        trash_rel_path=target.relative_to(root).as_posix(),
+        display_name=name,
+        meta={"token": token},
+    )
+
+
+def move_folder_to_trash(path: str) -> dict[str, Any]:
+    src = resolve_dir(path).resolve()
+    root = _current_root()
+    original_rel_path = src.relative_to(root).as_posix()
+    target, trash_rel_path = _make_trash_target("folders", Path(path).name)
+    old_parent_dir = src.parent
+    shutil.move(str(src), str(target))
+    remove_subfolder_from_order(old_parent_dir, src.name)
+    remove_slug_paths(path)
+    return create_trash_entry(
+        _owner_id(),
+        item_type="folder",
+        original_rel_path=original_rel_path,
+        trash_rel_path=trash_rel_path,
+        display_name=Path(path).name,
+        meta={"path": path},
+    )
+
+
+def list_trash_items() -> list[dict[str, Any]]:
+    return list_trash_entries(_owner_id())
+
+
+def restore_trash_item(item_id: int) -> dict[str, Any]:
+    entry = get_trash_entry(_owner_id(), item_id)
+    if entry is None:
+        raise FileNotFoundError("trash item not found")
+
+    root = _current_root()
+    src = (root / str(entry.get("trash_rel_path") or "")).resolve()
+    dst = (root / str(entry.get("original_rel_path") or "")).resolve()
+    if not src.exists():
+        delete_trash_entry(_owner_id(), item_id)
+        raise FileNotFoundError("trash payload missing")
+    if dst.exists():
+        raise FileExistsError("restore target already exists")
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(src), str(dst))
+
+    if str(entry.get("item_type") or "") == "file":
+        parent_rel = dst.parent.relative_to(root).as_posix()
+        parent_token = get_or_create_slug(parent_rel)
+        append_in_order(parent_token, dst.name)
+    else:
+        if dst.parent == root:
+            parent_dir = root
+        else:
+            parent_dir = dst.parent.resolve()
+        reorder_subfolder(parent_dir, dst.name)
+
+    delete_trash_entry(_owner_id(), item_id)
+    return {"ok": True, "id": item_id, "restored": dst.relative_to(root).as_posix()}
+
+
+def delete_trashed_item(item_id: int) -> dict[str, Any]:
+    entry = get_trash_entry(_owner_id(), item_id)
+    if entry is None:
+        raise FileNotFoundError("trash item not found")
+
+    root = _current_root()
+    target = (root / str(entry.get("trash_rel_path") or "")).resolve()
+    if target.exists():
+        if target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink(missing_ok=True)
+            parent = target.parent
+            if parent.exists() and not any(parent.iterdir()):
+                parent.rmdir()
+    delete_trash_entry(_owner_id(), item_id)
+    return {"ok": True, "id": item_id, "deleted": True}
+
+
 # ── 访问统计 ──
 
 def _load_stats() -> dict[str, Any]:
-    if STATS_FILE.exists():
+    stats_file = _stats_file()
+    if stats_file.exists():
         try:
-            return json.loads(STATS_FILE.read_text(encoding="utf-8"))
+            return json.loads(stats_file.read_text(encoding="utf-8"))
         except Exception:
             pass
     return {}
 
 
 def _save_stats(data: dict[str, Any]):
-    STATS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    stats_file = _stats_file()
+    stats_file.parent.mkdir(parents=True, exist_ok=True)
+    stats_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _utc_now_z() -> str:
@@ -323,6 +676,43 @@ def _is_local_ip(ip: str) -> bool:
             or addr in ipaddress.ip_network("172.16.0.0/12")
         )
     return addr.is_private or addr.is_link_local
+
+
+def _normalize_ip(ip: str) -> str:
+    try:
+        return str(ipaddress.ip_address((ip or "").strip()))
+    except ValueError:
+        return (ip or "").strip() or "unknown"
+
+
+def _is_explicitly_excluded_ip(ip: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(addr in net for net in _analytics_excluded_nets)
+
+
+def _looks_like_manage_source(value: str) -> bool:
+    text = (value or "").strip().lower()
+    if not text:
+        return False
+    return "/manage" in text or "/login" in text
+
+
+def _visit_filter_reason(ip: str, *, referer: str = "", origin: str = "", has_admin_session: bool = False) -> str:
+    normalized_ip = _normalize_ip(ip)
+    if _is_local_ip(normalized_ip):
+        return "local_ip"
+    if _is_explicitly_excluded_ip(normalized_ip):
+        return "excluded_ip"
+    if has_admin_session:
+        return "admin_session"
+    if _looks_like_manage_source(referer):
+        return "admin_referer"
+    if _looks_like_manage_source(origin):
+        return "admin_origin"
+    return ""
 
 
 def _get_ip2region_searcher():
@@ -362,6 +752,8 @@ def _get_ip2region_searcher():
 
 def _geoip_lookup(ip: str) -> tuple[str, str, str]:
     """Lookup IP geolocation. Returns (city, region, country)."""
+    if not REGION_TRACE_ENABLED:
+        return "", "", ""
     if not ip:
         return "", "", ""
     if _is_local_ip(ip):
@@ -393,22 +785,24 @@ def _geoip_lookup(ip: str) -> tuple[str, str, str]:
 
 
 def _rotate_visits_if_needed():
+    visits_file = _visits_file()
+    visits_old_file = _visits_old_file()
     try:
-        if VISITS_FILE.exists() and VISITS_FILE.stat().st_size >= _VISITS_MAX_BYTES:
+        if visits_file.exists() and visits_file.stat().st_size >= _VISITS_MAX_BYTES:
             try:
-                if VISITS_OLD_FILE.exists():
-                    VISITS_OLD_FILE.unlink()
+                if visits_old_file.exists():
+                    visits_old_file.unlink()
             except Exception:
                 pass
             try:
-                VISITS_FILE.replace(VISITS_OLD_FILE)
+                visits_file.replace(visits_old_file)
             except Exception:
                 pass
     except Exception:
         pass
 
 
-def _append_visit_record(token: str, ip: str, ua: str, time_z: str):
+def _append_visit_record(token: str, ip: str, ua: str, time_z: str) -> tuple[str, str, str]:
     city, region, country = _geoip_lookup(ip)
     rec = {
         "token": token,
@@ -420,36 +814,179 @@ def _append_visit_record(token: str, ip: str, ua: str, time_z: str):
         "time": time_z,
     }
     line = json.dumps(rec, ensure_ascii=False, separators=(",", ":")) + "\n"
+    visits_file = _visits_file()
     with _visits_lock:
         _rotate_visits_if_needed()
-        VISITS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(VISITS_FILE, "a", encoding="utf-8") as f:
+        visits_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(visits_file, "a", encoding="utf-8") as f:
             f.write(line)
+    return city, region, country
 
 
-def record_visit(token: str, ip: str, ua: str = "", stats_key: str = ""):
+def record_visit(
+    token: str,
+    ip: str,
+    ua: str = "",
+    stats_key: str = "",
+    album_key: str = "",
+    *,
+    referer: str = "",
+    origin: str = "",
+    has_admin_session: bool = False,
+):
     """Record a visit. stats_key is used for _stats.json (defaults to token)."""
+    normalized_ip = _normalize_ip(ip)
+    if _visit_filter_reason(normalized_ip, referer=referer, origin=origin, has_admin_session=has_admin_session):
+        return
     sk = stats_key or token
+    ak = album_key or sk
     now_utc = _utc_now_z()
     now_bjt = _now_bjt()
-    with _stats_lock:
-        stats = _load_stats()
-        entry = stats.get(sk, {"views": 0, "first_visit": None, "last_visit": None})
-        entry["views"] = entry.get("views", 0) + 1
-        if not entry.get("first_visit"):
-            entry["first_visit"] = now_utc
-        entry["last_visit"] = now_utc
-        stats[sk] = entry
-        _save_stats(stats)
+    city = ""
+    region = ""
+    country = ""
+    if ANALYTICS_WRITE_LEGACY:
+        with _stats_lock:
+            stats = _load_stats()
+            entry = stats.get(sk, {"views": 0, "first_visit": None, "last_visit": None})
+            entry["views"] = entry.get("views", 0) + 1
+            if not entry.get("first_visit"):
+                entry["first_visit"] = now_utc
+            entry["last_visit"] = now_utc
+            stats[sk] = entry
+            _save_stats(stats)
     try:
-        _append_visit_record(token=token, ip=ip or "", ua=ua or "", time_z=now_bjt)
+        if ANALYTICS_WRITE_LEGACY:
+            city, region, country = _append_visit_record(token=token, ip=normalized_ip, ua=ua or "", time_z=now_bjt)
+        else:
+            city, region, country = _geoip_lookup(normalized_ip)
     except Exception:
         # Never break album rendering on analytics failures.
         pass
+    if ANALYTICS_WRITE_SQLITE:
+        try:
+            record_sqlite_visit(
+                owner_id=_owner_id(),
+                album_key=ak,
+                stats_key=sk,
+                ip_norm=normalized_ip,
+                ua=ua or "",
+                city=city,
+                region=region,
+                country=country,
+                visited_at=now_bjt,
+            )
+        except Exception:
+            pass
 
 
 def get_all_stats() -> dict[str, Any]:
+    if ANALYTICS_READ_SQLITE:
+        try:
+            data = get_stats_rollups(_owner_id())
+            if data or not _legacy_has_visit_data():
+                return data
+        except Exception:
+            pass
     return _load_stats()
+
+
+def _legacy_has_visit_data() -> bool:
+    if _stats_file().exists():
+        return True
+    if _visits_old_file().exists():
+        return True
+    if _visits_file().exists():
+        return True
+    return False
+
+
+def _iter_visit_records_legacy():
+    yield from _iter_jsonl(_visits_old_file())
+    yield from _iter_jsonl(_visits_file())
+
+
+def backfill_sqlite_from_legacy() -> dict[str, int]:
+    owner_id = _owner_id()
+    events_backfilled = 0
+    for path in (_visits_old_file(), _visits_file()):
+        if not path.exists():
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line_no, line in enumerate(f, start=1):
+                    try:
+                        rec = json.loads((line or "").strip())
+                    except Exception:
+                        continue
+                    if not isinstance(rec, dict):
+                        continue
+                    token = str(rec.get("token") or "")
+                    if not token:
+                        continue
+                    ip = _normalize_ip(str(rec.get("ip") or ""))
+                    visited_at = str(rec.get("time") or "") or _now_bjt()
+                    result = record_sqlite_visit(
+                        owner_id=owner_id,
+                        album_key=token,
+                        stats_key=token,
+                        ip_norm=ip,
+                        ua=str(rec.get("ua") or ""),
+                        city=str(rec.get("city") or ""),
+                        region=str(rec.get("region") or ""),
+                        country=str(rec.get("country") or ""),
+                        visited_at=visited_at,
+                        filter_reason="",
+                        source_key=f"legacy:{path.name}:{line_no}",
+                    )
+                    if result.get("event_inserted"):
+                        events_backfilled += 1
+        except Exception:
+            continue
+
+    stats_seeded = 0
+    for stats_key, entry in _load_stats().items():
+        if not isinstance(entry, dict):
+            continue
+        seed_stats_rollup(
+            owner_id=owner_id,
+            stats_key=str(stats_key or ""),
+            views=int(entry.get("views", 0) or 0),
+            first_visit=str(entry.get("first_visit") or ""),
+            last_visit=str(entry.get("last_visit") or ""),
+        )
+        stats_seeded += 1
+
+    return {"stats_seeded": stats_seeded, "events_backfilled": events_backfilled}
+
+
+def compare_analytics_sources(limit: int = 20) -> dict[str, Any]:
+    legacy_stats = _load_stats()
+    sqlite_stats = get_stats_rollups(_owner_id())
+    legacy_analytics = _get_analytics_from_records(_iter_visit_records_legacy(), limit=limit, include_local=False)
+    sqlite_analytics = _get_analytics_from_records(iter_sqlite_visit_events(_owner_id()), limit=limit, include_local=False)
+    return {
+        "legacy": {
+            "stats_keys": len(legacy_stats),
+            "total_visits": int(sum(int(entry.get("views", 0) or 0) for entry in legacy_stats.values() if isinstance(entry, dict))),
+            "today_visit_count": int(legacy_analytics.get("today_visit_count") or 0),
+            "unique_ip_count": int(legacy_analytics.get("unique_ip_count") or 0),
+        },
+        "sqlite": {
+            "stats_keys": len(sqlite_stats),
+            "total_visits": int(sum(int(entry.get("views", 0) or 0) for entry in sqlite_stats.values())),
+            "today_visit_count": int(sqlite_analytics.get("today_visit_count") or 0),
+            "unique_ip_count": int(sqlite_analytics.get("unique_ip_count") or 0),
+        },
+        "top_legacy_tokens": sorted(
+            ((k, int(v.get("views", 0) or 0)) for k, v in legacy_stats.items() if isinstance(v, dict)),
+            key=lambda item: (-item[1], item[0]),
+        )[:limit],
+        "top_sqlite_tokens": sorted(
+            ((k, int(v.get("views", 0) or 0)) for k, v in sqlite_stats.items()),
+            key=lambda item: (-item[1], item[0]),
+        )[:limit],
+    }
 
 
 def _iter_jsonl(path: Path):
@@ -472,9 +1009,16 @@ def _iter_jsonl(path: Path):
 
 
 def iter_visit_records():
+    if ANALYTICS_READ_SQLITE:
+        try:
+            rows = list(iter_sqlite_visit_events(_owner_id()))
+            if rows or not _legacy_has_visit_data():
+                yield from rows
+                return
+        except Exception:
+            pass
     # Old file first, then current file. Both are capped by rotation (10MB each).
-    yield from _iter_jsonl(VISITS_OLD_FILE)
-    yield from _iter_jsonl(VISITS_FILE)
+    yield from _iter_visit_records_legacy()
 
 
 def _normalize_city(city: str, ip: str) -> str:
@@ -484,7 +1028,36 @@ def _normalize_city(city: str, ip: str) -> str:
     return c
 
 
-def get_analytics(limit: int = 1000, include_local: bool = False) -> dict[str, Any]:
+def get_daily_views(days: int = 7) -> list[dict[str, int | str]]:
+    days = max(1, int(days or 7))
+    today = datetime.now(_BJT).date()
+    start_day = today - timedelta(days=days - 1)
+    day_counts: dict[str, int] = {}
+
+    for rec in iter_visit_records():
+        t = str(rec.get("time") or "")
+        if not t:
+            continue
+        try:
+            dt = datetime.fromisoformat(t.replace("Z", "+00:00"))
+        except Exception:
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_BJT)
+        day = dt.astimezone(_BJT).date()
+        if start_day <= day <= today:
+            key = day.isoformat()
+            day_counts[key] = int(day_counts.get(key, 0)) + 1
+
+    result: list[dict[str, int | str]] = []
+    for i in range(days):
+        day = start_day + timedelta(days=i)
+        key = day.isoformat()
+        result.append({"date": key, "views": int(day_counts.get(key, 0))})
+    return result
+
+
+def _get_analytics_from_records(records, *, limit: int = 1000, include_local: bool = False) -> dict[str, Any]:
     limit = max(1, min(int(limit or 1000), 5000))
 
     recent = deque(maxlen=limit)
@@ -497,7 +1070,7 @@ def get_analytics(limit: int = 1000, include_local: bool = False) -> dict[str, A
     total = 0
     mapped_local = 0
 
-    for rec in iter_visit_records():
+    for rec in records:
         token = str(rec.get("token") or "")
         ip = str(rec.get("ip") or "")
         total += 1
@@ -558,42 +1131,87 @@ def get_analytics(limit: int = 1000, include_local: bool = False) -> dict[str, A
     }
 
 
-def _load_slugs() -> dict[str, Any]:
-    if SLUGS_FILE.exists():
+def get_analytics(limit: int = 1000, include_local: bool = False) -> dict[str, Any]:
+    return _get_analytics_from_records(iter_visit_records(), limit=limit, include_local=include_local)
+
+
+def _load_slugs_from_fs() -> dict[str, Any]:
+    slugs_file = _slugs_file()
+    if slugs_file.exists():
         try:
-            return json.loads(SLUGS_FILE.read_text(encoding="utf-8"))
+            return json.loads(slugs_file.read_text(encoding="utf-8"))
         except Exception:
             pass
     return {"slug_to_path": {}, "path_to_slug": {}}
 
 
+def _load_slugs() -> dict[str, Any]:
+    backend = metadata_backend()
+    if backend == "sqlite":
+        data = load_slugs_snapshot()
+        if data.get("slug_to_path"):
+            return data
+        fs_data = _load_slugs_from_fs()
+        if fs_data.get("slug_to_path"):
+            save_slugs_snapshot(fs_data)
+        return fs_data
+
+    data = _load_slugs_from_fs()
+    if backend == "dual":
+        save_slugs_snapshot(data)
+    return data
+
+
 def _save_slugs(data: dict[str, Any]):
-    SLUGS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    slugs_file = _slugs_file()
+    slugs_file.parent.mkdir(parents=True, exist_ok=True)
+    slugs_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    if metadata_backend() in {"dual", "sqlite"}:
+        save_slugs_snapshot(data)
 
 
-def _make_slug(path: str) -> str:
-    h = hashlib.sha256((_SLUG_SALT + "|" + path).encode()).hexdigest()[:8]
+def _slug_entry_owner(entry: Any) -> str:
+    if isinstance(entry, dict):
+        return str(entry.get("owner") or LEGACY_USER_ID)
+    return LEGACY_USER_ID
+
+
+def _slug_entry_path(entry: Any) -> str:
+    if isinstance(entry, dict):
+        return str(entry.get("path") or "")
+    return str(entry or "")
+
+
+def _make_slug(path: str, owner_id: str | None = None) -> str:
+    owner = owner_id or get_current_user_id()
+    seed = f"{_SLUG_SALT}|{path}" if owner == LEGACY_USER_ID else f"{_SLUG_SALT}|{owner}|{path}"
+    h = hashlib.sha256(seed.encode()).hexdigest()[:8]
     return f"a-{h}"
 
 
 def get_or_create_slug(path: str) -> str:
+    owner = get_current_user_id()
+    key = slug_owner_key(path, owner)
     with _slugs_lock:
         data = _load_slugs()
-        existing = data["path_to_slug"].get(path)
+        existing = data["path_to_slug"].get(key)
         if existing:
-            _ensure_symlink(existing, path)
+            _ensure_symlink(existing, path, owner)
             return existing
-        slug = _make_slug(path)
-        data["slug_to_path"][slug] = path
-        data["path_to_slug"][path] = slug
+        slug = _make_slug(path, owner)
+        data["slug_to_path"][slug] = path if owner == LEGACY_USER_ID else {"owner": owner, "path": path}
+        data["path_to_slug"][key] = slug
         _save_slugs(data)
-        _ensure_symlink(slug, path)
+        _ensure_symlink(slug, path, owner)
         return slug
 
 
-def _ensure_symlink(slug: str, path: str):
-    link = BASE_DIR / slug
-    target = BASE_DIR / path
+def _ensure_symlink(slug: str, path: str, owner_id: str | None = None):
+    owner = owner_id or get_current_user_id()
+    root = get_root_for_user_id(owner)
+    root.mkdir(parents=True, exist_ok=True)
+    link = root / slug
+    target = root / path
     if link.is_symlink():
         if link.resolve() == target.resolve():
             return
@@ -608,8 +1226,100 @@ def _ensure_symlink(slug: str, path: str):
 
 def resolve_slug(slug: str) -> str | None:
     data = _load_slugs()
-    return data["slug_to_path"].get(slug)
+    entry = data["slug_to_path"].get(slug)
+    if entry is None:
+        return None
+    owner = _slug_entry_owner(entry)
+    apply_user_scope(owner)
+    return _slug_entry_path(entry)
 
 
 def get_all_slugs() -> dict[str, Any]:
     return _load_slugs()
+
+
+def rename_slug_paths(old_path: str, new_path: str):
+    old_path = old_path.strip().strip("/")
+    new_path = new_path.strip().strip("/")
+    if not old_path or not new_path or old_path == new_path:
+        return
+
+    with _slugs_lock:
+        data = _load_slugs()
+        slug_to_path = data.get("slug_to_path", {})
+        path_to_slug = data.get("path_to_slug", {})
+        owner = get_current_user_id()
+        owner_key_old = slug_owner_key(old_path, owner)
+
+        updates: list[tuple[str, str, str]] = []
+        prefix = f"{old_path}/"
+        for slug, entry in list(slug_to_path.items()):
+            if _slug_entry_owner(entry) != owner:
+                continue
+            path = _slug_entry_path(entry)
+            if path == old_path:
+                replacement = new_path
+            elif path.startswith(prefix):
+                replacement = f"{new_path}/{path[len(prefix):]}"
+            else:
+                continue
+            updates.append((slug, path, replacement))
+
+        if not updates:
+            return
+
+        for slug, old_item_path, new_item_path in updates:
+            slug_to_path[slug] = new_item_path if owner == LEGACY_USER_ID else {"owner": owner, "path": new_item_path}
+            path_to_slug.pop(slug_owner_key(old_item_path, owner), None)
+            path_to_slug[slug_owner_key(new_item_path, owner)] = slug
+
+        data["slug_to_path"] = slug_to_path
+        data["path_to_slug"] = path_to_slug
+        _save_slugs(data)
+
+        for slug, _old_item_path, new_item_path in updates:
+            root = get_root_for_user_id(owner)
+            link = root / slug
+            if link.is_symlink():
+                try:
+                    link.unlink()
+                except OSError:
+                    pass
+            _ensure_symlink(slug, new_item_path, owner)
+
+
+def remove_slug_paths(path_prefix: str):
+    path_prefix = path_prefix.strip().strip("/")
+    if not path_prefix:
+        return
+
+    with _slugs_lock:
+        data = _load_slugs()
+        slug_to_path = data.get("slug_to_path", {})
+        path_to_slug = data.get("path_to_slug", {})
+        owner = get_current_user_id()
+        prefix = f"{path_prefix}/"
+        to_remove = []
+        for slug, entry in list(slug_to_path.items()):
+            if _slug_entry_owner(entry) != owner:
+                continue
+            path = _slug_entry_path(entry)
+            if path == path_prefix or path.startswith(prefix):
+                to_remove.append((slug, path))
+
+        if not to_remove:
+            return
+
+        for slug, path in to_remove:
+            slug_to_path.pop(slug, None)
+            path_to_slug.pop(slug_owner_key(path, owner), None)
+            link = get_root_for_user_id(owner) / slug
+            if link.is_symlink():
+                try:
+                    link.unlink()
+                except OSError:
+                    pass
+
+        data["slug_to_path"] = slug_to_path
+        data["path_to_slug"] = path_to_slug
+        _save_slugs(data)

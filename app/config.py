@@ -2,6 +2,13 @@ import os
 import subprocess
 from pathlib import Path
 
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = (os.environ.get(name) or "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
 UPLOAD_SECRET = os.environ.get("UPLOAD_SECRET", "")
 BASE_DIR = Path(os.environ.get("UPLOAD_BASE", "/var/www/photo.xaihub.de/downloads")).resolve()
 MAX_MB = int(os.environ.get("UPLOAD_MAX_MB", "25"))
@@ -10,6 +17,12 @@ SITE_DOMAIN = os.environ.get("SITE_DOMAIN", "photo.xaihub.de")
 BASE_PATH = os.environ.get("BASE_PATH", "").rstrip("/")
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = Path(os.environ.get("FRONTEND_DIR", str(_PROJECT_ROOT / "frontend"))).resolve()
+ANALYTICS_WRITE_LEGACY = _env_bool("ANALYTICS_WRITE_LEGACY", True)
+ANALYTICS_WRITE_SQLITE = _env_bool("ANALYTICS_WRITE_SQLITE", True)
+ANALYTICS_READ_SQLITE = _env_bool("ANALYTICS_READ_SQLITE", False)
+REGION_TRACE_ENABLED = _env_bool("REGION_TRACE_ENABLED", True)
+ANALYTICS_SQLITE_TIMEOUT_MS = int(os.environ.get("ANALYTICS_SQLITE_TIMEOUT_MS", "5000"))
+ANALYTICS_SQLITE_SYNCHRONOUS = (os.environ.get("ANALYTICS_SQLITE_SYNCHRONOUS", "NORMAL") or "NORMAL").strip().upper()
 
 
 def _resolve_app_version() -> str:
@@ -34,6 +47,22 @@ def _resolve_app_version() -> str:
 
 
 APP_VERSION = _resolve_app_version()
+
+
+def _resolve_asset_version() -> str:
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(_PROJECT_ROOT),
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        return commit or APP_VERSION or "dev"
+    except Exception:
+        return APP_VERSION or "dev"
+
+
+ASSET_VERSION = _resolve_asset_version()
 
 
 def _resolve_build_time() -> str:

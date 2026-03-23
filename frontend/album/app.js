@@ -3,6 +3,73 @@ const token = window.albumToken || '';
 const base = window.__BASE__ || '';
 let lbIdx = 0;
 
+function detectInAppBrowser(ua = navigator.userAgent) {
+  const isXhs = /XiaoHongShu|discover\//i.test(ua);
+  const isWechat = /MicroMessenger/i.test(ua);
+  const isWeibo = /Weibo/i.test(ua);
+  const isQQ = /QQ\//i.test(ua);
+  const isDingTalk = /DingTalk/i.test(ua);
+  const isAndroid = /Android/i.test(ua);
+  const inApp = isXhs || isWechat || isWeibo || isQQ || isDingTalk;
+  return {isXhs, isWechat, isWeibo, isQQ, isDingTalk, isAndroid, inApp};
+}
+
+const __inappEnv = detectInAppBrowser();
+const __androidInApp = __inappEnv.isAndroid && __inappEnv.inApp;
+
+function isMobileDevice() {
+  const ua = navigator.userAgent || '';
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function getInappBarClosedKey() {
+  return `pushfile_inapp_bar_closed_${token}`;
+}
+
+function updateInappBarHeight() {
+  const bar = document.getElementById('inappBar');
+  if (!bar || bar.style.display === 'none') return;
+  const h = Math.ceil(bar.getBoundingClientRect().height || 56);
+  document.documentElement.style.setProperty('--inapp-bar-h', `${h}px`);
+}
+
+function closeInappBar() {
+  const bar = document.getElementById('inappBar');
+  if (bar) bar.style.display = 'none';
+  document.body.classList.remove('has-inapp-bar');
+  sessionStorage.setItem(getInappBarClosedKey(), '1');
+}
+
+async function copyLink() {
+  const url = window.location.href;
+  const status = document.getElementById('inappCopyStatus');
+  try {
+    await navigator.clipboard.writeText(url);
+    if (status) status.textContent = '已复制';
+    return true;
+  } catch (_) {
+    try {
+      const el = document.createElement('textarea');
+      el.value = url;
+      el.setAttribute('readonly', 'readonly');
+      el.style.position = 'fixed';
+      el.style.opacity = '0';
+      el.style.left = '-9999px';
+      document.body.appendChild(el);
+      el.select();
+      el.setSelectionRange(0, el.value.length);
+      const ok = document.execCommand('copy');
+      el.remove();
+      if (status) status.textContent = ok ? '已复制' : '复制失败';
+      return ok;
+    } catch (_err) {
+      if (status) status.textContent = '复制失败';
+      return false;
+    }
+  }
+}
+
 function isIOS() {
   return /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
@@ -91,10 +158,29 @@ function trigger(url, name) {
   a.remove();
 }
 
-async function downloadAll(e) {
+function zipUrl() {
+  return `${base}/z/${encodeURIComponent(token)}`;
+}
+
+async function downloadImages(e) {
   e.preventDefault();
   if (!files.length) return;
   if (__androidInApp) return;
+  if (isMobileDevice()) {
+    showOv();
+    for (let i = 0; i < files.length; i++) {
+      const src = files[i];
+      setP(i, files.length, src);
+      trigger(downloadUrl(src), toJpgName(src));
+      await new Promise(r => setTimeout(r, 350));
+      setP(i + 1, files.length, src);
+    }
+    document.getElementById('ovTitle').textContent = '已触发下载';
+    document.getElementById('ovDesc').textContent = '浏览器将逐个保存图片';
+    setTimeout(hideOv, 800);
+    return;
+  }
+
   try {
     if (window.showDirectoryPicker) {
       const dir = await window.showDirectoryPicker();
@@ -123,6 +209,7 @@ async function downloadAll(e) {
   } catch (err) {
     console.warn(err);
   }
+
   showOv();
   for (let i = 0; i < files.length; i++) {
     const src = files[i];
@@ -136,10 +223,28 @@ async function downloadAll(e) {
   setTimeout(hideOv, 800);
 }
 
+async function downloadZip(e) {
+  e.preventDefault();
+  if (!files.length) return;
+  if (__androidInApp) return;
+  showOv();
+  document.getElementById('ovTitle').textContent = '正在打包';
+  document.getElementById('ovDesc').textContent = '正在生成 ZIP，请稍候…';
+  setP(0, 1, 'ZIP');
+  trigger(zipUrl(), `${document.title || 'album'}.zip`);
+  setP(1, 1, 'ZIP');
+  document.getElementById('ovTitle').textContent = '已开始下载';
+  document.getElementById('ovDesc').textContent = 'ZIP 文件已交给浏览器下载';
+  setTimeout(hideOv, 900);
+}
+
 if (isIOS()) {
   document.getElementById('iosTip').style.display = 'block';
-  const btn = document.getElementById('dlAllBtn');
-  if (btn) btn.style.display = 'none';
+}
+
+if (isMobileDevice()) {
+  const zipBtn = document.getElementById('dlZipBtn');
+  if (zipBtn) zipBtn.style.display = 'none';
 }
 
 if (__androidInApp) {
@@ -163,15 +268,18 @@ if (__androidInApp) {
     }
   }
 
-  const dlAllBtn = document.getElementById('dlAllBtn');
-  if (dlAllBtn) {
-    dlAllBtn.disabled = true;
-    dlAllBtn.title = '请在浏览器中打开后使用批量下载';
+  const dlImagesBtn = document.getElementById('dlImagesBtn');
+  if (dlImagesBtn) {
+    dlImagesBtn.disabled = true;
+    dlImagesBtn.title = '请在浏览器中打开后使用批量下载';
     const tip = document.createElement('div');
     tip.className = 'inapp-tip';
     tip.textContent = '请在浏览器中打开后使用批量下载';
-    dlAllBtn.parentNode && dlAllBtn.parentNode.appendChild(tip);
+    dlImagesBtn.parentNode && dlImagesBtn.parentNode.appendChild(tip);
   }
+
+  const dlZipBtn = document.getElementById('dlZipBtn');
+  if (dlZipBtn) dlZipBtn.style.display = 'none';
 
   document.querySelectorAll('a.card-dl').forEach(a => {
     a.addEventListener('click', ev => {

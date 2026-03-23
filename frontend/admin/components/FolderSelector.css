@@ -1,0 +1,282 @@
+/* 
+ * FolderSelector Component Styles
+ */
+
+.folder-selector-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.18);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 30000;
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+}
+
+.folder-selector-overlay.show {
+    opacity: 1;
+}
+
+.folder-selector-modal {
+    background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(248,250,252,0.96));
+    border-radius: 24px;
+    width: 90%;
+    max-width: 560px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(255,255,255,0.7);
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+    transform: scale(0.95) translateY(20px);
+    transition: transform var(--transition-fast);
+    overflow: hidden;
+}
+
+.folder-selector-overlay.show .folder-selector-modal {
+    transform: scale(1) translateY(0);
+}
+
+.folder-selector-header {
+    padding: 18px 22px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(255,255,255,0.5);
+}
+
+.folder-selector-header h3 {
+    margin: 0;
+    font-size: 18px;
+    color: var(--color-text-primary);
+}
+
+.folder-selector-close {
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.folder-selector-close:hover {
+    background: var(--color-bg);
+    color: var(--color-text-primary);
+}
+
+.folder-selector-body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex: 1;
+    background: transparent;
+}
+
+.folder-tree-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 0;
+    min-height: 200px;
+}
+
+.tree-node {
+    display: flex;
+    flex-direction: column;
+}
+
+.tree-node-content {
+    display: flex;
+    align-items: center;
+    padding: 11px 16px;
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+    user-select: none;
+    margin: 0 10px;
+    border-radius: 14px;
+}
+
+.tree-node-content:hover {
+    background-color: rgba(15, 23, 42, 0.05);
+}
+
+.tree-node-content.selected {
+    background: linear-gradient(135deg, rgba(0,122,255,0.12), rgba(96,165,250,0.2));
+    color: var(--color-primary);
+    box-shadow: inset 0 0 0 1px rgba(0,122,255,0.08);
+}
+
+.tree-toggle {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.tree-toggle:hover {
+    background-color: var(--color-border);
+}
+
+.tree-icon {
+    font-size: 20px;
+    margin: 0 8px;
+    color: var(--color-text-secondary);
+}
+
+.tree-node-content.selected .tree-icon {
+    color: var(--color-primary);
+}
+
+.tree-name {
+    font-size: 15px;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tree-children {
+    display: block;
+}
+
+.new-folder-section {
+    padding: 14px 20px 18px;
+    border-top: 1px solid rgba(15, 23, 42, 0.06);
+    background: linear-gradient(180deg, rgba(248,250,252,0.95), rgba(255,255,255,0.8));
+}
+
+#toggleNewFolderBtn {
+    width: 100%;
+    justify-content: center;
+    padding: 12px 14px;
+    color: var(--color-text-main);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px dashed rgba(0,122,255,0.22);
+    border-radius: 14px;
+    background: rgba(255,255,255,0.7);
+}
+
+#toggleNewFolderBtn:hover {
+    color: var(--color-primary);
+    background: rgba(0,122,255,0.06);
+}
+
+.new-folder-input-container {
+    display: none;
+    margin-top: 12px;
+    gap: 8px;
+}
+
+.new-folder-input-container.show {
+    display: flex;
+}
+
+.new-folder-input {
+    flex: 1;
+    padding: 12px 14px;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 14px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color var(--transition-fast);
+    background: rgba(255,255,255,0.92);
+}
+
+.new-folder-input:focus {
+    border-color: var(--color-primary);
+}
+
+.folder-selector-footer {
+    padding: 16px 20px 18px;
+    border-top: 1px solid rgba(15, 23, 42, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: rgba(255,255,255,0.78);
+}
+
+.selected-path-display {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    word-break: break-all;
+}
+
+.footer-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.footer-actions .btn {
+    padding: 10px 20px;
+    font-size: 14px;
+    border-radius: 14px;
+}
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
+    .folder-selector-overlay {
+        padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
+        align-items: center;
+        justify-content: center;
+    }
+
+    .folder-selector-modal {
+        width: min(100%, 560px);
+        height: auto;
+        max-height: min(76vh, 560px);
+        max-width: min(100%, 560px);
+        border-radius: 24px;
+        transform: scale(0.96) translateY(12px);
+    }
+    
+    .folder-selector-overlay.show .folder-selector-modal {
+        transform: scale(1) translateY(0);
+    }
+
+    .folder-selector-header,
+    .folder-selector-footer {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .folder-selector-body {
+        min-height: 0;
+    }
+
+    .folder-tree-container {
+        min-height: 0;
+        max-height: calc(min(76vh, 560px) - 170px);
+    }
+    
+    .tree-node-content {
+        padding: 14px 16px;
+    }
+    
+    .folder-selector-footer {
+        padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+    }
+
+    .footer-actions {
+        flex-direction: column-reverse;
+    }
+
+    .footer-actions .btn {
+        width: 100%;
+    }
+}
