@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#090909">
+    <meta name="description" content="PushFile：把上传、交付、目录整理、回收站、访问统计和图像处理压缩进一个清晰可交付的文件工作流。">
+    <title>PushFile // Operational Transfer Surface</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+SC:wght@400;500;700;900&family=Noto+Serif+SC:wght@600;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ base }}/static/landing/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <div class="surface-shell">
+        <div class="surface-grid" aria-hidden="true"></div>
+        <div class="surface-scan" aria-hidden="true"></div>
+        <div class="surface-glow surface-glow--a" aria-hidden="true"></div>
+        <div class="surface-glow surface-glow--b" aria-hidden="true"></div>
+
+        <header class="topbar reveal-on-scroll">
+            <div class="topbar__brand">
+                <span class="brand-mark">PF</span>
+                <div class="brand-copy">
+                    <p class="system-line">FILE WORKFLOW NODE // SELF-HOSTED // SECURE PATHS</p>
+                    <h1>PushFile</h1>
+                </div>
+            </div>
+            <div class="topbar__meta">
+                <span id="sceneCode">OVERVIEW // 01</span>
+                <span id="sceneName">Operational Transfer Surface</span>
+            </div>
+        </header>
+
+        <main class="main-shell">
+            <section class="hero scene-block" id="overview" data-scene="overview" data-scene-label="OVERVIEW // 01" data-scene-name="Operational Transfer Surface">
+                <div class="section-index reveal-on-scroll">01</div>
+
+                <div class="hero__main tactical-panel panel-cut-tr reveal-on-scroll">
+                    <div class="tactical-chip tactical-chip--live">
+                        <span class="signal-dot"></span>
+                        FILE DELIVERY // ACTIVE
+                    </div>
+                    <p class="hero__eyebrow">UPLOAD · ALBUM · SHORTLINK · ZIP · ACCESS LOG · TRASH</p>
+                    <div class="hero__title-wrap">
+                        <span class="hero__title-ghost">PUSHFILE</span>
+                        <h2 class="hero__title">PUSHFILE</h2>
+                    </div>
+                    <p class="hero__summary">
+                        把上传、交付、归档、目录整理和后续追踪压缩成一个明确的文件工作流。
+                        它不是只会把文件丢上去的临时页面，而是能让公开交付、团队整理、批量导入和访问回看都落在同一套系统里的工作台。
+                    </p>
+
+                    <div class="hero__actions">
+                        <a class="cta-primary" href="https://github.com/uf-hy/pushfile" target="_blank" rel="noreferrer">OPEN GITHUB ↗</a>
+                        <div class="hero__labels" aria-label="产品关键词">
+                            <span>ALBUM SHORTLINKS</span>
+                            <span>FOLDER TREE</span>
+                            <span>ZIP / FOLDER IMPORT</span>
+                        </div>
+                    </div>
+
+                    <div class="hero__ticker" aria-label="能力轮播">
+                        <div class="hero__ticker-track">
+                            <span>/album/{token}</span>
+                            <span>/d/{token}</span>
+                            <span>/z/{token}</span>
+                            <span>/api/upload/zip-import</span>
+                            <span>/api/folders/tree</span>
+                            <span>/api/trash/restore</span>
+                            <span>/api/stats/dashboard</span>
+                            <span>/api/grid/save</span>
+                            <span>/album/{token}</span>
+                            <span>/d/{token}</span>
+                            <span>/z/{token}</span>
+                            <span>/api/upload/zip-import</span>
+                            <span>/api/folders/tree</span>
+                            <span>/api/trash/restore</span>
+                            <span>/api/stats/dashboard</span>
+                            <span>/api/grid/save</span>
+                        </div>
+                    </div>
+                </div>
+
+                <aside class="hero__rail reveal-on-scroll">
+                    <div class="tactical-panel panel-cut-bl rail-card rail-card--index">
+                        <div class="rail-card__head">
+                            <span>INDEX</span>
+                            <span>05 BLOCKS</span>
+                        </div>
+                        <nav class="scene-nav" aria-label="页面章节">
+                            <a href="#overview" data-nav-target="overview" class="is-active"><strong>首页</strong><span>定位与入口</span></a>
+                            <a href="#updates" data-nav-target="updates"><strong>更新层</strong><span>最近能力与状态</span></a>
+                            <a href="#workflows" data-nav-target="workflows"><strong>工作流</strong><span>真实使用路径</span></a>
+                            <a href="#capabilities" data-nav-target="capabilities"><strong>能力模型</strong><span>系统结构与边界</span></a>
+                            <a href="#repository" data-nav-target="repository"><strong>仓库</strong><span>最后行动出口</span></a>
+                        </nav>
+                    </div>
+                    <div class="tactical-panel rail-card rail-card--status">
+                        <div class="rail-card__head">
+                            <span>LIVE STATUS</span>
+                            <span>RUNNING</span>
+                        </div>
+                        <div class="status-stack">
+                            <article>
+                                <span>PUBLIC DELIVERY</span>
+                                <strong>Album + direct file + ZIP download</strong>
+                                <p>公开相册页、短链访问、单图下载与整包下载可以落到同一条交付路径。</p>
+                            </article>
+                            <article>
+                                <span>TEAM OPERATIONS</span>
+                                <strong>Folders + batch move + batch rename</strong>
+                                <p>目录树、子文件夹、批量移动与重命名，让素材不是“传上去就乱”。</p>
+                            </article>
+                            <article>
+                                <span>FOLLOW-UP</span>
+                                <strong>Stats + recent activity + trash restore</strong>
+                                <p>访问统计、最近活动和回收站恢复，把交付后的回看也纳进流程。</p>
+                            </article>
+                        </div>
+                    </div>
+                </aside>
+            </section>
+
+            <section class="signal-strip reveal-on-scroll" aria-label="滚动状态条">
+                <div class="signal-strip__label">SCROLL</div>
+                <div class="signal-strip__meter"><span id="scrollMeter"></span></div>
+                <div class="signal-strip__meta" id="progressText">01 / 05</div>
+            </section>
+
+            <section class="scene-block" id="updates" data-scene="updates" data-scene-label="UPDATES // 02" data-scene-name="Recent abilities and live system notes">
+                <div class="section-index reveal-on-scroll">02</div>
+                <div class="section-head section-head--split">
+                    <div class="section-copy reveal-on-scroll">
+                        <p class="section-code">RECENT ABILITIES // LIVE SYSTEM NOTES</p>
+                        <h3>页面一打开，先让人知道它不只是一个上传按钮</h3>
+                        <p>
+                            PushFile 的价值不在一句 slogan，而在交付之后还发生了什么：
+                            文件能不能被组织、相册能不能被回看、短链能不能直接落地、回收站能不能兜住误删、访问量能不能被看见。
+                        </p>
+                    </div>
+                    <div class="section-side-note tactical-panel panel-cut-bl reveal-on-scroll">
+                        <div class="rail-card__head">
+                            <span>LIVE FEED</span>
+                            <span>02-A</span>
+                        </div>
+                        <p>交付不是终点，后续整理、访问与恢复也在同一套面板里。</p>
+                        <p>每个模块都用短句说清一件事，而不是堆形容词。</p>
+                    </div>
+                </div>
+
+                <div class="updates-grid">
+                    <article class="tactical-panel update-card panel-cut-tr reveal-on-scroll">
+                        <span class="update-card__tag">DELIVERY</span>
+                        <h4>相册页、短链页和文件直出分层明确</h4>
+                        <p>公开访问既可以走 `/album/{token}`，也可以通过 `/d/{token}` 短链进入；单图、变体和整包下载各有明确路径，不需要临时拼接方案。</p>
+                        <ul>
+                            <li>公开相册入口</li>
+                            <li>短链访问</li>
+                            <li>单图与 ZIP 下载</li>
+                        </ul>
+                    </article>
+                    <article class="tactical-panel update-card reveal-on-scroll">
+                        <span class="update-card__tag">INGEST</span>
+                        <h4>ZIP 导入与文件夹导入直接落到目录结构</h4>
+                        <p>素材不是一张张手工归位。ZIP 导入和文件夹导入都能按目标目录与子目录规则落盘，隐藏文件、非法路径和超限内容会被拦住。</p>
+                    </article>
+                    <article class="tactical-panel update-card panel-cut-bl reveal-on-scroll">
+                        <span class="update-card__tag">RECOVERY</span>
+                        <h4>删除先进回收站，而不是直接消失</h4>
+                        <p>文件与文件夹删除都优先转入回收站，后续可以恢复或彻底删除，减少误操作的不可逆风险。</p>
+                    </article>
+                    <article class="tactical-panel update-card reveal-on-scroll">
+                        <span class="update-card__tag">OBSERVE</span>
+                        <h4>统计面板能看到最近活动与访问量</h4>
+                        <p>Dashboard 会汇总相册数量、图片数量、总访问量、今日访问量以及最近活动，让公开交付不再是“发出去之后就不知道发生了什么”。</p>
+                    </article>
+                </div>
+            </section>
+
+            <section class="scene-block" id="workflows" data-scene="workflows" data-scene-label="WORKFLOWS // 03" data-scene-name="Scenario-driven file operations">
+                <div class="section-index reveal-on-scroll">03</div>
+                <div class="section-head reveal-on-scroll">
+                    <p class="section-code">WORKFLOW DOSSIERS // FOUR REAL ROUTES</p>
+                    <h3>它该服务的不是抽象“用户”，而是清楚的交付场景</h3>
+                    <p>下面四条路径对应的是这套系统真正擅长处理的事：临时交付、团队整理、内容生产和后续回看。</p>
+                </div>
+
+                <div class="workflow-layout">
+                    <div class="workflow-nav tactical-panel panel-cut-tr reveal-on-scroll" role="tablist" aria-label="工作流切换">
+                        <button class="workflow-tab is-active" type="button" data-workflow-tab="handoff" role="tab" aria-selected="true">
+                            <strong>客户交付</strong>
+                            <span>相册、短链、整包下载</span>
+                        </button>
+                        <button class="workflow-tab" type="button" data-workflow-tab="team" role="tab" aria-selected="false">
+                            <strong>团队整理</strong>
+                            <span>目录树、移动、重命名</span>
+                        </button>
+                        <button class="workflow-tab" type="button" data-workflow-tab="production" role="tab" aria-selected="false">
+                            <strong>内容生产</strong>
+                            <span>ZIP 导入、九宫格、批量落盘</span>
+                        </button>
+                        <button class="workflow-tab" type="button" data-workflow-tab="audit" role="tab" aria-selected="false">
+                            <strong>回看审计</strong>
+                            <span>统计、最近活动、回收站</span>
+                        </button>
+                    </div>
+
+                    <div class="workflow-stage tactical-panel panel-cut-bl reveal-on-scroll">
+                        <article class="workflow-panel is-active" data-workflow-panel="handoff">
+                            <div class="workflow-panel__head">
+                                <span>WORKFLOW 01</span>
+                                <span>CLIENT HANDOFF</span>
+                            </div>
+                            <h4>一套内容，既能公开浏览，也能一键整包拿走</h4>
+                            <p>上传后生成相册页，外部接收方可以直接浏览图片；需要离线交付时，再走单图下载或整包 ZIP，不需要额外导出另一套资源。</p>
+                            <ol>
+                                <li>上传图片并形成相册</li>
+                                <li>公开页访问走 `/album/{token}` 或短链 `/d/{token}`</li>
+                                <li>接收方按单图或整包方式下载</li>
+                            </ol>
+                        </article>
+
+                        <article class="workflow-panel" data-workflow-panel="team">
+                            <div class="workflow-panel__head">
+                                <span>WORKFLOW 02</span>
+                                <span>TEAM ORGANIZATION</span>
+                            </div>
+                            <h4>目录不是上传之后才想起整理，而是整个过程中一直可管理</h4>
+                            <p>文件夹可以创建、重命名、移动和删除进回收站；批量移动与批量重命名配合目录树，让素材从一开始就保持清晰，而不是靠人工补救。</p>
+                            <ol>
+                                <li>按项目或客户建立目录树</li>
+                                <li>通过批量移动、批量重命名保持顺序</li>
+                                <li>误删时从回收站恢复</li>
+                            </ol>
+                        </article>
+
+                        <article class="workflow-panel" data-workflow-panel="production">
+                            <div class="workflow-panel__head">
+                                <span>WORKFLOW 03</span>
+                                <span>CONTENT PRODUCTION</span>
+                            </div>
+                            <h4>导入、处理、保存放在同一条内容生产链上</h4>
+                            <p>ZIP 导入和文件夹导入能直接接住外部素材；九宫格模块可以预览、拆分、保存，把内容二次加工也纳入站内流程。</p>
+                            <ol>
+                                <li>把素材包通过 ZIP 或文件夹整体导入</li>
+                                <li>在九宫格模块里预览、拆分或保存结果</li>
+                                <li>按目标目录落盘并继续交付</li>
+                            </ol>
+                        </article>
+
+                        <article class="workflow-panel" data-workflow-panel="audit">
+                            <div class="workflow-panel__head">
+                                <span>WORKFLOW 04</span>
+                                <span>AUDIT AND RECOVERY</span>
+                            </div>
+                            <h4>发出去之后还能追踪、还能恢复，才算完整工作流</h4>
+                            <p>访问量、最近活动、今日访问和回收站共同组成后续层。它让“交付完成”之后的阶段仍然可见，而不是只能靠猜。</p>
+                            <ol>
+                                <li>在 Dashboard 查看总访问量与最近活动</li>
+                                <li>识别哪些内容被访问，哪些需要回收整理</li>
+                                <li>从回收站恢复误删项或彻底清理</li>
+                            </ol>
+                        </article>
+                    </div>
+                </div>
+            </section>
+
+            <section class="scene-block" id="capabilities" data-scene="capabilities" data-scene-label="CAPABILITIES // 04" data-scene-name="System model and capability matrix">
+                <div class="section-index reveal-on-scroll">04</div>
+                <div class="section-head section-head--split">
+                    <div class="section-copy reveal-on-scroll">
+                        <p class="section-code">SYSTEM MODEL // OPERATIONS, DELIVERY, PROCESSING, OBSERVABILITY</p>
+                        <h3>这不是一页海报，而是一套真正有模型的文件系统入口</h3>
+                        <p>PushFile 的核心不是单次上传，而是把进入、整理、公开交付、下载、恢复和回看串成一个连续模型。</p>
+                    </div>
+                    <div class="section-side-note tactical-panel panel-cut-bl reveal-on-scroll">
+                        <div class="rail-card__head">
+                            <span>SYSTEM NOTE</span>
+                            <span>04-A</span>
+                        </div>
+                        <p>公开访问、团队整理、内容处理和统计回看是同一套系统，不是临时拼在一起的页面。</p>
+                    </div>
+                </div>
+
+                <div class="capability-grid">
+                    <article class="tactical-panel capability-card panel-cut-tr reveal-on-scroll">
+                        <span class="capability-card__tag">PUBLIC SURFACE</span>
+                        <h4>公开交付</h4>
+                        <ul>
+                            <li>相册页与短链入口</li>
+                            <li>文件直出与缓存响应</li>
+                            <li>单图下载与整包 ZIP 下载</li>
+                        </ul>
+                    </article>
+                    <article class="tactical-panel capability-card reveal-on-scroll">
+                        <span class="capability-card__tag">OPERATIONS</span>
+                        <h4>整理与控制</h4>
+                        <ul>
+                            <li>目录树、子目录列表与路径安全校验</li>
+                            <li>批量移动、批量重命名、顺序维护</li>
+                            <li>Token 创建、归档或彻底删除</li>
+                        </ul>
+                    </article>
+                    <article class="tactical-panel capability-card reveal-on-scroll">
+                        <span class="capability-card__tag">PROCESSING</span>
+                        <h4>图像处理</h4>
+                        <ul>
+                            <li>缩略 AVIF 与下载 JPEG 变体生成</li>
+                            <li>九宫格预览、拆分与保存</li>
+                            <li>ZIP / 文件夹整体导入</li>
+                        </ul>
+                    </article>
+                    <article class="tactical-panel capability-card panel-cut-bl reveal-on-scroll">
+                        <span class="capability-card__tag">OBSERVABILITY</span>
+                        <h4>统计与恢复</h4>
+                        <ul>
+                            <li>访问量、今日访问、最近活动</li>
+                            <li>文件与文件夹回收站</li>
+                            <li>恢复与彻底删除分层处理</li>
+                        </ul>
+                    </article>
+                </div>
+
+                <div class="model-strip reveal-on-scroll">
+                    <article>
+                        <span>01</span>
+                        <strong>INGEST</strong>
+                        <p>上传、ZIP 导入、文件夹导入</p>
+                    </article>
+                    <article>
+                        <span>02</span>
+                        <strong>ORGANIZE</strong>
+                        <p>目录树、批量移动、批量重命名</p>
+                    </article>
+                    <article>
+                        <span>03</span>
+                        <strong>PUBLISH</strong>
+                        <p>相册页、短链、文件直出、ZIP 下载</p>
+                    </article>
+                    <article>
+                        <span>04</span>
+                        <strong>OBSERVE</strong>
+                        <p>统计、最近活动、访问量</p>
+                    </article>
+                    <article>
+                        <span>05</span>
+                        <strong>RECOVER</strong>
+                        <p>回收站恢复与彻底清理</p>
+                    </article>
+                </div>
+            </section>
+
+            <section class="scene-block" id="repository" data-scene="repository" data-scene-label="REPOSITORY // 05" data-scene-name="Repository and final action">
+                <div class="section-index reveal-on-scroll">05</div>
+                <div class="repository-layout">
+                    <div class="repository-copy reveal-on-scroll">
+                        <p class="section-code">FINAL ACTION // READ THE CODE, RUN THE SURFACE, EXTEND THE FLOW</p>
+                        <h3>最后只留下一个直接动作：打开仓库，把这套工作流跑起来</h3>
+                        <p>
+                            首页负责讲清楚 PushFile 的完整价值：它能接住文件、组织目录、处理图片、输出公开页面，并在交付后继续提供统计和恢复层。
+                            真正的下一步，是进入仓库，把它部署成自己的系统。
+                        </p>
+                        <div class="repository-actions">
+                            <a class="cta-primary cta-primary--wide" href="https://github.com/uf-hy/pushfile" target="_blank" rel="noreferrer">OPEN REPOSITORY ↗</a>
+                            <div class="repository-tags">
+                                <span>SELF-HOSTED</span>
+                                <span>PUBLIC DELIVERY</span>
+                                <span>TEAM OPERATIONS</span>
+                                <span>IMAGE PROCESSING</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="repository-side">
+                        <article class="tactical-panel terminal-card panel-cut-tr reveal-on-scroll">
+                            <div class="rail-card__head">
+                                <span>OPS FEED</span>
+                                <span>READY</span>
+                            </div>
+                            <div class="terminal-lines" id="terminalLines">
+                                <div class="is-active"><span>&gt;</span> git clone https://github.com/uf-hy/pushfile.git</div>
+                                <div><span>&gt;</span> uvicorn app.main:app --host 127.0.0.1 --port 34110 --reload</div>
+                                <div><span>&gt;</span> publish albums with shortlinks and zip downloads</div>
+                                <div><span>&gt;</span> organize folders, batch rename, recover from trash</div>
+                                <div><span>&gt;</span> inspect dashboard activity and keep the flow visible</div>
+                            </div>
+                        </article>
+                        <article class="tactical-panel rail-card reveal-on-scroll">
+                            <div class="rail-card__head">
+                                <span>SCOPE</span>
+                                <span>ROOT ONLY</span>
+                            </div>
+                            <p>根首页只做产品入口与项目介绍，不给后台导流，也不把管理路径直接暴露在首页里。</p>
+                        </article>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer-bar reveal-on-scroll">
+            <div class="footer-bar__left">
+                <span>ALBUM DELIVERY</span>
+                <span>FOLDER WORKFLOWS</span>
+                <span>TRASH RECOVERY</span>
+                <span>ACTIVITY DASHBOARD</span>
+            </div>
+            <div class="footer-bar__right">PUSHFILE // CLEAR PATHS FOR FILE DELIVERY</div>
+        </footer>
+    </div>
+
+    <script>
+        window.__LANDING__ = {
+            reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+        };
+    </script>
+    <script type="module" src="{{ base }}/static/landing/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

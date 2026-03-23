@@ -2,7 +2,7 @@ import re
 import unicodedata
 from fastapi import HTTPException
 from pathlib import Path
-from app.config import UPLOAD_SECRET, BASE_DIR
+from app.users import authenticate_credential, get_current_root, set_current_user
 
 TOKEN_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 FOLDER_SEGMENT_RE = re.compile(r"^[^/\\.\x00]{1,120}$")
@@ -20,16 +20,19 @@ def safe_path(path: str) -> str:
     path = path.strip().strip("/")
     if not path:
         raise HTTPException(status_code=400, detail="empty path")
-    for seg in path.split("/"):
+    for i, seg in enumerate(path.split("/")):
         seg = seg.strip()
         if not seg or seg in (".", "..") or not FOLDER_SEGMENT_RE.match(seg):
             raise HTTPException(status_code=400, detail=f"invalid path segment: {seg}")
+        if i == 0 and seg in {"_users", "_system", "_archived"}:
+            raise HTTPException(status_code=400, detail=f"reserved path segment: {seg}")
     return path
 
 
 def resolve_dir(path: str) -> Path:
-    d = (BASE_DIR / path).resolve()
-    if not d.is_relative_to(BASE_DIR):
+    root = get_current_root().resolve()
+    d = (root / path).resolve()
+    if not d.is_relative_to(root):
         raise HTTPException(status_code=400, detail="invalid path")
     return d
 
@@ -46,8 +49,9 @@ def safe_name(name: str) -> str:
 
 
 def token_dir(token: str) -> Path:
-    d = (BASE_DIR / token).resolve()
-    if not d.is_relative_to(BASE_DIR):
+    root = get_current_root().resolve()
+    d = (root / token).resolve()
+    if not d.is_relative_to(root):
         raise HTTPException(status_code=400, detail="invalid path")
     return d
 
@@ -65,10 +69,16 @@ def sniff_image_type(head: bytes) -> str | None:
 
 
 def auth_query_key(key: str):
-    if key != UPLOAD_SECRET:
+    user = authenticate_credential(key)
+    if not user:
         raise HTTPException(status_code=401, detail="invalid key")
+    set_current_user(user)
+    return user
 
 
 def auth_header_key(x_upload_key: str | None):
-    if x_upload_key != UPLOAD_SECRET:
+    user = authenticate_credential(x_upload_key or "")
+    if not user:
         raise HTTPException(status_code=401, detail="invalid key")
+    set_current_user(user)
+    return user

@@ -6,8 +6,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 from app.auth import safe_token
+from app.routes.auth import require_auth
 from app.storage import list_images, get_token_title, record_visit, resolve_slug, list_images_by_path
-from app.config import FRONTEND_DIR, SITE_DOMAIN, MAX_MB, BASE_PATH, APP_VERSION, APP_BUILD_TIME
+from app.config import FRONTEND_DIR, SITE_DOMAIN, MAX_MB, BASE_PATH, APP_VERSION, APP_BUILD_TIME, ASSET_VERSION
 from app.security import SlidingWindowRateLimiter
 
 router = APIRouter(tags=["pages"])
@@ -19,12 +20,21 @@ _common = {
     "base": BASE_PATH,
     "app_version": APP_VERSION,
     "app_build_time": APP_BUILD_TIME,
+    "asset_version": ASSET_VERSION,
 }
 
 
-def _record_visit_compat(request: Request, token: str) -> None:
+def _record_visit_compat(request: Request, token: str, *, album_key: str = "") -> None:
     try:
-        record_visit(token, _client_ip(request), request.headers.get("user-agent") or "")
+        record_visit(
+            token,
+            _client_ip(request),
+            request.headers.get("user-agent") or "",
+            album_key=album_key,
+            referer=request.headers.get("referer") or "",
+            origin=request.headers.get("origin") or "",
+            has_admin_session=bool(request.cookies.get("pushfile_session")),
+        )
     except Exception:
         pass
 
@@ -78,7 +88,7 @@ def _client_ip(request: Request) -> str:
                     chain.append(ip)
             if chain:
                 while chain and _is_trusted_proxy(chain[-1]):
-                    chain.pop()
+                    _ = chain.pop()
                 if chain:
                     return chain[-1]
         x_real_ip = _parse_ip(request.headers.get("x-real-ip") or "")
@@ -92,15 +102,63 @@ def _client_ip(request: Request) -> str:
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):
     return templates.TemplateResponse(
-        "admin/index.html", {"request": request, **_common},
+        request, "landing/index.html", {**_common},
+    )
+
+
+@router.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    return templates.TemplateResponse(
+        request, "admin/login.html", {**_common},
     )
 
 
 @router.get("/manage", response_class=HTMLResponse)
 def manage_page(request: Request):
+    guard = require_auth(request)
+    if guard:
+        return guard
     return templates.TemplateResponse(
-        "admin/index.html", {"request": request, **_common},
+        request, "admin/index.html", {**_common},
     )
+
+
+@router.get("/manage/album", response_class=HTMLResponse)
+def manage_album_page(request: Request):
+    guard = require_auth(request)
+    if guard:
+        return guard
+    return templates.TemplateResponse(
+        request, "admin/manager/index.html", {**_common},
+    )
+
+
+@router.get("/manage/grid", response_class=HTMLResponse)
+def grid_page(request: Request):
+    guard = require_auth(request)
+    if guard:
+        return guard
+    return templates.TemplateResponse(
+        request, "admin/grid.html", {**_common},
+    )
+
+
+@router.get("/manage/dashboard", response_class=HTMLResponse)
+def manage_dashboard_page(request: Request):
+    guard = require_auth(request)
+    if guard:
+        return guard
+    return templates.TemplateResponse(
+        request, "admin/dashboard.html", {**_common},
+    )
+
+
+@router.get("/grid")
+@router.get("/dashboard")
+def legacy_redirect(request: Request):
+    from starlette.responses import RedirectResponse
+    path = request.url.path
+    return RedirectResponse(url=f"/manage{path}", status_code=301)
 
 
 @router.get("/album/{token}", response_class=HTMLResponse)
@@ -115,11 +173,11 @@ def _render_album(request: Request, token: str):
     if real_path:
         files = list_images_by_path(real_path)
         display_name = real_path.split("/")[-1]
-        _record_visit_compat(request, token)
+        _record_visit_compat(request, token, album_key=real_path)
         return templates.TemplateResponse(
+            request,
             "album/index.html",
             {
-                "request": request,
                 "token": token,
                 "files": files,
                 "files_json": json.dumps(files, ensure_ascii=False),
@@ -133,11 +191,11 @@ def _render_album(request: Request, token: str):
     if not files:
         raise HTTPException(status_code=404, detail="album not found")
     title = get_token_title(token) or token
-    _record_visit_compat(request, token)
+    _record_visit_compat(request, token, album_key=token)
     return templates.TemplateResponse(
+        request,
         "album/index.html",
         {
-            "request": request,
             "token": token,
             "files": files,
             "files_json": json.dumps(files, ensure_ascii=False),

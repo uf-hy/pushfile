@@ -1,260 +1,370 @@
-<!doctype html>
-<html lang="zh-CN"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>PushFile Admin</title>
-<link rel="stylesheet" href="{{ base }}/static/admin/style.css">
-</head><body>
-<div class="page">
-  <div class="nav">
-    <span class="badge badge-left" id="versionBadge" title="当前版本">v--</span>
-    <h1>PushFile Admin</h1>
-    <div class="nav-btns">
-      <button class="nav-btn nav-btn-secondary" id="gridBtn" type="button" onclick="toggleGridTool()" style="display:none">🔲 九宫格</button>
-      <button class="nav-btn" id="analyticsBtn" type="button" onclick="toggleAnalytics()" style="display:none">📊 统计</button>
-    </div>
-    <span class="badge badge-right" id="connBadge">未连接</span>
-  </div>
-  <div class="build-meta" id="buildMeta">-- -- 构建</div>
-
-  <!-- Login -->
-  <div id="loginSection">
-    <div class="group">
-      <div class="group-label">连接</div>
-      <div class="group-box">
-        <div class="row">
-          <span class="row-label">密码</span>
-          <input id="secret" type="password" placeholder="输入管理密码">
-        </div>
-        <div class="row">
-          <span class="row-label"></span>
-          <label style="display:flex;align-items:center;gap:10px;flex:1;color:var(--sub);font-size:14px;cursor:pointer;-webkit-user-select:none;user-select:none">
-            <input id="remember" type="checkbox" style="width:18px;height:18px">
-            <span>记住密码（6天）</span>
-          </label>
-        </div>
-      </div>
-    </div>
-    <button class="btn btn-blue" type="button" onclick="connect()" style="margin-bottom:20px">连接</button>
-
-    <div class="group">
-      <div class="group-label">新建相册</div>
-      <div class="group-box">
-        <div class="row">
-          <span class="row-label">名称</span>
-          <input id="newTokenInput" type="text" placeholder="英文标识，如 trip-tokyo">
-        </div>
-      </div>
-    </div>
-    <button class="btn btn-gray" type="button" onclick="createToken()" style="margin-bottom:20px">创建相册</button>
-
-    <div class="group" style="margin-top:24px">
-      <div class="group-label">使用说明</div>
-      <div class="group-box">
-        <div class="steps">
-          <div class="step"><div class="step-num">1</div><div class="step-text"><b>创建相册</b><span>输入英文名称作为标识，如 wedding2026、trip-tokyo</span></div></div>
-          <div class="step"><div class="step-num">2</div><div class="step-text"><b>上传照片</b><span>选择相册后点击上传区域，支持 JPG/PNG/GIF/WebP</span></div></div>
-          <div class="step"><div class="step-num">3</div><div class="step-text"><b>分享链接</b><span>复制链接发给朋友，打开即可查看和下载照片</span></div></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Main (hidden until connected) -->
-  <div id="mainSection" style="display:none">
-    <div id="analyticsPanel" style="display:none"></div>
-    <div id="gridPanel" style="display:none">
-      <div class="group">
-        <div class="group-label">九宫格工具</div>
-        <div class="group-box">
-          <div class="row row-stack grid-main-row">
-            <div class="grid-header">
-              <div class="grid-title">朋友圈九宫格</div>
-              <div class="grid-sub">上传一张图片，一键生成 3×3 细白线九宫格</div>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>PushFile Admin</title>
+    <!-- 预加载 Phosphor Icons 字体文件 -->
+    <link rel="preconnect" href="https://unpkg.com" crossorigin>
+    <link rel="preload" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" as="style">
+    <link rel="preload" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css" as="style">
+    
+    <link rel="stylesheet" href="{{ base }}/static/admin/style.css?v={{ asset_version }}">
+    <link rel="stylesheet" href="{{ base }}/static/admin/components/FolderSelector.css?v={{ asset_version }}">
+    
+    <style>
+        /* 骨架屏动画 */
+        @keyframes skeleton-pulse {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        .skeleton-inline {
+            display: inline-block;
+            width: 50px;
+            height: 22px;
+            background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: skeleton-pulse 1.5s ease-in-out infinite;
+            border-radius: 6px;
+            vertical-align: middle;
+        }
+        /* 访客模式遮罩 */
+        .guest-mode-disabled {
+            opacity: 0.5;
+            pointer-events: none;
+            cursor: not-allowed;
+            position: relative;
+        }
+        .guest-mode-disabled::after {
+            content: '访客模式';
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,0.7);
+            border-radius: inherit;
+            font-size: 0.8rem;
+            color: var(--color-text-secondary, #666);
+        }
+        /* 柱状图样式 */
+        .card-stats .card-body {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            min-height: 280px;
+        }
+        .chart-placeholder {
+            height: 172px;
+            margin: 6px -4px 0;
+            display: flex;
+            align-items: stretch;
+            justify-content: stretch;
+        }
+        .chart-summary {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 18px;
+        }
+        .chart-summary-item {
+            padding: 12px 14px;
+            border-radius: 16px;
+            background: linear-gradient(180deg, rgba(245, 245, 247, 0.92), rgba(255, 255, 255, 0.98));
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+        }
+        .chart-summary-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--color-text-tertiary);
+            margin-bottom: 6px;
+        }
+        .chart-summary-value {
+            display: block;
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            line-height: 1;
+            color: var(--color-text-primary);
+        }
+        .chart-summary-meta {
+            display: block;
+            margin-top: 6px;
+            font-size: 12px;
+            color: var(--color-text-secondary);
+        }
+        .chart-summary-item.is-today .chart-summary-value {
+            color: var(--color-warning);
+        }
+        @media (max-width: 720px) {
+            .chart-summary {
+                grid-template-columns: 1fr;
+            }
+            .card-stats .card-body {
+                min-height: auto;
+            }
+        }
+        @media (max-width: 768px) {
+            #homeUploadPreview {
+                grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+            }
+        }
+        @media (max-width: 520px) {
+            #homeUploadPreview {
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            }
+        }
+    </style>
+    
+    <!-- 异步加载 Phosphor Icons，并添加加载状态类 -->
+    <script>
+        document.documentElement.classList.add('icons-loading');
+    </script>
+    <script src="https://unpkg.com/@phosphor-icons/web" async onload="document.documentElement.classList.remove('icons-loading')"></script>
+    <!-- 引入 Inter 字体作为备选，优先使用系统字体 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <script src="{{ base }}/static/admin/vendor/chart.umd.min.js?v={{ asset_version }}"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+    <script>
+        window.__BASE__ = '{{ base }}';
+        document.documentElement.style.visibility = 'hidden';
+    </script>
+<body>
+    <div class="app-container">
+        <!-- 顶部导航 -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo-area">
+                    <div class="logo-icon">
+                        <i class="ph-fill ph-paper-plane-tilt"></i>
+                    </div>
+                    <div class="logo-text">
+                        <h1>PushFile</h1>
+                        <span class="version-badge">v2.0.0</span>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <div class="user-avatar" onclick="openUserMenu()" title="账号">
+                        <img src="https://ui-avatars.com/api/?name=Admin&background=0D8ABC&color=fff&rounded=true" alt="Admin">
+                    </div>
+                </div>
             </div>
-            <div class="grid-upload">
-              <div class="upload-zone" id="gridUploadZone" onclick="gridChooseFile()">
-                <div class="icon">🔲</div>
-                <p>点击选择图片，或拖拽到此</p>
-                <small>推荐正方形高清图 · 支持 JPG/PNG</small>
-              </div>
-              <input id="gridFileInput" type="file" accept="image/*" style="display:none" onchange="handleGridFileChange(this.files)">
-              <div class="grid-file-meta" id="gridFileMeta"></div>
+        </header>
+
+        <!-- 主要内容区 -->
+        <main class="main-content">
+            <div class="greeting">
+                <h2>早上好，Admin</h2>
+                <p id="greetingText">正在加载数据...</p>
             </div>
-          </div>
-          <div class="row">
-            <span class="row-label">线宽</span>
-            <div class="chips" id="gridWidthChips">
-              <button type="button" class="chip" data-width="2">细 (2px)</button>
-              <button type="button" class="chip active" data-width="4">中 (4px)</button>
-              <button type="button" class="chip" data-width="6">粗 (6px)</button>
-              <button type="button" class="chip" data-width="8">特粗 (8px)</button>
+
+            <!-- Bento Grid 布局 -->
+            <div class="bento-grid">
+                <div class="bento-card card-manage span-2">
+                    <div class="card-bg-decoration"></div>
+                    <div class="card-header">
+                        <div class="card-icon-wrapper primary">
+                            <i class="ph ph-images"></i>
+                        </div>
+                        <h3>相册管理</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="stats-row">
+                            <div class="stat-item">
+                                <span class="stat-value" id="statPhotos"><span class="skeleton-inline"></span></span>
+                                <span class="stat-label">总照片数</span>
+                            </div>
+                            <div class="stat-divider"></div>
+                            <div class="stat-item">
+                                <span class="stat-value" id="statAlbums"><span class="skeleton-inline"></span></span>
+                                <span class="stat-label">相册</span>
+                            </div>
+                            <div class="stat-divider"></div>
+                            <div class="stat-item">
+                                <span class="stat-value text-success" id="statVisitors"><span class="skeleton-inline"></span></span>
+                                <span class="stat-label">今日访问</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <button type="button" class="btn btn-primary" id="uploadBtn" data-test="upload-btn" onclick="openModal('uploadModal')">
+                            <i class="ph ph-upload-simple"></i>
+                            上传照片
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="go('/manage/album')">
+                            浏览全部
+                            <i class="ph ph-arrow-right"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 创作卡片 -->
+                <div class="bento-card card-create">
+                    <div class="card-header">
+                        <div class="card-icon-wrapper accent">
+                            <i class="ph ph-magic-wand"></i>
+                        </div>
+                        <div class="header-text">
+                            <h3>创作中心</h3>
+                            <p>生成分享链接与二维码</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="quick-actions">
+                            <div class="action-item" onclick="go('/grid')">
+                                <div class="action-icon"><i class="ph ph-squares-four"></i></div>
+                                <span>九宫格</span>
+                            </div>
+                            <div class="action-item" onclick="showToast('该功能正在开发中喵～ 敬请期待！')">
+                                <div class="action-icon"><i class="ph ph-qr-code"></i></div>
+                                <span>二维码</span>
+                            </div>
+                            <div class="action-item" onclick="showToast('该功能正在开发中喵～ 敬请期待！')">
+                                <div class="action-icon"><i class="ph ph-lock-key"></i></div>
+                                <span>加密分享</span>
+                            </div>
+                            <div class="action-item" onclick="showToast('该功能正在开发中喵～ 敬请期待！')">
+                                <div class="action-icon"><i class="ph ph-clock"></i></div>
+                                <span>阅后即焚</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 统计卡片 -->
+                <div class="bento-card card-stats">
+                    <div class="card-header">
+                        <div class="card-icon-wrapper warning">
+                            <i class="ph ph-chart-line-up"></i>
+                        </div>
+                        <div class="header-text">
+                            <h3>访问统计</h3>
+                            <p>近期访问趋势</p>
+                        </div>
+                        <button type="button" class="btn-text" style="margin-left: auto;" onclick="go('/manage/dashboard')">查看全部</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-placeholder" id="chartPlaceholder">
+                            <canvas id="dailyChart"></canvas>
+                        </div>
+                        <div class="chart-summary">
+                            <div class="chart-summary-item is-today">
+                                <span class="chart-summary-label">今天</span>
+                                <span class="chart-summary-value" id="chartTodayValue">-</span>
+                                <span class="chart-summary-meta" id="chartTodayMeta">暂无数据</span>
+                            </div>
+                            <div class="chart-summary-item">
+                                <span class="chart-summary-label">近 7 天</span>
+                                <span class="chart-summary-value" id="chartWeekValue">-</span>
+                                <span class="chart-summary-meta">累计访问</span>
+                            </div>
+                            <div class="chart-summary-item">
+                                <span class="chart-summary-label">峰值日</span>
+                                <span class="chart-summary-value" id="chartPeakValue">-</span>
+                                <span class="chart-summary-meta" id="chartPeakMeta">暂无峰值</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bento-card card-recent span-2">
+                    <div class="card-header">
+                        <div class="card-icon-wrapper success">
+                            <i class="ph ph-clock-counter-clockwise"></i>
+                        </div>
+                        <div class="header-text">
+                            <h3>最近活动</h3>
+                            <p>照片上传与下载动态</p>
+                        </div>
+                        <button type="button" class="btn-text" style="margin-left: auto;" onclick="go('/manage/dashboard')">查看全部</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="activity-list" id="activityList">
+                            <div class="activity-item">
+                                <div class="activity-icon file-image">
+                                    <i class="ph ph-image"></i>
+                                </div>
+                                <div class="activity-content">
+                                    <div class="activity-title">加载中...</div>
+                                    <div class="activity-meta">请稍候</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-          </div>
-          <div class="row row-stack">
-            <div class="grid-gap-row">
-              <span class="row-label" style="width:auto">间距</span>
-              <div class="chips" id="gridGapChips">
-                <button type="button" class="chip active" data-gap="0">无间距</button>
-                <button type="button" class="chip" data-gap="8">小</button>
-                <button type="button" class="chip" data-gap="16">大</button>
-              </div>
+        </main>
+    </div>
+
+    <div class="modal" id="uploadModal" style="display:none" onclick="if(event.target===this) closeModal('uploadModal')">
+        <div class="modal-content">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                <h3 style="margin:0;">上传文件</h3>
+                <button type="button" class="icon-btn" onclick="closeModal('uploadModal')"><i class="ph ph-x"></i></button>
             </div>
-            <div class="grid-tip">模拟朋友圈常见的细白线九宫格风格，可选择是否留出间距。</div>
-          </div>
-        </div>
-      </div>
 
-      <div class="group">
-        <div class="group-label">预览 &amp; 导出</div>
-        <div class="group-box">
-          <div class="row row-stack grid-preview-row">
-            <div class="grid-preview" id="gridPreview">
-              <div class="empty">
-                <div class="icon">🖼️</div>
-                <p>先选择一张图片，再点击「生成预览」</p>
-              </div>
+            <div class="upload-drop-zone" id="homeUploadZone" style="margin-top:12px;border:2px dashed var(--color-border);border-radius:16px;padding:18px;text-align:center;cursor:pointer;">
+                <i class="ph ph-upload-simple" style="font-size:28px;color:var(--color-text-secondary);"></i>
+                <div style="margin-top:8px;font-weight:600;">点击选择 或 拖拽图片/ZIP</div>
+                <div style="margin-top:4px;font-size:13px;color:var(--color-text-secondary);">移动端不支持拖拽时，点击选择即可</div>
+                <input type="file" id="homeUploadFileInput" accept="image/*,.zip" multiple hidden>
+                <input type="file" id="homeUploadFolderInput" webkitdirectory multiple hidden>
+                <div style="display:flex;gap:10px;justify-content:center;margin-top:12px;flex-wrap:wrap;">
+                    <button type="button" class="btn btn-secondary" id="homeChooseFilesBtn"><i class="ph ph-image"></i> 选图片/ZIP</button>
+                    <button type="button" class="btn btn-secondary" id="homeChooseFolderBtn"><i class="ph ph-folder"></i> 选文件夹</button>
+                </div>
             </div>
-            <div class="grid-tip" id="gridPreviewHint">预览展示完整 3×3 九宫格效果，不会改变原图。</div>
-          </div>
-          <div class="row row-stack">
-            <div class="btn-row">
-              <button class="btn btn-gray" type="button" onclick="generateGridPreview()">生成预览</button>
-              <button class="btn btn-gray" type="button" id="gridPreviewDownloadBtn" onclick="downloadGridPreview()" disabled>下载预览图</button>
+
+            <div id="homeUploadPreview" style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:12px;"></div>
+
+            <div style="margin-top:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                <div style="font-size:13px;color:var(--color-text-secondary);">保存到</div>
+                <button type="button" class="btn btn-secondary" id="homeChooseDestBtn"><i class="ph ph-folder"></i> 选择位置</button>
             </div>
-          </div>
-          <div class="row row-stack">
-            <div class="btn-row">
-              <button class="btn btn-gray" type="button" id="gridZipDownloadBtn" data-label="下载 9 张图片（ZIP）" onclick="downloadGridZip()" disabled>下载 9 张图片（ZIP）</button>
-              <button class="btn btn-blue" type="button" id="gridSaveBtn" data-label="保存到相册" onclick="saveGridToAlbum()" disabled>保存到相册</button>
+            <div id="homeUploadDest" style="margin-top:6px;font-size:13px;color:var(--color-text-secondary);word-break:break-all;">未选择</div>
+
+            <div class="modal-actions" style="margin-top:14px;display:flex;gap:10px;justify-content:flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('uploadModal')">取消</button>
+                <button type="button" class="btn btn-primary" id="homeUploadStartBtn">开始上传</button>
             </div>
-            <div class="grid-tip">保存会在相册里生成 9 张单独图片，方便再次管理与排序。</div>
-          </div>
         </div>
-      </div>
-
-      <div class="group">
-        <div class="group-label">保存设置</div>
-        <div class="group-box">
-          <div class="row row-tap" onclick="showGridDestPicker()">
-            <span class="row-label">位置</span>
-            <span class="row-value" id="gridDestDisplay">九宫格</span>
-            <span class="row-chevron">›</span>
-          </div>
-          <input id="gridDestInput" type="hidden" value="九宫格">
-          <div class="row">
-            <span class="row-label">文件夹</span>
-            <input id="gridFolderInput" type="text" placeholder="默认使用原图名">
-          </div>
-          <div class="row">
-            <span class="row-label">实际路径</span>
-            <span class="row-value" id="gridSavePreviewPath">九宫格/原图名/</span>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div id="adminPanel">
-    <div class="group">
-      <div class="group-label">导入 ZIP</div>
-      <div class="zip-zone" id="zipZone" onclick="openImportChooser(currentImportPath())">
-        <p>📦 点击选择 ZIP，或直接拖入 ZIP / 文件夹</p>
-        <p><small>保持目录结构，自动创建文件夹</small></p>
-        <p class="import-flag"><small>✅ 当前版本支持：拖拽文件夹导入 / 选择文件夹导入</small></p>
-        <div class="zip-actions">
-          <button class="btn btn-sm btn-gray zip-btn" type="button" onclick="event.stopPropagation();openFolderPicker(currentImportPath())">选择文件夹</button>
-        </div>
-        <input id="zipInput" type="file" accept=".zip" style="display:none" onchange="handleZipImport(this.files)">
-        <input id="folderInput" type="file" multiple webkitdirectory directory style="display:none" onchange="handleFolderImport(this.files)">
-      </div>
-      <div class="zip-prog" id="zipProg"><div class="zip-bar"><div class="zip-fill" id="zipFill"></div></div><div class="zip-txt" id="zipTxt"></div></div>
     </div>
 
-    <div class="group">
-      <div class="group-label">新建文件夹</div>
-      <div class="group-box">
-        <div class="row">
-          <span class="row-label">名称</span>
-          <input id="newFolderInput" type="text" placeholder="如：朋友圈创意九宫格/01_蛇年限定">
+    <div class="modal" id="activityActionModal" style="display:none" onclick="if(event.target===this) closeModal('activityActionModal')">
+        <div class="modal-content">
+            <h3>更多操作</h3>
+            <p>功能开发中...</p>
+            <button type="button" class="btn btn-secondary" onclick="closeModal('activityActionModal')">关闭</button>
         </div>
-        <div class="row row-tap" onclick="createFolder()"><span style="color:var(--accent)">创建</span></div>
-      </div>
     </div>
 
-    <div class="group">
-      <div class="group-label">目录结构</div>
-      <div class="group-box" id="treeBox"></div>
-    </div>
-
-    <div id="contentArea"></div>
-    </div>
-  </div>
-</div>
-
-<div class="grid-overlay" id="gridOverlay" onclick="toggleGridTool()"></div>
-
-<!-- Action sheet for photo -->
-<div class="sheet-bg" id="sheetBg" onclick="closeSheet()">
-  <div class="sheet" onclick="event.stopPropagation()">
-    <div class="sheet-handle"></div>
-    <div class="sheet-item" onclick="sheetRename()">重命名</div>
-    <div class="sheet-item" onclick="sheetDownload()">下载原图</div>
-    <div class="sheet-sep"></div>
-    <div class="sheet-item danger" onclick="sheetDelete()">删除照片</div>
-    <div class="sheet-sep"></div>
-    <div class="sheet-cancel" onclick="closeSheet()">取消</div>
-  </div>
-</div>
-
-<!-- Batch toolbar -->
-<div class="batch" id="batchBar">
-  <span class="batch-count" id="batchCount">0 已选</span>
-  <button class="btn btn-sm btn-gray" type="button" onclick="selectAll()">全选</button>
-  <button class="btn btn-sm btn-gray" type="button" onclick="sel.clear();renderPhotos()">取消</button>
-  <button class="btn btn-sm btn-gray" type="button" onclick="batchMove()">移动</button>
-  <button class="btn btn-sm btn-red" type="button" onclick="batchDelete()">删除</button>
-  <button class="btn btn-sm btn-gray" type="button" onclick="saveOrder()">保存排序</button>
-</div>
-
-<div class="toast" id="toast"></div>
-
-<div class="modal-bg" id="importModalBg" onclick="closeImportModal()">
-  <div class="modal-card" onclick="event.stopPropagation()">
-    <div class="group" style="margin-bottom:16px">
-      <div class="group-label">导入到文件夹</div>
-      <div class="group-box">
-        <div class="row row-stack">
-          <div class="import-meta">来源文件</div>
-          <div class="import-source" id="importSourceLabel">-</div>
+    <div class="modal" id="userMenuModal" style="display:none" onclick="if(event.target===this) closeModal('userMenuModal')">
+        <div class="modal-content">
+            <h3>账号</h3>
+            <p id="userMenuSummary">正在读取当前账号…</p>
+            <div id="userListPanel" style="margin-top:12px;display:grid;gap:8px;"></div>
+            <div id="userCreateSection" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--color-border);display:grid;gap:10px;">
+                <div style="font-size:13px;font-weight:600;">新增管理用户</div>
+                <input type="text" id="newManagerUsername" placeholder="用户名" style="width:100%;padding:10px 12px;border:1px solid var(--color-border);border-radius:12px;">
+                <input type="password" id="newManagerPassword" placeholder="密码" style="width:100%;padding:10px 12px;border:1px solid var(--color-border);border-radius:12px;">
+                <div style="font-size:12px;color:var(--color-text-secondary);">新用户会拥有独立的相册空间。</div>
+                <div class="modal-actions" style="margin-top:0;">
+                    <button type="button" class="btn btn-secondary" onclick="createManagerUser()">创建用户</button>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('userMenuModal')">关闭</button>
+                <button type="button" class="btn btn-primary" onclick="logout()">退出登录</button>
+            </div>
         </div>
-        <div class="row">
-          <span class="row-label">名称</span>
-          <input id="importNameInput" type="text" placeholder="新文件夹名称">
-        </div>
-        <div class="row row-stack">
-          <div class="import-row-head">
-            <span class="row-label" style="width:auto">位置</span>
-            <button class="btn btn-sm btn-gray" type="button" onclick="focusImportDestination()">修改位置</button>
-          </div>
-          <input id="importDestInput" type="text" list="folderPathOptions" placeholder="默认导入到当前目录">
-          <small class="import-tip">默认就是你当前打开的目录，也可以改成其他已存在目录</small>
-        </div>
-      </div>
     </div>
-    <div class="btn-row">
-      <button class="btn btn-gray" type="button" onclick="closeImportModal()">取消</button>
-      <button class="btn btn-blue" type="button" onclick="confirmImportUpload()">确认导入</button>
-    </div>
-  </div>
-</div>
 
-<datalist id="folderPathOptions"></datalist>
-
-<script>
-// Use relative URLs so preview/prod work without BASE_PATH/proxy special-casing
-window.__BASE__ = '{{ base }}';
-window.__DOMAIN__ = '{{ domain }}';
-window.__MAX_MB__ = Number('{{ max_mb }}');
-window.__APP_VERSION__ = '{{ app_version }}' || '1.1.0';
-window.__APP_BUILD_TIME__ = '{{ app_build_time }}' || '02-28 17:30';
-</script>
-<script src="{{ base }}/static/admin/app.js?v=20260228h3"></script>
-</body></html>
+    <script src="{{ base }}/static/admin/auth.js?v={{ asset_version }}"></script>
+    <script src="{{ base }}/static/admin/components/FolderSelector.js?v={{ asset_version }}"></script>
+    <script src="{{ base }}/static/admin/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

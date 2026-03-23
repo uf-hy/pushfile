@@ -29,4 +29,6 @@ def test_delete_folder_success(client, upload_secret, base_dir):
     )
     assert r.status_code == 200
     assert r.json()["ok"] is True
+    assert r.json()["mode"] == "trash"
     assert not (base_dir / "foo").exists()
+    assert (base_dir / "_archived" / "trash").exists()

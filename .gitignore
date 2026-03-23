@@ -7,3 +7,10 @@ __pycache__/
 .python-version
 uv.lock
 doc/
+visual-loop/
+.playwright-review/
+_stats.json
+_visits.jsonl
+_visits.old.jsonl
+_slugs.json
+.sisyphus/

@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,12 +12,14 @@ TEST_UPLOAD_SECRET = "test-upload-secret"
 def _write_min_frontend(frontend_dir: Path) -> None:
     (frontend_dir / "admin").mkdir(parents=True, exist_ok=True)
     (frontend_dir / "album").mkdir(parents=True, exist_ok=True)
+    (frontend_dir / "landing").mkdir(parents=True, exist_ok=True)
     (frontend_dir / "admin" / "index.html").write_text("<html>admin</html>", encoding="utf-8")
     (frontend_dir / "album" / "index.html").write_text("<html>album {{ token }}</html>", encoding="utf-8")
+    (frontend_dir / "landing" / "index.html").write_text("<html>landing</html>", encoding="utf-8")
 
 
 @pytest.fixture()
-def app_ctx(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
+def app_ctx(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     base_dir = tmp_path / "uploads"
     base_dir.mkdir(parents=True, exist_ok=True)
     frontend_dir = tmp_path / "frontend"
@@ -37,17 +40,16 @@ def app_ctx(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
 
 
 @pytest.fixture()
-def client(app_ctx: dict):
+def client(app_ctx: dict[str, Any]):
     with TestClient(app_ctx["app"]) as c:
         yield c
 
 
 @pytest.fixture()
-def base_dir(app_ctx: dict) -> Path:
+def base_dir(app_ctx: dict[str, Any]) -> Path:
     return app_ctx["base_dir"]
 
 
 @pytest.fixture()
-def upload_secret(app_ctx: dict) -> str:
+def upload_secret(app_ctx: dict[str, Any]) -> str:
     return app_ctx["secret"]
-
