@@ -185,8 +185,8 @@ function updateWindowChrome() {
         }
     }
     if (selectionPill) {
-        if (selectedFiles.size > 0) {
-            selectionPill.textContent = `已选择 ${selectedFiles.size} 项`;
+        if (getSelectionCount() > 0) {
+            selectionPill.textContent = `已选择 ${getSelectionCount()} 项`;
         } else if (state.currentPath || state.currentToken) {
             selectionPill.textContent = '当前路径可下载';
         } else {
@@ -812,7 +812,7 @@ function buildSearchResultsHtml() {
         const itemToken = escapeHtml(item.token || '');
         const count = Number(item.image_count || 0);
         return `
-            <button type="button" class="grid-item folder-item search-folder-item" data-action="open-folder-card" data-folder-token="${itemToken}" data-folder-title="${itemName}" data-folder-path="${itemPath}">
+            <button type="button" class="grid-item folder-item search-folder-item" data-item-kind="folder" data-action="open-folder-card" data-folder-token="${itemToken}" data-folder-title="${itemName}" data-folder-path="${itemPath}">
                 <div class="item-icon-wrapper">
                     <i class="ph-fill ph-folder"></i>
                 </div>
@@ -841,7 +841,7 @@ function buildSearchResultsHtml() {
         const safeDownloadUrl = escapeHtml(downloadUrl);
         const safeParentPath = escapeHtml(parentPath);
         return `
-            <div class="grid-item image-item search-item" data-file="${safeFile}" data-url="${safePreviewUrl}" data-copy-url="${safePreviewUrl}" data-download-url="${safeDownloadUrl}" data-file-token="${escapeHtml(token)}" data-folder-path="${safeParentPath}">
+            <div class="grid-item image-item search-item" data-item-kind="image" data-file="${safeFile}" data-url="${safePreviewUrl}" data-copy-url="${safePreviewUrl}" data-download-url="${safeDownloadUrl}" data-file-token="${escapeHtml(token)}" data-folder-path="${safeParentPath}">
                 <div class="item-thumb" data-action="preview-image">
                     <img src="${safeThumbUrl}" alt="${safeFile}" loading="lazy" draggable="false">
                     <div class="item-overlay">
@@ -903,7 +903,8 @@ function renderGridView() {
                 ? `${count} 张照片`
                 : `${(node.children || []).length} 个子项${count > 0 ? ` · ${count} 张照片` : ''}`;
             return `
-                <button type="button" class="grid-item folder-item" data-action="open-folder-card" data-folder-token="${itemToken}" data-folder-title="${itemName}" data-folder-path="${itemPath}">
+                <button type="button" class="grid-item folder-item" data-item-kind="folder" data-action="open-folder-card" data-folder-token="${itemToken}" data-folder-title="${itemName}" data-folder-path="${itemPath}">
+                    <div class="item-checkbox" onclick="event.stopPropagation(); toggleSelect(this.closest('.grid-item'))"><i class="ph-bold ph-check"></i></div>
                     <div class="item-icon-wrapper">
                         <i class="${node.is_album ? 'ph-fill ph-images' : 'ph-fill ph-folder'}"></i>
                     </div>
@@ -934,7 +935,8 @@ function renderGridView() {
         const childToken = childNode?.slug || '';
         const childCount = childNode?.image_count || 0;
         return `
-            <button type="button" class="grid-item folder-item" data-action="open-folder-card" data-folder-token="${escapeHtml(childToken)}" data-folder-title="${escapeHtml(folderName)}" data-folder-path="${escapeHtml(childPath)}">
+            <button type="button" class="grid-item folder-item" data-item-kind="folder" data-action="open-folder-card" data-folder-token="${escapeHtml(childToken)}" data-folder-title="${escapeHtml(folderName)}" data-folder-path="${escapeHtml(childPath)}">
+                <div class="item-checkbox" onclick="event.stopPropagation(); toggleSelect(this.closest('.grid-item'))"><i class="ph-bold ph-check"></i></div>
                 <div class="item-icon-wrapper">
                     <i class="ph-fill ph-folder"></i>
                 </div>
@@ -989,7 +991,7 @@ function renderGridView() {
             : `<img src="${safeThumbUrl}" alt="${safeFile}" loading="lazy" draggable="false">`;
              
         return `
-            <div class="grid-item image-item" data-file="${safeFile}" data-url="${safePreviewUrl}" data-copy-url="${safePreviewUrl}" data-download-url="${safeDownloadUrl}" draggable="true">
+            <div class="grid-item image-item" data-item-kind="image" data-file="${safeFile}" data-url="${safePreviewUrl}" data-copy-url="${safePreviewUrl}" data-download-url="${safeDownloadUrl}" data-file-token="${escapeHtml(state.currentToken || '')}" data-folder-path="${escapeHtml(state.currentPath || '')}" draggable="true">
                 <div class="item-checkbox" onclick="event.stopPropagation(); toggleSelect(this.closest('.grid-item'))"><i class="ph-bold ph-check"></i></div>
                 <div class="item-thumb" data-action="preview-image">
                     ${mediaHtml}
@@ -1351,23 +1353,64 @@ function getCurrentShareLink(token = state.currentToken) {
     return `${window.location.origin}${base}/d/${token}`;
 }
 
-function showMoveSelector(names) {
-    const files = Array.isArray(names) ? names.filter(Boolean) : [];
-    if (!files.length) return;
+function getFolderShareLinkByPath(path) {
+    const node = findNodeByPath(state.folderTree, path);
+    return node?.slug ? getCurrentShareLink(node.slug) : '';
+}
+
+function showFolderPicker({ title, allowRoot = false, onSelect }) {
     const picker = new FolderSelector({
         base: state.base,
-        title: files.length === 1 ? '移动到哪个文件夹' : `移动 ${files.length} 个文件到…`,
+        title,
         onSelect: async (selectedPath) => {
-            const dest = (selectedPath || '').trim();
-            if (!dest) {
+            const dest = String(selectedPath || '').trim();
+            if (!allowRoot && !dest) {
                 showToast('请选择目标文件夹');
                 return;
             }
+            await onSelect(dest);
+        }
+    });
+    picker.show();
+}
+
+async function renameFileByPath(path, fileName) {
+    const currentName = String(fileName || '').trim();
+    if (!path || !currentName) return;
+    const nextName = window.prompt('请输入新的文件名', currentName) || '';
+    const trimmed = nextName.trim();
+    if (!trimmed || trimmed === currentName) return;
+    try {
+        const data = await api.post('/api/folders/file-rename', JSON.stringify({ path, old_name: currentName, new_name: trimmed }));
+        if (!data || data.ok !== true) {
+            throw new Error((data && (data.detail || data.message)) || '重命名失败');
+        }
+        state.focusedFile = data.new || trimmed;
+        showToast(`已重命名为：${data.new || trimmed}`);
+        await loadTokens();
+        clearSelection();
+    } catch (err) {
+        console.error('rename file failed:', err);
+        showToast(`重命名失败：${getErrorMessage(err)}`);
+    }
+}
+
+async function moveFilesByPath(path, files, dest) {
+    return api.post('/api/folders/files-move', JSON.stringify({ path, names: files, dest }));
+}
+
+async function copyFilesByPath(path, files, dest) {
+    return api.post('/api/folders/files-copy', JSON.stringify({ path, names: files, dest }));
+}
+
+function showMoveSelector(names, sourcePath = state.currentPath) {
+    const files = Array.isArray(names) ? names.filter(Boolean) : [];
+    if (!files.length || !sourcePath) return;
+    showFolderPicker({
+        title: files.length === 1 ? '移动到哪个文件夹' : `移动 ${files.length} 个文件到…`,
+        onSelect: async (selectedPath) => {
             try {
-                const data = await api.post(
-                    `/api/manage/${state.currentToken}/batch-move`,
-                    JSON.stringify({ dest, names: files })
-                );
+                const data = await moveFilesByPath(sourcePath, files, selectedPath);
                 if (!data || !data.ok) {
                     throw new Error((data && (data.detail || data.message)) || '移动失败');
                 }
@@ -1382,7 +1425,164 @@ function showMoveSelector(names) {
             }
         }
     });
-    picker.show();
+}
+
+function showCopySelector(names, sourcePath = state.currentPath) {
+    const files = Array.isArray(names) ? names.filter(Boolean) : [];
+    if (!files.length || !sourcePath) return;
+    showFolderPicker({
+        title: files.length === 1 ? '复制到哪个文件夹' : `复制 ${files.length} 个文件到…`,
+        onSelect: async (selectedPath) => {
+            try {
+                const data = await copyFilesByPath(sourcePath, files, selectedPath);
+                if (!data || !data.ok) {
+                    throw new Error((data && (data.detail || data.message)) || '复制失败');
+                }
+                const copiedCount = (data.copied || []).length;
+                const skippedCount = (data.skipped || []).length;
+                showToast(`复制完成：成功 ${copiedCount}，跳过 ${skippedCount}`);
+                await loadTokens();
+                clearSelection();
+            } catch (e) {
+                console.error('batch-copy failed:', e);
+                showToast(`复制失败：${getErrorMessage(e)}`);
+            }
+        }
+    });
+}
+
+function showFolderMoveSelector(paths) {
+    const folders = Array.isArray(paths) ? paths.filter(Boolean) : [];
+    if (!folders.length) return;
+    showFolderPicker({
+        title: folders.length === 1 ? '移动文件夹到…' : `移动 ${folders.length} 个文件夹到…`,
+        allowRoot: true,
+        onSelect: async (selectedPath) => {
+            try {
+                const data = await api.post('/api/folders/batch-move', JSON.stringify({ paths: folders, dest: selectedPath }));
+                if (!data || !data.ok) {
+                    throw new Error((data && (data.detail || data.message)) || '移动失败');
+                }
+                showToast(`已移动 ${data.count ?? folders.length} 个文件夹`);
+                await loadTokens();
+                clearSelection();
+            } catch (err) {
+                console.error('move folders failed:', err);
+                showToast(`移动失败：${getErrorMessage(err)}`);
+            }
+        }
+    });
+}
+
+function showFolderCopySelector(paths) {
+    const folders = Array.isArray(paths) ? paths.filter(Boolean) : [];
+    if (!folders.length) return;
+    showFolderPicker({
+        title: folders.length === 1 ? '复制文件夹到…' : `复制 ${folders.length} 个文件夹到…`,
+        allowRoot: true,
+        onSelect: async (selectedPath) => {
+            try {
+                const data = await api.post('/api/folders/batch-copy', JSON.stringify({ paths: folders, dest: selectedPath }));
+                if (!data || !data.ok) {
+                    throw new Error((data && (data.detail || data.message)) || '复制失败');
+                }
+                showToast(`已复制 ${data.count ?? folders.length} 个文件夹`);
+                await loadTokens();
+                clearSelection();
+            } catch (err) {
+                console.error('copy folders failed:', err);
+                showToast(`复制失败：${getErrorMessage(err)}`);
+            }
+        }
+    });
+}
+
+function showSelectionMoveSelector(files, folders) {
+    const safeFiles = Array.isArray(files) ? files.filter(Boolean) : [];
+    const safeFolders = Array.isArray(folders) ? folders.filter(Boolean) : [];
+    if (!safeFiles.length && !safeFolders.length) return;
+    if (safeFiles.length && !safeFolders.length) {
+        showMoveSelector(safeFiles, state.currentPath);
+        return;
+    }
+    if (safeFolders.length && !safeFiles.length) {
+        showFolderMoveSelector(safeFolders);
+        return;
+    }
+    showFolderPicker({
+        title: `移动 ${safeFiles.length + safeFolders.length} 个项目到…`,
+        allowRoot: true,
+        onSelect: async (selectedPath) => {
+            try {
+                if (safeFiles.length) {
+                    if (!selectedPath) {
+                        showToast('文件不能移动到根目录');
+                        return;
+                    }
+                    const fileData = await moveFilesByPath(state.currentPath, safeFiles, selectedPath);
+                    if (!fileData || !fileData.ok) {
+                        throw new Error((fileData && (fileData.detail || fileData.message)) || '文件移动失败');
+                    }
+                }
+                if (safeFolders.length) {
+                    const folderData = await api.post('/api/folders/batch-move', JSON.stringify({ paths: safeFolders, dest: selectedPath }));
+                    if (!folderData || !folderData.ok) {
+                        throw new Error((folderData && (folderData.detail || folderData.message)) || '文件夹移动失败');
+                    }
+                }
+                showToast('已移动选中项目');
+                await loadTokens();
+                clearSelection();
+            } catch (err) {
+                console.error('move selected items failed:', err);
+                showToast(`移动失败：${getErrorMessage(err)}`);
+            }
+        }
+    });
+}
+
+function showSelectionCopySelector(files, folders) {
+    const safeFiles = Array.isArray(files) ? files.filter(Boolean) : [];
+    const safeFolders = Array.isArray(folders) ? folders.filter(Boolean) : [];
+    if (!safeFiles.length && !safeFolders.length) return;
+    if (safeFiles.length && !safeFolders.length) {
+        showCopySelector(safeFiles, state.currentPath);
+        return;
+    }
+    if (safeFolders.length && !safeFiles.length) {
+        showFolderCopySelector(safeFolders);
+        return;
+    }
+    showFolderPicker({
+        title: `复制 ${safeFiles.length + safeFolders.length} 个项目到…`,
+        allowRoot: true,
+        onSelect: async (selectedPath) => {
+            try {
+                if (safeFiles.length) {
+                    if (!selectedPath) {
+                        showToast('文件不能复制到根目录');
+                        return;
+                    }
+                    const fileData = await copyFilesByPath(state.currentPath, safeFiles, selectedPath);
+                    if (!fileData || !fileData.ok) {
+                        throw new Error((fileData && (fileData.detail || fileData.message)) || '文件复制失败');
+                    }
+                }
+                if (safeFolders.length) {
+                    const folderData = await api.post('/api/folders/batch-copy', JSON.stringify({ paths: safeFolders, dest: selectedPath }));
+                    if (!folderData || !folderData.ok) {
+                        throw new Error((folderData && (folderData.detail || folderData.message)) || '文件夹复制失败');
+                    }
+                }
+                showToast('已复制选中项目');
+                await loadTokens();
+                clearSelection();
+            } catch (err) {
+                console.error('copy selected items failed:', err);
+                showToast(`复制失败：${getErrorMessage(err)}`);
+            }
+        }
+    });
 }
 
 function renderContextMenuItems(items) {
@@ -1405,6 +1605,8 @@ function buildContextMenuItems(target) {
             { action: 'copy-folder-link', icon: 'ph-link', label: '复制链接' },
             { action: 'new-subfolder', icon: 'ph-folder-plus', label: '新建子文件夹' },
             { action: 'rename-folder', icon: 'ph-pencil-simple', label: '重命名' },
+            { action: 'move-folder', icon: 'ph-folder-simple-dashed', label: '移动至…' },
+            { action: 'copy-folder', icon: 'ph-copy', label: '复制到…' },
             { type: 'divider' },
             { action: 'delete-folder', icon: 'ph-trash', label: '删除', danger: true },
         ];
@@ -1413,7 +1615,9 @@ function buildContextMenuItems(target) {
         { action: 'preview', icon: 'ph-eye', label: '预览图片' },
         { action: 'copy', icon: 'ph-link', label: '复制链接' },
         { action: 'download', icon: 'ph-download-simple', label: getDownloadModeLabel() },
+        { action: 'rename-file', icon: 'ph-pencil-simple', label: '重命名' },
         { action: 'move-one', icon: 'ph-folder-simple-dashed', label: '移动至…' },
+        { action: 'copy-one', icon: 'ph-copy', label: '复制到…' },
         { type: 'divider' },
         { action: 'delete', icon: 'ph-trash', label: '删除', danger: true },
     ];
@@ -1456,6 +1660,7 @@ function copyCurrentLink() {
 
 // === 多选与右键菜单交互逻辑 ===
 let selectedFiles = new Set();
+let selectedFolders = new Set();
 let contextMenuTarget = null;
 let isMobile = window.innerWidth <= 768;
 
@@ -1463,25 +1668,87 @@ window.addEventListener('resize', () => {
     isMobile = window.innerWidth <= 768;
 });
 
+function getSelectionCount() {
+    return selectedFiles.size + selectedFolders.size;
+}
+
+function isFolderElementSelected(itemEl) {
+    const path = itemEl?.dataset?.folderPath || '';
+    return !!path && selectedFolders.has(path);
+}
+
+function isFileElementSelected(itemEl) {
+    const file = itemEl?.dataset?.file || '';
+    return !!file && selectedFiles.has(file);
+}
+
+function toggleSelectionClasses(itemEl, selected) {
+    if (!itemEl) return;
+    const visualTarget = itemEl.classList?.contains('grid-item') ? itemEl : itemEl.closest?.('.grid-item');
+    if (!visualTarget) return;
+    visualTarget.classList.toggle('selected', !!selected);
+}
+
+function selectSingleTarget(target) {
+    clearSelection();
+    if (!target?.element) return;
+    if (target.kind === 'folder' && target.path) {
+        selectedFolders.add(target.path);
+    } else if (target.kind === 'image' && target.file) {
+        selectedFiles.add(target.file);
+    }
+    toggleSelectionClasses(target.element, true);
+    updateBottomActionBar();
+}
+
+function getSelectionContext() {
+    const singleFile = selectedFiles.size === 1 && selectedFolders.size === 0 ? Array.from(selectedFiles)[0] : '';
+    const singleFolder = selectedFolders.size === 1 && selectedFiles.size === 0 ? Array.from(selectedFolders)[0] : '';
+    return {
+        count: getSelectionCount(),
+        hasFiles: selectedFiles.size > 0,
+        hasFolders: selectedFolders.size > 0,
+        onlyFiles: selectedFiles.size > 0 && selectedFolders.size === 0,
+        onlyFolders: selectedFolders.size > 0 && selectedFiles.size === 0,
+        singleFile,
+        singleFolder,
+    };
+}
+
 // 切换单项选中状态
 window.toggleSelect = function(itemEl) {
+    if (!itemEl) return;
+    const kind = itemEl.dataset.itemKind || (itemEl.dataset.file ? 'image' : 'folder');
+    if (kind === 'folder') {
+        const path = itemEl.dataset.folderPath || '';
+        if (!path) return;
+        if (selectedFolders.has(path)) {
+            selectedFolders.delete(path);
+            toggleSelectionClasses(itemEl, false);
+        } else {
+            selectedFolders.add(path);
+            toggleSelectionClasses(itemEl, true);
+        }
+        updateBottomActionBar();
+        return;
+    }
+
     const file = itemEl.dataset.file;
     if (!file) return;
-    
     if (selectedFiles.has(file)) {
         selectedFiles.delete(file);
-        itemEl.classList.remove('selected');
+        toggleSelectionClasses(itemEl, false);
     } else {
         selectedFiles.add(file);
-        itemEl.classList.add('selected');
+        toggleSelectionClasses(itemEl, true);
     }
-    
     updateBottomActionBar();
 };
 
 // 清空所有选中
 window.clearSelection = function() {
     selectedFiles.clear();
+    selectedFolders.clear();
     document.querySelectorAll('.grid-item.selected').forEach(el => {
         el.classList.remove('selected');
     });
@@ -1493,18 +1760,40 @@ function updateBottomActionBar() {
     const bar = document.getElementById('bottomActionBar');
     const countBadge = document.getElementById('selectedCount');
     const previewBtn = document.getElementById('batchPreviewBtn');
+    const downloadBtn = document.getElementById('batchDownloadBtn');
+    const renameBtn = document.getElementById('batchRenameBtn');
+    const copyToBtn = document.getElementById('batchCopyToBtn');
     if (!bar || !countBadge) return;
-    
-    if (selectedFiles.size > 0) {
-        countBadge.textContent = selectedFiles.size;
+
+    const selection = getSelectionContext();
+    if (selection.count > 0) {
+        countBadge.textContent = selection.count;
         bar.classList.add('active');
         if (previewBtn) {
-            previewBtn.style.display = (isMobile && selectedFiles.size === 1) ? 'flex' : 'none';
+            previewBtn.style.display = (selection.singleFile && isMobile) ? 'flex' : 'none';
+        }
+        if (downloadBtn) {
+            downloadBtn.style.display = selection.onlyFiles ? 'flex' : 'none';
+        }
+        if (renameBtn) {
+            renameBtn.style.display = (selection.singleFile || selection.singleFolder) ? 'flex' : 'none';
+        }
+        if (copyToBtn) {
+            copyToBtn.style.display = (selection.hasFiles || selection.hasFolders) ? 'flex' : 'none';
         }
     } else {
         bar.classList.remove('active');
         if (previewBtn) {
             previewBtn.style.display = 'none';
+        }
+        if (downloadBtn) {
+            downloadBtn.style.display = 'none';
+        }
+        if (renameBtn) {
+            renameBtn.style.display = 'none';
+        }
+        if (copyToBtn) {
+            copyToBtn.style.display = 'none';
         }
     }
     updateDownloadModeUI();
@@ -1513,7 +1802,7 @@ function updateBottomActionBar() {
 
 // 处理项目点击 (兼容移动端与桌面端)
 window.handleItemClick = function(e, itemEl) {
-    if (isMobile || selectedFiles.size > 0) {
+    if (isMobile || getSelectionCount() > 0) {
         e.preventDefault();
         toggleSelect(itemEl);
         return;
@@ -1582,6 +1871,11 @@ document.addEventListener('click', function(e) {
     if (folderCard) {
         const token = folderCard.getAttribute('data-folder-token') || '';
         const title = folderCard.getAttribute('data-folder-title') || '';
+        if (getSelectionCount() > 0) {
+            e.preventDefault();
+            toggleSelect(folderCard);
+            return;
+        }
         if (token) {
             loadAlbum(token, title || token);
         }
@@ -1628,9 +1922,11 @@ function showContextMenu(e, itemEl, centerForMobile) {
     renderContextMenuItems(buildContextMenuItems(itemEl));
     contextMenuTarget = itemEl;
 
-    if (itemEl.kind === 'image' && selectedFiles.size > 0 && !selectedFiles.has(itemEl.file)) {
-        clearSelection();
-        toggleSelect(itemEl.element);
+    if (!state.searchQuery.trim() && itemEl.kind === 'image' && (!isFileElementSelected(itemEl.element) || selectedFolders.size > 0)) {
+        selectSingleTarget(itemEl);
+    }
+    if (!state.searchQuery.trim() && itemEl.kind === 'folder' && (!isFolderElementSelected(itemEl.element) || selectedFiles.size > 0)) {
+        selectSingleTarget(itemEl);
     }
     
     menu.classList.add('active');
@@ -1692,13 +1988,19 @@ window.handleContextAction = function(action) {
             }
             break;
         case 'copy-folder-link':
-            copyUrl(getCurrentShareLink(contextMenuTarget.token));
+            copyUrl(getFolderShareLinkByPath(contextMenuTarget.path || '') || getCurrentShareLink(contextMenuTarget.token));
             break;
         case 'new-subfolder':
             openCreateFolderPanel(contextMenuTarget.path || '');
             break;
         case 'rename-folder':
             openRenameFolderPanel(contextMenuTarget.path || '', contextMenuTarget.title || '');
+            break;
+        case 'move-folder':
+            showFolderMoveSelector([contextMenuTarget.path || '']);
+            break;
+        case 'copy-folder':
+            showFolderCopySelector([contextMenuTarget.path || '']);
             break;
         case 'delete-folder':
             showActionDialog({
@@ -1721,6 +2023,9 @@ window.handleContextAction = function(action) {
         case 'download':
             window.open(contextMenuTarget.downloadUrl || getCurrentFileDownloadLink(file, contextMenuTarget.token), '_blank');
             break;
+        case 'rename-file':
+            renameFileByPath(contextMenuTarget.path || state.currentPath, file);
+            break;
         case 'reveal-folder':
             if (contextMenuTarget.token) {
                 state.focusedFile = file || '';
@@ -1728,7 +2033,10 @@ window.handleContextAction = function(action) {
             }
             break;
         case 'move-one':
-            showMoveSelector([file]);
+            showMoveSelector([file], contextMenuTarget.path || state.currentPath);
+            break;
+        case 'copy-one':
+            showCopySelector([file], contextMenuTarget.path || state.currentPath);
             break;
         case 'delete':
             showActionDialog({
@@ -1739,10 +2047,7 @@ window.handleContextAction = function(action) {
                 onConfirm: async () => {
                     hideActionDialog();
                     try {
-                        const data = await api.post(
-                            `/api/manage/${state.currentToken}/delete`,
-                            JSON.stringify({ name: file })
-                        );
+                        const data = await api.post('/api/folders/file-delete', JSON.stringify({ path: contextMenuTarget.path || state.currentPath, name: file }));
                         if (!data || !data.ok) {
                             showToast('删除失败，请重试');
                             return;
@@ -1763,25 +2068,29 @@ window.handleContextAction = function(action) {
 
 // 处理批量操作
 window.handleBatchAction = function(action) {
-    const count = selectedFiles.size;
-    if (count === 0) return;
-    
     const files = Array.from(selectedFiles);
+    const folders = Array.from(selectedFolders);
+    const count = files.length + folders.length;
+    if (count === 0) return;
+    const selection = getSelectionContext();
     
     switch (action) {
         case 'preview':
-            if (count === 1) {
-                const file = files[0];
+            if (selection.singleFile) {
+                const file = selection.singleFile;
                 const url = getPreviewFileUrl(file);
                 previewImage(url);
             }
             break;
         case 'download':
-            if (count === 1) {
+            if (!files.length) {
+                return;
+            }
+            if (files.length === 1) {
                 window.open(getCurrentFileDownloadLink(files[0]), '_blank');
             } else {
                 exportSelectedFiles(files)
-                    .then(() => showToast(`已导出 ${count} 个文件`))
+                    .then(() => showToast(`已导出 ${files.length} 个文件`))
                     .catch((err) => {
                         console.error('batch export failed:', err);
                         showToast(`导出失败：${getErrorMessage(err)}`);
@@ -1790,35 +2099,55 @@ window.handleBatchAction = function(action) {
             clearSelection();
             break;
         case 'copy': {
-            const urls = files.map(f => getCurrentFileDownloadLink(f)).filter(Boolean);
+            const urls = [
+                ...files.map(f => getCurrentFileDownloadLink(f)).filter(Boolean),
+                ...folders.map(path => getFolderShareLinkByPath(path)).filter(Boolean),
+            ];
             navigator.clipboard.writeText(urls.join(String.fromCharCode(10)))
                 .then(() => showToast(`已复制 ${count} 个链接喵！`))
                 .catch(() => showToast('复制失败，请重试'));
             clearSelection();
             break;
         }
+        case 'rename':
+            if (selection.singleFile) {
+                renameFileByPath(state.currentPath, selection.singleFile);
+            } else if (selection.singleFolder) {
+                const name = String(selection.singleFolder).split('/').filter(Boolean).pop() || '';
+                openRenameFolderPanel(selection.singleFolder, name);
+            }
+            break;
         case 'move':
-            showMoveSelector(files);
+            showSelectionMoveSelector(files, folders);
+            break;
+        case 'copy-to':
+            showSelectionCopySelector(files, folders);
             break;
         case 'delete':
             showActionDialog({
                 title: '批量移入回收站',
-                message: `确定将选中的 ${count} 个文件移入回收站吗？后续可在回收站恢复。`,
+                message: `确定将选中的 ${count} 个项目移入回收站吗？后续可在回收站恢复。`,
                 confirmText: '移入回收站',
                 danger: true,
                 onConfirm: async () => {
                     hideActionDialog();
                     try {
-                        const data = await api.post(
-                            `/api/manage/${state.currentToken}/batch-delete`,
-                            JSON.stringify({ names: files })
-                        );
-                        if (!data || !data.ok) {
-                            showToast('删除失败，请重试');
-                            return;
+                        let deletedCount = 0;
+                        if (files.length) {
+                            const fileData = await api.post('/api/folders/files-delete', JSON.stringify({ path: state.currentPath, names: files }));
+                            if (!fileData || !fileData.ok) {
+                                throw new Error((fileData && (fileData.detail || fileData.message)) || '文件删除失败');
+                            }
+                            deletedCount += Number(fileData.count || 0);
                         }
-                        const deletedCount = data.count ?? (data.deleted || []).length;
-                        showToast(`已移入回收站：${deletedCount} 个文件`);
+                        if (folders.length) {
+                            const folderData = await api.post('/api/folders/batch-delete', JSON.stringify({ paths: folders }));
+                            if (!folderData || !folderData.ok) {
+                                throw new Error((folderData && (folderData.detail || folderData.message)) || '文件夹删除失败');
+                            }
+                            deletedCount += Number(folderData.count || 0);
+                        }
+                        showToast(`已移入回收站：${deletedCount} 个项目`);
                         await loadTokens();
                         await refreshTrashItems();
                         clearSelection();
@@ -2244,7 +2573,7 @@ function setupEventListeners() {
             renderGridView();
             return;
         }
-        if (selectedFiles.size > 0) {
+        if (getSelectionCount() > 0) {
             clearSelection();
         }
     });
