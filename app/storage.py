@@ -254,6 +254,106 @@ def append_in_order(token: str, name: str):
     update_order(token, arr)
 
 
+def _resolve_managed_file(path: str, name: str) -> tuple[Path, Path]:
+    folder_dir = resolve_dir(path).resolve()
+    source = (folder_dir / name).resolve()
+    if not source.is_relative_to(folder_dir) or not source.exists() or not source.is_file():
+        raise FileNotFoundError("file not found")
+    if source.suffix.lower() not in ALLOWED_SUFFIX:
+        raise ValueError("file type not allowed")
+    return folder_dir, source
+
+
+def _dedupe_entry_name(dest_dir: Path, desired_name: str) -> str:
+    candidate = desired_name
+    stem = Path(desired_name).stem
+    suffix = Path(desired_name).suffix
+    i = 1
+    while (dest_dir / candidate).exists():
+        candidate = f"{stem}_{i}{suffix}"
+        i += 1
+    return candidate
+
+
+def rename_file_in_folder(path: str, old_name: str, new_name: str) -> dict[str, Any]:
+    folder_dir, source = _resolve_managed_file(path, old_name)
+    old_ext = source.suffix.lower()
+    target_name = new_name if Path(new_name).suffix else f"{new_name}{old_ext}"
+    if Path(target_name).suffix.lower() not in ALLOWED_SUFFIX:
+        raise ValueError("invalid extension")
+
+    target = (folder_dir / target_name).resolve()
+    if not target.is_relative_to(folder_dir):
+        raise ValueError("invalid destination")
+    if target.exists() and target != source:
+        raise FileExistsError("target filename exists")
+    if target == source:
+        return {"old": old_name, "new": source.name, "path": path}
+
+    remove_variants_for_source(source)
+    source.rename(target)
+    rename_in_order(path, old_name, target.name)
+    return {"old": old_name, "new": target.name, "path": path}
+
+
+def move_file_between_folders(src_path: str, name: str, dest_path: str) -> dict[str, Any]:
+    src_dir, source = _resolve_managed_file(src_path, name)
+    dest_dir = resolve_dir(dest_path).resolve()
+    if dest_dir == src_dir:
+        raise ValueError("cannot move to same folder")
+    if dest_dir.exists() and not dest_dir.is_dir():
+        raise ValueError("destination is not a folder")
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    target_name = _dedupe_entry_name(dest_dir, source.name)
+    target = (dest_dir / target_name).resolve()
+    remove_variants_for_source(source)
+    shutil.move(str(source), str(target))
+    remove_in_order(src_path, source.name)
+    append_in_order(dest_path, target.name)
+    return {"src": source.name, "dst": target.name, "src_path": src_path, "dest": dest_path}
+
+
+def copy_file_between_folders(src_path: str, name: str, dest_path: str) -> dict[str, Any]:
+    _src_dir, source = _resolve_managed_file(src_path, name)
+    dest_dir = resolve_dir(dest_path).resolve()
+    if dest_dir.exists() and not dest_dir.is_dir():
+        raise ValueError("destination is not a folder")
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    target_name = _dedupe_entry_name(dest_dir, source.name)
+    target = (dest_dir / target_name).resolve()
+    shutil.copy2(str(source), str(target))
+    append_in_order(dest_path, target.name)
+    return {"src": source.name, "dst": target.name, "src_path": src_path, "dest": dest_path}
+
+
+def copy_folder(path: str, dest_path: str = "", before_name: str | None = None) -> dict[str, Any]:
+    src_dir = resolve_dir(path).resolve()
+    if not src_dir.exists():
+        raise FileNotFoundError("folder not found")
+    if not src_dir.is_dir():
+        raise ValueError("not a folder")
+
+    if dest_path:
+        dest_dir = resolve_dir(dest_path).resolve()
+    else:
+        dest_dir = _current_root()
+    if not dest_dir.exists():
+        raise FileNotFoundError("dest folder not found")
+    if not dest_dir.is_dir():
+        raise ValueError("dest is not a folder")
+    if dest_dir == src_dir or dest_dir.is_relative_to(src_dir):
+        raise ValueError("cannot copy folder into itself")
+
+    target_name = _dedupe_entry_name(dest_dir, src_dir.name)
+    new_path = f"{dest_path}/{target_name}" if dest_path else target_name
+    target_dir = resolve_dir(new_path).resolve()
+    shutil.copytree(str(src_dir), str(target_dir))
+    reorder_subfolder(dest_dir, target_dir.name, before_name=before_name)
+    return {"path": path, "dest": dest_path, "new_path": new_path}
+
+
 def list_tokens_with_counts() -> List[dict[str, Any]]:
     root = _current_root()
     if not root.exists():
