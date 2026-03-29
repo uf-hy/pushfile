@@ -79,6 +79,9 @@ def _client_ip(request: Request) -> str:
         return peer or "unknown"
     peer_ip = _parse_ip(peer)
     if peer_ip and _is_trusted_proxy(peer_ip):
+        cf_ip = _parse_ip(request.headers.get("cf-connecting-ip") or "")
+        if cf_ip:
+            return cf_ip
         xff = request.headers.get("x-forwarded-for") or ""
         if xff:
             chain: list[str] = []

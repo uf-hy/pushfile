@@ -42,7 +42,7 @@ MANIFEST = ".manifest.json"
 FOLDER_ORDER_FILE = ".folder_order.json"
 ARCHIVE_DIRNAME = "_archived"
 _VISITS_MAX_BYTES = 10 * 1024 * 1024
-_IP2REGION_DB_PATH = Path("/app/data/ip2region.xdb")
+_IP2REGION_DB_PATH = Path(os.environ.get("IP2REGION_DB", "")) if os.environ.get("IP2REGION_DB") else None
 _stats_lock = threading.Lock()
 _visits_lock = threading.Lock()
 _slugs_lock = threading.Lock()
@@ -716,42 +716,70 @@ def _visit_filter_reason(ip: str, *, referer: str = "", origin: str = "", has_ad
 
 
 def _get_ip2region_searcher():
-    """Lazy-init ip2region searcher (content-cached, thread-safe)."""
     global _ip2region_searcher, _ip2region_unavailable
-    if _ip2region_unavailable:
-        return None
+
+    # Fast path: already initialised or permanently unavailable
     if _ip2region_searcher is not None:
         return _ip2region_searcher
+    if _ip2region_unavailable:
+        return None
+
+    # Guard: must have a valid DB path
+    if not _IP2REGION_DB_PATH or not _IP2REGION_DB_PATH.exists():
+        _ip2region_unavailable = True
+        return None
+
+    # Thread-safe lazy init
     with _ip2region_lock:
-        if _ip2region_unavailable:
-            return None
         if _ip2region_searcher is not None:
             return _ip2region_searcher
-        if not _IP2REGION_DB_PATH.exists():
-            _ip2region_unavailable = True
+        if _ip2region_unavailable:
             return None
         try:
-            import importlib
-            import sys
-            # ip2region binding is bundled in /app/ip2region/
-            ip2r_path = Path("/app/ip2region")
-            if ip2r_path.exists() and str(ip2r_path) not in sys.path:
-                sys.path.insert(0, str(ip2r_path))
-            ip2region = importlib.import_module("ip2region")
-            ip2r_searcher = getattr(ip2region, "searcher")
-            ip2r_util = getattr(ip2region, "util")
+            from ip2region import searcher as ip2r_searcher
+            from ip2region import util as ip2r_util
+
             buf = ip2r_util.load_content_from_file(str(_IP2REGION_DB_PATH))
             header = ip2r_util.load_header_from_file(str(_IP2REGION_DB_PATH))
             ver = ip2r_util.version_from_header(header)
             _ip2region_searcher = ip2r_searcher.Searcher(ver, str(_IP2REGION_DB_PATH), None, buf)
             return _ip2region_searcher
         except Exception:
+            import logging
+            logging.getLogger(__name__).warning("ip2region init failed", exc_info=True)
+            _ip2region_unavailable = True
+            return None
+    if _ip2region_searcher is not None:
+        return _ip2region_searcher
+    # Guard: must have a valid DB path
+    if not _IP2REGION_DB_PATH or not _IP2REGION_DB_PATH.exists():
+        _ip2region_unavailable = True
+        return None
+    # Thread-safe lazy init
+    with _ip2region_lock:
+        if _ip2region_unavailable:
+            return None
+        if _ip2region_searcher is not None:
+            return _ip2region_searcher
+        try:
+            from ip2region import searcher as ip2r_searcher
+            from ip2region import util as ip2r_util
+
+            buf = ip2r_util.load_content_from_file(str(_IP2REGION_DB_PATH))
+            header = ip2r_util.load_header_from_file(str(_IP2REGION_DB_PATH))
+            ver = ip2r_util.version_from_header(header)
+            _ip2region_searcher = ip2r_searcher.Searcher(ver, str(_IP2REGION_DB_PATH), None, buf)
+            return _ip2region_searcher
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning(
+                "ip2region init failed for path=%s", _IP2REGION_DB_PATH, exc_info=True
+            )
             _ip2region_unavailable = True
             return None
 
 
 def _geoip_lookup(ip: str) -> tuple[str, str, str]:
-    """Lookup IP geolocation. Returns (city, region, country)."""
     if not REGION_TRACE_ENABLED:
         return "", "", ""
     if not ip:
