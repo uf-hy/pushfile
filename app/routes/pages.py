@@ -7,8 +7,22 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 from app.auth import safe_token
 from app.routes.auth import require_auth
-from app.storage import list_images, get_token_title, record_visit, resolve_slug, list_images_by_path
-from app.config import FRONTEND_DIR, SITE_DOMAIN, MAX_MB, BASE_PATH, APP_VERSION, APP_BUILD_TIME, ASSET_VERSION
+from app.storage import (
+    list_images,
+    get_token_title,
+    record_visit,
+    resolve_slug,
+    list_images_by_path,
+)
+from app.config import (
+    FRONTEND_DIR,
+    SITE_DOMAIN,
+    MAX_MB,
+    BASE_PATH,
+    APP_VERSION,
+    APP_BUILD_TIME,
+    ASSET_VERSION,
+)
 from app.security import SlidingWindowRateLimiter
 
 router = APIRouter(tags=["pages"])
@@ -37,6 +51,7 @@ def _record_visit_compat(request: Request, token: str, *, album_key: str = "") -
         )
     except Exception:
         pass
+
 
 # Rate limiter for 404 on /d/{token} — reuses SlidingWindowRateLimiter (has max_keys + cleanup)
 _d_404_limiter = SlidingWindowRateLimiter(limit=30, window_s=60.0)
@@ -82,6 +97,9 @@ def _client_ip(request: Request) -> str:
         cf_ip = _parse_ip(request.headers.get("cf-connecting-ip") or "")
         if cf_ip:
             return cf_ip
+        eo_ip = _parse_ip(request.headers.get("eo-connecting-ip") or "")
+        if eo_ip:
+            return eo_ip
         xff = request.headers.get("x-forwarded-for") or ""
         if xff:
             chain: list[str] = []
@@ -105,14 +123,18 @@ def _client_ip(request: Request) -> str:
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):
     return templates.TemplateResponse(
-        request, "landing/index.html", {**_common},
+        request,
+        "landing/index.html",
+        {**_common},
     )
 
 
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
     return templates.TemplateResponse(
-        request, "admin/login.html", {**_common},
+        request,
+        "admin/login.html",
+        {**_common},
     )
 
 
@@ -122,7 +144,9 @@ def manage_page(request: Request):
     if guard:
         return guard
     return templates.TemplateResponse(
-        request, "admin/index.html", {**_common},
+        request,
+        "admin/index.html",
+        {**_common},
     )
 
 
@@ -132,7 +156,9 @@ def manage_album_page(request: Request):
     if guard:
         return guard
     return templates.TemplateResponse(
-        request, "admin/manager/index.html", {**_common},
+        request,
+        "admin/manager/index.html",
+        {**_common},
     )
 
 
@@ -142,7 +168,9 @@ def grid_page(request: Request):
     if guard:
         return guard
     return templates.TemplateResponse(
-        request, "admin/grid.html", {**_common},
+        request,
+        "admin/grid.html",
+        {**_common},
     )
 
 
@@ -152,7 +180,9 @@ def manage_dashboard_page(request: Request):
     if guard:
         return guard
     return templates.TemplateResponse(
-        request, "admin/dashboard.html", {**_common},
+        request,
+        "admin/dashboard.html",
+        {**_common},
     )
 
 
@@ -160,6 +190,7 @@ def manage_dashboard_page(request: Request):
 @router.get("/dashboard")
 def legacy_redirect(request: Request):
     from starlette.responses import RedirectResponse
+
     path = request.url.path
     return RedirectResponse(url=f"/manage{path}", status_code=301)
 
