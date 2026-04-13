@@ -348,13 +348,21 @@
                 <i class="ph ph-eye"></i>
                 <span>预览</span>
             </button>
-            <button type="button" class="action-bar-btn" id="batchDownloadBtn" onclick="handleBatchAction('download')">
+            <button type="button" class="action-bar-btn" id="batchDownloadBtn" onclick="handleBatchAction('download')" style="display: none;">
                 <i class="ph ph-download-simple"></i>
                 <span id="batchDownloadLabel">下载图片</span>
+            </button>
+            <button type="button" class="action-bar-btn" id="batchRenameBtn" onclick="handleBatchAction('rename')" style="display: none;">
+                <i class="ph ph-pencil-simple"></i>
+                <span>重命名</span>
             </button>
             <button type="button" class="action-bar-btn" onclick="handleBatchAction('copy')">
                 <i class="ph ph-link"></i>
                 <span>复制链接</span>
+            </button>
+            <button type="button" class="action-bar-btn" id="batchCopyToBtn" onclick="handleBatchAction('copy-to')" style="display: none;">
+                <i class="ph ph-copy"></i>
+                <span>复制到</span>
             </button>
          <button type="button" class="action-bar-btn" onclick="handleBatchAction('move')">
                 <i class="ph ph-folder-simple-dashed"></i>
