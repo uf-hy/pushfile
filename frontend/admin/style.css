@@ -185,6 +185,24 @@ body::-webkit-scrollbar {
     display: inline-block;
 }
 
+.logo-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+    flex-wrap: wrap;
+}
+
+.build-time-badge {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    background: var(--color-surface-secondary);
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    display: inline-block;
+}
+
 .header-actions {
     display: flex;
     align-items: center;
