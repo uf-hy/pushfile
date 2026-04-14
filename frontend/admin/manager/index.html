@@ -161,11 +161,6 @@
                         <button type="button" class="mode-btn" data-mode="original">下载原图</button>
                     </div>
                     <div class="action-divider"></div>
-                    <button class="copy-link-btn" type="button" onclick="copyCurrentLink()">
-                        <i class="ph ph-link"></i>
-                        复制画廊链接
-                    </button>
-                    <div class="action-divider"></div>
                     <button type="button" class="btn-primary upload-btn" onclick="toggleUploadModal()">
                         <i class="ph ph-upload-simple"></i> <span class="btn-text">上传</span>
                     </button>
@@ -336,46 +331,60 @@
         </div>
     </div>
 
-    <!-- 底部多选操作栏 (Bottom Action Bar) -->
+    <!-- 底部操作栏 -->
     <div class="bottom-action-bar" id="bottomActionBar">
-        <div class="action-bar-info">
-            <span>已选择</span>
-            <span class="count-badge" id="selectedCount">0</span>
-            <span>项</span>
-        </div>
-        <div class="action-bar-buttons">
-            <button type="button" class="action-bar-btn" id="batchPreviewBtn" onclick="handleBatchAction('preview')" style="display: none;">
-                <i class="ph ph-eye"></i>
-                <span>预览</span>
+        <!-- 休息态：无选择时显示 -->
+        <div class="action-bar-rest" id="actionBarRest">
+            <button type="button" class="action-bar-btn" id="selectAllBtn" onclick="toggleSelectAll()">
+                <i class="ph ph-checks"></i>
+                <span id="selectAllLabel">全选</span>
             </button>
-            <button type="button" class="action-bar-btn" id="batchDownloadBtn" onclick="handleBatchAction('download')" style="display: none;">
-                <i class="ph ph-download-simple"></i>
-                <span id="batchDownloadLabel">下载图片</span>
-            </button>
-            <button type="button" class="action-bar-btn" id="batchRenameBtn" onclick="handleBatchAction('rename')" style="display: none;">
-                <i class="ph ph-pencil-simple"></i>
-                <span>重命名</span>
-            </button>
-            <button type="button" class="action-bar-btn" onclick="handleBatchAction('copy')">
+            <button type="button" class="action-bar-btn" id="copyFolderLinkBtn" onclick="copyCurrentLink()">
                 <i class="ph ph-link"></i>
                 <span>复制链接</span>
             </button>
-            <button type="button" class="action-bar-btn" id="batchCopyToBtn" onclick="handleBatchAction('copy-to')" style="display: none;">
-                <i class="ph ph-copy"></i>
-                <span>复制到</span>
-            </button>
-         <button type="button" class="action-bar-btn" onclick="handleBatchAction('move')">
-                <i class="ph ph-folder-simple-dashed"></i>
-                <span>移动至</span>
-            </button>
-         <button type="button" class="action-bar-btn danger" onclick="handleBatchAction('delete')">
-                <i class="ph ph-trash"></i>
-                <span>删除</span>
+        </div>
+        <!-- 激活态：有选择时显示 -->
+        <div class="action-bar-active" id="actionBarActive" style="display:none;">
+            <div class="action-bar-info">
+                <span>已选</span>
+                <span class="count-badge" id="selectedCount">0</span>
+                <span>项</span>
+            </div>
+            <div class="action-bar-buttons">
+                <button type="button" class="action-bar-btn" id="batchPreviewBtn" onclick="handleBatchAction('preview')" style="display: none;">
+                    <i class="ph ph-eye"></i>
+                    <span>预览</span>
+                </button>
+                <button type="button" class="action-bar-btn" id="batchDownloadBtn" onclick="handleBatchAction('download')" style="display: none;">
+                    <i class="ph ph-download-simple"></i>
+                    <span id="batchDownloadLabel">下载图片</span>
+                </button>
+                <button type="button" class="action-bar-btn" id="batchRenameBtn" onclick="handleBatchAction('rename')" style="display: none;">
+                    <i class="ph ph-pencil-simple"></i>
+                    <span>重命名</span>
+                </button>
+                <button type="button" class="action-bar-btn" onclick="handleBatchAction('copy')">
+                    <i class="ph ph-link"></i>
+                    <span>复制链接</span>
+                </button>
+                <button type="button" class="action-bar-btn" id="batchCopyToBtn" onclick="handleBatchAction('copy-to')" style="display: none;">
+                    <i class="ph ph-copy"></i>
+                    <span>复制到</span>
+                </button>
+             <button type="button" class="action-bar-btn" onclick="handleBatchAction('move')">
+                    <i class="ph ph-folder-simple-dashed"></i>
+                    <span>移动至</span>
+                </button>
+             <button type="button" class="action-bar-btn danger" onclick="handleBatchAction('delete')">
+                    <i class="ph ph-trash"></i>
+                    <span>删除</span>
+                </button>
+            </div>
+             <button type="button" class="icon-btn" onclick="clearSelection()" style="margin-left: 8px;">
+                <i class="ph ph-x"></i>
             </button>
         </div>
-         <button type="button" class="icon-btn" onclick="clearSelection()" style="margin-left: 8px;">
-            <i class="ph ph-x"></i>
-        </button>
     </div>
 
      <script src="{{ base }}/static/admin/auth.js?v={{ asset_version }}"></script>

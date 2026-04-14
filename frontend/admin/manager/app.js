@@ -1633,6 +1633,10 @@ function copyCurrentLink() {
         showToast('请先选择一个相册');
         return;
     }
+    if (state.currentFolders && state.currentFolders.length > 0) {
+        showToast('当前文件夹包含子文件夹，无法分享');
+        return;
+    }
     const base = (state.base || '').replace(/\/$/, '');
     const url = `${window.location.origin}${base}/d/${token}`;
 
@@ -1663,6 +1667,7 @@ let selectedFiles = new Set();
 let selectedFolders = new Set();
 let contextMenuTarget = null;
 let isMobile = window.innerWidth <= 768;
+let clipboard = { action: null, files: [], folders: [], sourcePath: null, sourceToken: null };
 
 window.addEventListener('resize', () => {
     isMobile = window.innerWidth <= 768;
@@ -1755,20 +1760,135 @@ window.clearSelection = function() {
     updateBottomActionBar();
 };
 
+function selectAllItems() {
+    selectedFiles.clear();
+    selectedFolders.clear();
+    const hasSearch = state.searchQuery.trim();
+    if (hasSearch) {
+        state.searchResults.forEach(r => {
+            if (r.kind === 'file') selectedFiles.add(r.name);
+            else if (r.path) selectedFolders.add(r.path);
+        });
+    } else {
+        (state.currentFiles || []).forEach(f => selectedFiles.add(f));
+        (state.currentFolders || []).forEach(f => {
+            const path = f.path || (state.currentPath ? state.currentPath + '/' + f.name : f.name);
+            selectedFolders.add(path);
+        });
+    }
+    document.querySelectorAll('.grid-item').forEach(el => {
+        const name = el.dataset.file;
+        const folderPath = el.dataset.folderPath;
+        if (name && selectedFiles.has(name)) toggleSelectionClasses(el, true);
+        if (folderPath && selectedFolders.has(folderPath)) toggleSelectionClasses(el, true);
+    });
+    updateBottomActionBar();
+}
+
+function isAllSelected() {
+    const hasSearch = state.searchQuery.trim();
+    let totalFiles = 0, totalFolders = 0;
+    if (hasSearch) {
+        state.searchResults.forEach(r => {
+            if (r.kind === 'file') totalFiles++;
+            else totalFolders++;
+        });
+    } else {
+        totalFiles = (state.currentFiles || []).length;
+        totalFolders = (state.currentFolders || []).length;
+    }
+    if (totalFiles === 0 && totalFolders === 0) return false;
+    return totalFiles === selectedFiles.size && totalFolders === selectedFolders.size
+        && (totalFiles === 0 || [...selectedFiles].every(f => {
+            if (hasSearch) return state.searchResults.some(r => r.kind === 'file' && r.name === f);
+            return state.currentFiles.includes(f);
+        }))
+        && (totalFolders === 0 || [...selectedFolders].every(p => {
+            if (hasSearch) return state.searchResults.some(r => r.path === p);
+            return state.currentFolders.some(f => f.path === p || (state.currentPath ? state.currentPath + '/' + f.name : f.name) === p);
+        }));
+}
+
+window.toggleSelectAll = function() {
+    if (isAllSelected()) {
+        clearSelection();
+    } else {
+        selectAllItems();
+    }
+};
+
+async function handleClipboardPaste() {
+    if (!clipboard.files.length && !clipboard.folders.length) return;
+    const destPath = state.currentPath || '';
+    if (clipboard.action === 'cut' && clipboard.sourcePath === destPath && clipboard.sourceToken === state.currentToken) {
+        showToast('源位置与目标位置相同');
+        return;
+    }
+    const count = clipboard.files.length + clipboard.folders.length;
+    const verb = clipboard.action === 'cut' ? '移动' : '复制';
+    try {
+        if (clipboard.files.length) {
+            if (!destPath) {
+                showToast('文件不能粘贴到根目录');
+                return;
+            }
+            const apiCall = clipboard.action === 'cut' ? moveFilesByPath : copyFilesByPath;
+            const data = await apiCall(clipboard.sourcePath, clipboard.files, destPath);
+            if (!data || !data.ok) throw new Error((data && (data.detail || data.message)) || `${verb}失败`);
+        }
+        if (clipboard.folders.length) {
+            const endpoint = clipboard.action === 'cut' ? '/api/folders/batch-move' : '/api/folders/batch-copy';
+            const data = await api.post(endpoint, JSON.stringify({ paths: clipboard.folders, dest: destPath }));
+            if (!data || !data.ok) throw new Error((data && (data.detail || data.message)) || `${verb}失败`);
+        }
+        showToast(`已${verb === '移动' ? '移动' : '粘贴'} ${count} 个项目`);
+        if (clipboard.action === 'cut') {
+            clipboard = { action: null, files: [], folders: [], sourcePath: null, sourceToken: null };
+        }
+        await loadTokens();
+        clearSelection();
+    } catch (err) {
+        console.error('clipboard paste failed:', err);
+        showToast(`${verb}失败：${getErrorMessage(err)}`);
+    }
+}
+
 // 更新底部操作栏状态
 function updateBottomActionBar() {
     const bar = document.getElementById('bottomActionBar');
+    const rest = document.getElementById('actionBarRest');
+    const active = document.getElementById('actionBarActive');
     const countBadge = document.getElementById('selectedCount');
     const previewBtn = document.getElementById('batchPreviewBtn');
     const downloadBtn = document.getElementById('batchDownloadBtn');
     const renameBtn = document.getElementById('batchRenameBtn');
     const copyToBtn = document.getElementById('batchCopyToBtn');
+    const selectAllBtn = document.getElementById('selectAllBtn');
+    const selectAllLabel = document.getElementById('selectAllLabel');
+    const copyFolderLinkBtn = document.getElementById('copyFolderLinkBtn');
     if (!bar || !countBadge) return;
+
+    const isLeafFolder = state.currentToken && (!state.currentFolders || state.currentFolders.length === 0);
+    const hasImages = (state.currentFiles && state.currentFiles.length > 0) || (state.searchQuery.trim() && state.searchResults.some(r => r.kind === 'file'));
+
+    if (selectAllBtn) {
+        const hasItems = hasImages || (state.currentFolders && state.currentFolders.length > 0)
+            || (state.searchQuery.trim() && state.searchResults.length > 0);
+        selectAllBtn.hidden = !hasItems;
+    }
+    if (selectAllLabel) {
+        selectAllLabel.textContent = isAllSelected() ? '取消全选' : '全选';
+    }
+    if (copyFolderLinkBtn) {
+        copyFolderLinkBtn.disabled = !isLeafFolder;
+    }
 
     const selection = getSelectionContext();
     if (selection.count > 0) {
         countBadge.textContent = selection.count;
         bar.classList.add('active');
+        if (rest) rest.style.display = 'none';
+        if (active) active.style.display = 'flex';
         if (previewBtn) {
             previewBtn.style.display = (selection.singleFile && isMobile) ? 'flex' : 'none';
         }
@@ -1783,6 +1903,8 @@ function updateBottomActionBar() {
         }
     } else {
         bar.classList.remove('active');
+        if (rest) rest.style.display = 'flex';
+        if (active) active.style.display = 'none';
         if (previewBtn) {
             previewBtn.style.display = 'none';
         }
@@ -2558,6 +2680,56 @@ function setupEventListeners() {
                 searchInput.select();
                 return;
             }
+        }
+        if (e.key.toLowerCase() === 'a' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            toggleSelectAll();
+            return;
+        }
+        if (e.key.toLowerCase() === 'c' && (e.metaKey || e.ctrlKey)) {
+            const count = selectedFiles.size + selectedFolders.size;
+            if (count > 0) {
+                e.preventDefault();
+                clipboard = {
+                    action: 'copy',
+                    files: Array.from(selectedFiles),
+                    folders: Array.from(selectedFolders),
+                    sourcePath: state.currentPath,
+                    sourceToken: state.currentToken,
+                };
+                showToast(`已复制 ${count} 个项目`);
+            }
+            return;
+        }
+        if (e.key.toLowerCase() === 'x' && (e.metaKey || e.ctrlKey)) {
+            const count = selectedFiles.size + selectedFolders.size;
+            if (count > 0) {
+                e.preventDefault();
+                clipboard = {
+                    action: 'cut',
+                    files: Array.from(selectedFiles),
+                    folders: Array.from(selectedFolders),
+                    sourcePath: state.currentPath,
+                    sourceToken: state.currentToken,
+                };
+                showToast(`已剪切 ${count} 个项目`);
+            }
+            return;
+        }
+        if (e.key.toLowerCase() === 'v' && (e.metaKey || e.ctrlKey)) {
+            if (clipboard.files.length || clipboard.folders.length) {
+                e.preventDefault();
+                handleClipboardPaste();
+            }
+            return;
+        }
+        if (e.key === 'Delete') {
+            const count = selectedFiles.size + selectedFolders.size;
+            if (count > 0) {
+                e.preventDefault();
+                handleBatchAction('delete');
+            }
+            return;
         }
         if (e.key !== 'Escape') return;
         if (trashModal && trashModal.style.display === 'flex') {

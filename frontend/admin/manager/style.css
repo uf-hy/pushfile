@@ -1487,12 +1487,11 @@ body.is-resizing-sidebar .sidebar-resizer::before {
     background: var(--color-hover);
     color: var(--color-text-main);
     border: none;
-    padding: 6px 16px;
+    padding: 8px 16px;
     border-radius: 14px;
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    margin-top: 16px;
     transition: background 0.2s;
 }
 
@@ -1622,7 +1621,13 @@ body.is-resizing-sidebar .sidebar-resizer::before {
     .window-title-side,
     .scope-toggle,
     .mode-toggle,
-    .status-bar {
+.action-bar-rest .action-bar-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+    pointer-events: none;
+}
+
+.status-bar {
         display: none;
     }
 
@@ -1820,50 +1825,6 @@ body.is-resizing-sidebar .sidebar-resizer::before {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     
-    .action-bar-btn {
-        flex-direction: row;
-        justify-content: center;
-        min-height: 44px;
-        padding: 10px 12px;
-        background: rgba(255,255,255,0.82);
-        border: 1px solid var(--color-border);
-        border-radius: 12px;
-        box-shadow: var(--shadow-sm);
-    }
-    
-    .action-bar-btn i {
-        font-size: 16px;
-    }
-    
-    .action-bar-btn span {
-        font-size: 13px;
-        white-space: nowrap;
-    }
-
-    .context-menu {
-        left: 50% !important;
-        right: auto !important;
-        top: 50% !important;
-        bottom: auto !important;
-        min-width: 0;
-        width: min(92vw, 360px);
-        max-height: min(72vh, 480px);
-        overflow-y: auto;
-        transform: translate(-50%, -50%) scale(1) !important;
-        transform-origin: center center;
-    }
-
-    .modal {
-        padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
-    }
-
-    .modal-content {
-        max-width: min(100%, 420px);
-        max-height: min(82vh, 640px);
-        border-radius: 24px;
-        padding: 20px 18px;
-    }
-
     .modal-actions {
         flex-direction: column-reverse;
     }
@@ -2146,32 +2107,73 @@ body.mobile-multi-select .item-checkbox {
     color: var(--color-text-secondary);
 }
 
-/* === 底部多选操作栏 === */
+/* === 底部操作栏 === */
 .bottom-action-bar {
     position: fixed;
     bottom: 32px;
     left: 50%;
-    transform: translateX(-50%) translateY(100px);
+    transform: translateX(-50%);
     background: rgba(255, 255, 255, 0.85);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
-    padding: 12px 24px;
+    padding: 10px 20px;
     display: flex;
     align-items: center;
-    gap: 24px;
+    gap: 16px;
     box-shadow: var(--shadow-lg);
     z-index: 100;
-    opacity: 0;
-    pointer-events: none;
     transition: all 0.4s var(--spring-soft);
 }
 
-.bottom-action-bar.active {
-    transform: translateX(-50%) translateY(0);
+.action-bar-rest {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    justify-content: center;
+    transition: opacity 0.22s ease, transform 0.22s var(--spring-soft);
+}
+
+.action-bar-rest .action-bar-btn {
+    flex-direction: row;
+    gap: 8px;
+    padding: 10px 18px;
+    min-height: 40px;
+    min-width: 120px;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid transparent;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: all 0.2s var(--spring-soft);
+}
+
+.bottom-action-bar.active .action-bar-rest {
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    transform: translateY(8px);
+}
+
+.action-bar-active {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(10px) scale(0.98);
+    transition: opacity 0.22s ease, transform 0.28s var(--spring-soft);
+}
+
+.bottom-action-bar.active .action-bar-active {
+    display: flex;
     opacity: 1;
     pointer-events: auto;
+    transform: translateY(0) scale(1);
 }
 
 .status-bar {
