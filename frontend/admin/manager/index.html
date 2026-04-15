@@ -63,6 +63,20 @@
                             </button>
                         </div>
                     </div>
+                    <div class="sidebar-sort-row">
+                        <span class="sidebar-sort-label">排序</span>
+                        <div class="sidebar-sort-control">
+                            <button type="button" id="albumSortButton" class="sidebar-sort-button" aria-haspopup="menu" aria-expanded="false" aria-controls="albumSortMenu">
+                                <span id="albumSortLabel">名字</span>
+                                <i class="ph ph-caret-down"></i>
+                            </button>
+                            <div class="sidebar-sort-menu" id="albumSortMenu" role="menu" hidden>
+                                <button type="button" class="sidebar-sort-option" data-sort="name" role="menuitemradio" aria-checked="true">名字</button>
+                                <button type="button" class="sidebar-sort-option" data-sort="modified" role="menuitemradio" aria-checked="false">最近修改</button>
+                                <button type="button" class="sidebar-sort-option" data-sort="added" role="menuitemradio" aria-checked="false">添加时间</button>
+                            </div>
+                        </div>
+                    </div>
                     <div class="folder-create-panel" id="folderCreatePanel" hidden>
                         <div class="folder-create-meta" id="folderCreateMeta">新建到根目录</div>
                         <div class="folder-create-row">
@@ -129,6 +143,9 @@
                         <div class="search-box">
                             <i class="ph ph-magnifying-glass search-icon"></i>
                             <input type="text" id="managerSearchInput" placeholder="搜索文件名或路径">
+                            <button type="button" class="search-submit-btn" id="managerSearchSubmit" aria-label="执行搜索" title="执行搜索">
+                                <i class="ph ph-arrow-right"></i>
+                            </button>
                             <button type="button" class="search-scope-chip" id="searchScopeButton" aria-haspopup="menu" aria-expanded="false" aria-controls="searchScopeMenu">
                                 <span id="searchScopeLabel">当前路径</span>
                                 <i class="ph ph-caret-down"></i>

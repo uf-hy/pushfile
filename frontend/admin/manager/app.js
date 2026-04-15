@@ -18,6 +18,7 @@ const state = {
     createFolderParentPath: '',
     renameFolderPath: '',
     downloadMode: localStorage.getItem('pf_manager_download_mode') === 'original' ? 'original' : 'deliverable',
+    albumSort: ['name', 'modified', 'added'].includes(localStorage.getItem('pf_manager_album_sort') || '') ? localStorage.getItem('pf_manager_album_sort') : 'name',
     searchQuery: '',
     searchScope: 'subtree',
     searchResults: [],
@@ -71,6 +72,12 @@ function getDownloadModeLabel(mode = state.downloadMode) {
 
 function getSearchScopeChipLabel(scope = state.searchScope) {
     return scope === 'global' ? '全部资源库' : '当前路径';
+}
+
+function getAlbumSortLabel(mode = state.albumSort) {
+    if (mode === 'modified') return '最近修改';
+    if (mode === 'added') return '添加时间';
+    return '名字';
 }
 
 function normalizeBase() {
@@ -179,6 +186,37 @@ function toggleSearchScopeMenu(forceOpen) {
     updateSearchBoxState();
 }
 
+function closeAlbumSortMenu() {
+    const menu = document.getElementById('albumSortMenu');
+    const button = document.getElementById('albumSortButton');
+    if (menu) menu.hidden = true;
+    if (button) button.setAttribute('aria-expanded', 'false');
+}
+
+function toggleAlbumSortMenu(forceOpen) {
+    const menu = document.getElementById('albumSortMenu');
+    const button = document.getElementById('albumSortButton');
+    if (!menu || !button) return;
+    const nextOpen = typeof forceOpen === 'boolean' ? forceOpen : menu.hidden;
+    menu.hidden = !nextOpen;
+    button.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+}
+
+function updateAlbumSortUI() {
+    const label = document.getElementById('albumSortLabel');
+    const button = document.getElementById('albumSortButton');
+    const menu = document.getElementById('albumSortMenu');
+    if (label) label.textContent = getAlbumSortLabel();
+    if (button) button.setAttribute('aria-label', `当前相册排序：${getAlbumSortLabel()}`);
+    if (menu) {
+        menu.querySelectorAll('[data-sort]').forEach((item) => {
+            const active = item.getAttribute('data-sort') === state.albumSort;
+            item.classList.toggle('active', active);
+            item.setAttribute('aria-checked', active ? 'true' : 'false');
+        });
+    }
+}
+
 function updateSearchBoxState(forceExpand = false) {
     const searchBox = document.querySelector('.search-box');
     const searchInput = document.getElementById('managerSearchInput');
@@ -283,6 +321,13 @@ function clearSearchState({ clearInput = true } = {}) {
         if (input) input.value = '';
     }
     updateSearchPlaceholder();
+}
+
+function submitSearchFromInput() {
+    const input = document.getElementById('managerSearchInput');
+    if (!input) return;
+    runSearch(input.value);
+    updateSearchBoxState();
 }
 
 async function runSearch(query) {
@@ -915,9 +960,33 @@ function getFolderLinkText(node) {
     return '';
 }
 
+function compareAlbumNodes(a, b) {
+    const sortMode = state.albumSort;
+    const nameA = String(a?.name || '');
+    const nameB = String(b?.name || '');
+    if (sortMode === 'modified') {
+        const diff = Number(b?.modified_at || 0) - Number(a?.modified_at || 0);
+        if (diff !== 0) return diff;
+    } else if (sortMode === 'added') {
+        const diff = Number(b?.added_at || 0) - Number(a?.added_at || 0);
+        if (diff !== 0) return diff;
+    }
+    return nameA.localeCompare(nameB, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+}
+
+function sortAlbumTree(nodes) {
+    return [...(nodes || [])]
+        .sort(compareAlbumNodes)
+        .map((node) => ({
+            ...node,
+            children: Array.isArray(node?.children) ? sortAlbumTree(node.children) : [],
+        }));
+}
+
 function renderSidebarTree(tree) {
     const container = document.getElementById('album-list');
     if (!container) return;
+    const sortedTree = sortAlbumTree(tree);
 
     function buildTreeHtml(nodes, level = 0) {
         let html = '';
@@ -994,7 +1063,7 @@ function renderSidebarTree(tree) {
         return html;
     }
     
-    container.innerHTML = buildTreeHtml(tree);
+    container.innerHTML = buildTreeHtml(sortedTree);
 }
 
 // 加载具体相册内容
@@ -1097,20 +1166,23 @@ function buildSearchResultsHtml() {
     const folderResults = results.filter((item) => item.kind === 'folder');
     const fileResults = results.filter((item) => item.kind === 'file');
     const scopeText = state.searchScope === 'global' ? '全部资源库' : '当前路径及子路径';
-    const summary = `找到 ${results.length} 个结果，其中 ${folderResults.length} 个相册、${fileResults.length} 个文件`;
+    const summary = `共 ${results.length} 个结果，其中 ${folderResults.length} 个相册、${fileResults.length} 个文件`;
 
     if (!results.length) {
         return `
-            <div class="search-summary-card">
-                <div class="search-summary-copy">
-                    <div class="search-summary-title">搜索“${escapeHtml(query)}”</div>
-                    <div class="search-summary-meta">${escapeHtml(scopeText)} · 暂时没有找到命中结果</div>
+            <div class="search-results-shell">
+                <div class="search-summary-card search-summary-card--search">
+                    <div class="search-summary-copy">
+                        <div class="search-summary-kicker">搜索结果</div>
+                        <div class="search-summary-title">“${escapeHtml(query)}”</div>
+                        <div class="search-summary-meta">${escapeHtml(scopeText)} · 暂时没有找到命中结果</div>
+                    </div>
+                    <button type="button" class="btn-secondary" onclick="clearManagerSearch()">清空搜索</button>
                 </div>
-                <button type="button" class="btn-secondary" onclick="clearManagerSearch()">清空搜索</button>
-            </div>
-            <div class="search-empty-state">
-                <i class="ph ph-magnifying-glass"></i>
-                <div>没有找到匹配项，试试更短的关键词或切到“全部资源库”喵～</div>
+                <div class="search-empty-state">
+                    <i class="ph ph-magnifying-glass"></i>
+                    <div>没有找到匹配项，试试更短的关键词或切到“全部资源库”喵～</div>
+                </div>
             </div>
         `;
     }
@@ -1126,10 +1198,9 @@ function buildSearchResultsHtml() {
                     <i class="ph-fill ph-folder"></i>
                 </div>
                 <div class="item-info">
-                    <span class="item-name" title="${itemName}">${itemName}</span>
-                    <div class="search-hit-meta">
+                    <div class="search-card-title-row">
+                        <span class="item-name" title="${itemName}">${itemName}</span>
                         <span class="search-hit-badge">相册</span>
-                        <span class="search-hit-path" title="/${itemPath}">/${itemPath}</span>
                     </div>
                     <span class="item-meta">${count} 张照片</span>
                 </div>
@@ -1167,10 +1238,9 @@ function buildSearchResultsHtml() {
                     </div>
                 </div>
                 <div class="item-info">
-                    <span class="item-name" title="${safeFile}">${safeFile}</span>
-                    <div class="search-hit-meta">
-                        <span class="search-hit-badge">文件</span>
-                        <span class="search-hit-path" title="/${safeParentPath}">/${safeParentPath}</span>
+                    <div class="search-card-title-row">
+                        <span class="item-name" title="${safeFile}">${safeFile}</span>
+                        <span class="search-hit-badge is-file">文件</span>
                     </div>
                     <button type="button" class="search-reveal-btn" data-action="reveal-search-item" data-file="${safeFile}" data-token="${escapeHtml(token)}" data-path="${safeParentPath}">
                         <i class="ph ph-corners-out"></i>
@@ -1181,15 +1251,51 @@ function buildSearchResultsHtml() {
         `;
     }).join('');
 
+    const folderSection = folderResults.length
+        ? `
+            <section class="search-section">
+                <div class="search-section-header">
+                    <div class="search-section-title">相册结果</div>
+                    <div class="search-section-meta">${folderResults.length} 个</div>
+                </div>
+                <div class="search-result-grid search-result-grid-folders">
+                    ${folderCards}
+                </div>
+            </section>
+        `
+        : '';
+
+    const fileSection = fileResults.length
+        ? `
+            <section class="search-section">
+                <div class="search-section-header">
+                    <div class="search-section-title">文件结果</div>
+                    <div class="search-section-meta">${fileResults.length} 个</div>
+                </div>
+                <div class="search-result-grid search-result-grid-files">
+                    ${fileCards}
+                </div>
+            </section>
+        `
+        : '';
+
     return `
-        <div class="search-summary-card">
-            <div class="search-summary-copy">
-                <div class="search-summary-title">搜索“${escapeHtml(query)}”</div>
-                <div class="search-summary-meta">${escapeHtml(scopeText)} · ${escapeHtml(summary)}</div>
+        <div class="search-results-shell">
+            <div class="search-summary-card search-summary-card--search">
+                <div class="search-summary-copy">
+                    <div class="search-summary-kicker">搜索结果</div>
+                    <div class="search-summary-title">“${escapeHtml(query)}”</div>
+                    <div class="search-summary-meta">${escapeHtml(scopeText)} · ${escapeHtml(summary)}</div>
+                    <div class="search-summary-stats">
+                        <span class="search-summary-stat">相册 ${folderResults.length}</span>
+                        <span class="search-summary-stat">文件 ${fileResults.length}</span>
+                    </div>
+                </div>
+                <button type="button" class="btn-secondary" onclick="clearManagerSearch()">清空搜索</button>
             </div>
-            <button type="button" class="btn-secondary" onclick="clearManagerSearch()">清空搜索</button>
+            ${folderSection}
+            ${fileSection}
         </div>
-        ${folderCards}${fileCards}
     `;
 }
 
@@ -2747,8 +2853,11 @@ function setupEventListeners() {
     const managerBreadcrumbs = document.getElementById('managerBreadcrumbs');
     const searchBox = document.querySelector('.search-box');
     const searchInput = document.getElementById('managerSearchInput');
+    const searchSubmit = document.getElementById('managerSearchSubmit');
     const searchScopeButton = document.getElementById('searchScopeButton');
     const searchScopeMenu = document.getElementById('searchScopeMenu');
+    const albumSortButton = document.getElementById('albumSortButton');
+    const albumSortMenu = document.getElementById('albumSortMenu');
     const downloadModeToggle = document.getElementById('downloadModeToggle');
     const thumbDebugToggle = document.getElementById('thumbDebugToggle');
     
@@ -2808,6 +2917,31 @@ function setupEventListeners() {
         });
     }
 
+    updateAlbumSortUI();
+
+    if (albumSortButton && albumSortMenu) {
+        albumSortButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleAlbumSortMenu();
+        });
+
+        albumSortMenu.addEventListener('click', (e) => {
+            const option = e.target.closest('[data-sort]');
+            if (!option) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const nextSort = ['name', 'modified', 'added'].includes(option.getAttribute('data-sort') || '')
+                ? option.getAttribute('data-sort')
+                : 'name';
+            state.albumSort = nextSort;
+            localStorage.setItem('pf_manager_album_sort', nextSort);
+            updateAlbumSortUI();
+            closeAlbumSortMenu();
+            renderSidebarTree(state.folderTree);
+        });
+    }
+
     if (managerBreadcrumbs) {
         managerBreadcrumbs.addEventListener('click', async (e) => {
             const rootTrigger = e.target.closest('[data-crumb-root]');
@@ -2833,13 +2967,14 @@ function setupEventListeners() {
         updateSearchBoxState();
         searchInput.addEventListener('focus', () => updateSearchBoxState(true));
         searchInput.addEventListener('input', () => {
-            window.clearTimeout(searchInput._searchTimer);
-            searchInput._searchTimer = window.setTimeout(() => {
-                runSearch(searchInput.value);
-                updateSearchBoxState();
-            }, 180);
+            updateSearchBoxState(true);
         });
         searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                submitSearchFromInput();
+                return;
+            }
             if (e.key === 'Escape') {
                 if (searchInput.value.trim()) {
                     searchInput.value = '';
@@ -2848,6 +2983,13 @@ function setupEventListeners() {
                 closeSearchScopeMenu();
                 searchInput.blur();
             }
+        });
+    }
+
+    if (searchSubmit) {
+        searchSubmit.addEventListener('click', (e) => {
+            e.preventDefault();
+            submitSearchFromInput();
         });
     }
 
@@ -2889,6 +3031,12 @@ function setupEventListeners() {
         if (!searchScopeButton || !searchScopeMenu) return;
         if (e.target.closest('#searchScopeButton') || e.target.closest('#searchScopeMenu')) return;
         closeSearchScopeMenu();
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!albumSortButton || !albumSortMenu) return;
+        if (e.target.closest('#albumSortButton') || e.target.closest('#albumSortMenu')) return;
+        closeAlbumSortMenu();
     });
 
     if (downloadModeToggle) {
