@@ -527,12 +527,18 @@ def build_tree(root: Path | None = None, rel: str = "") -> list[dict[str, Any]]:
         has_images = _count_images(p) > 0
         is_album = has_images and not children
         slug = get_or_create_slug(child_rel)
+        stat = p.stat()
+        created_ts = getattr(stat, "st_birthtime", None)
+        if created_ts is None:
+            created_ts = stat.st_ctime
         node = {
             "name": p.name,
             "path": child_rel,
             "image_count": _count_images(p),
             "is_album": is_album,
             "children": children,
+            "modified_at": int(stat.st_mtime),
+            "added_at": int(created_ts),
         }
         if slug:
             node["slug"] = slug
