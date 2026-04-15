@@ -161,6 +161,9 @@
                         <button type="button" class="mode-btn active" data-mode="deliverable">下载图片</button>
                         <button type="button" class="mode-btn" data-mode="original">下载原图</button>
                     </div>
+                    <button type="button" class="icon-btn debug-toggle-btn" id="thumbDebugToggle" aria-pressed="false" title="缩略图诊断开关">
+                        <i class="ph ph-bug-beetle"></i>
+                    </button>
                     <div class="action-divider"></div>
                     <button type="button" class="btn-primary upload-btn" onclick="toggleUploadModal()">
                         <i class="ph ph-upload-simple"></i> <span class="btn-text">上传</span>
@@ -170,68 +173,7 @@
 
             <!-- 网格内容区 -->
             <div class="content-area">
-                <div class="grid-view">
-                    <!-- 文件夹/相册 Item -->
-                    <div class="grid-item folder-item">
-                        <div class="item-icon-wrapper">
-                            <i class="ph-fill ph-folder"></i>
-                        </div>
-                        <div class="item-info">
-                            <span class="item-name">2023 冰岛之旅</span>
-                            <span class="item-meta">124 张照片</span>
-                        </div>
-                    </div>
-                    
-                    <div class="grid-item folder-item">
-                        <div class="item-icon-wrapper">
-                            <i class="ph-fill ph-folder"></i>
-                        </div>
-                        <div class="item-info">
-                            <span class="item-name">项目 UI 截图</span>
-                            <span class="item-meta">32 张照片</span>
-                        </div>
-                    </div>
-
-                    <!-- 照片 Item -->
-                    <div class="grid-item image-item">
-                        <div class="item-thumb">
-                            <img src="https://images.unsplash.com/photo-1682687220742-aba13b6e50ba?w=400&q=80" alt="预览" loading="lazy">
-                            <div class="item-overlay">
-                                <button type="button" class="action-btn"><i class="ph ph-link"></i></button>
-                                <button type="button" class="action-btn"><i class="ph ph-download-simple"></i></button>
-                            </div>
-                        </div>
-                        <div class="item-info">
-                            <span class="item-name">IMG_8492.jpg</span>
-                        </div>
-                    </div>
-                    
-                    <div class="grid-item image-item">
-                        <div class="item-thumb">
-                            <img src="https://images.unsplash.com/photo-1682687982501-1e58f813f228?w=400&q=80" alt="预览" loading="lazy">
-                            <div class="item-overlay">
-                                <button type="button" class="action-btn"><i class="ph ph-link"></i></button>
-                                <button type="button" class="action-btn"><i class="ph ph-download-simple"></i></button>
-                            </div>
-                        </div>
-                        <div class="item-info">
-                            <span class="item-name">IMG_8493.jpg</span>
-                        </div>
-                    </div>
-                    
-                    <div class="grid-item image-item">
-                        <div class="item-thumb">
-                            <img src="https://images.unsplash.com/photo-1682687218147-9806132dc697?w=400&q=80" alt="预览" loading="lazy">
-                            <div class="item-overlay">
-                                <button type="button" class="action-btn"><i class="ph ph-link"></i></button>
-                                <button type="button" class="action-btn"><i class="ph ph-download-simple"></i></button>
-                            </div>
-                        </div>
-                        <div class="item-info">
-                            <span class="item-name">IMG_8494.jpg</span>
-                        </div>
-                    </div>
-                </div>
+                <div class="grid-view"></div>
             </div>
 
             <footer class="status-bar" id="managerStatusBar">
@@ -244,6 +186,8 @@
                     <span id="statusSearchLabel">浏览模式</span>
                     <span class="status-separator"></span>
                     <span id="statusModeLabel">下载图片</span>
+                    <span class="status-separator" id="statusThumbDebugSeparator" hidden></span>
+                    <span id="statusThumbDebugLabel" hidden>缩略图诊断关</span>
                 </div>
             </footer>
         </main>

@@ -9,7 +9,11 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 
 from app.auth import safe_name, safe_token, token_dir, resolve_dir
-from app.image_variants import ensure_download_jpeg, ensure_thumb_avif
+from app.image_variants import (
+    ensure_admin_thumb_avif,
+    ensure_download_jpeg,
+    ensure_thumb_avif,
+)
 from app.storage import ALLOWED_SUFFIX, list_images, list_images_by_path, resolve_slug
 
 router = APIRouter(tags=["files"])
@@ -57,7 +61,11 @@ def _is_not_modified(response_headers, request_headers) -> bool:
     try:
         if_modified_since = parsedate(request_headers["if-modified-since"])
         last_modified = parsedate(response_headers["last-modified"])
-        if if_modified_since is not None and last_modified is not None and if_modified_since >= last_modified:
+        if (
+            if_modified_since is not None
+            and last_modified is not None
+            and if_modified_since >= last_modified
+        ):
             return True
     except KeyError:
         return False
@@ -70,7 +78,9 @@ def _not_modified_headers(headers) -> dict[str, str]:
 
 def _with_304(request: Request, response: FileResponse):
     if _is_not_modified(response.headers, request.headers):
-        return Response(status_code=304, headers=_not_modified_headers(response.headers))
+        return Response(
+            status_code=304, headers=_not_modified_headers(response.headers)
+        )
     return response
 
 
@@ -116,7 +126,9 @@ def _dedupe_zip_name(name: str, used: set[str]) -> str:
 def serve_image(request: Request, token: str, filename: str):
     f = _resolve_file(token, filename)
     mime = _MIME.get(f.suffix.lower(), "application/octet-stream")
-    resp = _file_response(f, media_type=mime, headers={"Cache-Control": "public, max-age=86400"})
+    resp = _file_response(
+        f, media_type=mime, headers={"Cache-Control": "public, max-age=86400"}
+    )
     return _with_304(request, resp)
 
 
@@ -125,7 +137,9 @@ def serve_variant(
     request: Request,
     token: str,
     filename: str,
-    kind: str = Query(default="thumb-avif", pattern="^(thumb-avif|view-jpg)$"),
+    kind: str = Query(
+        default="thumb-avif", pattern="^(thumb-avif|thumb-admin-avif|view-jpg)$"
+    ),
     src: str | None = Query(default=None),
 ):
     source_name = src if src else filename
@@ -133,17 +147,40 @@ def serve_variant(
     if kind == "thumb-avif":
         try:
             avif = ensure_thumb_avif(source_path)
-            resp = _file_response(avif, media_type="image/avif", headers={"Cache-Control": "public, max-age=31536000, immutable"})
+            resp = _file_response(
+                avif,
+                media_type="image/avif",
+                headers={"Cache-Control": "public, max-age=31536000, immutable"},
+            )
+            return _with_304(request, resp)
+        except Exception:
+            pass
+    if kind == "thumb-admin-avif":
+        try:
+            avif = ensure_admin_thumb_avif(source_path)
+            resp = _file_response(
+                avif,
+                media_type="image/avif",
+                headers={"Cache-Control": "public, max-age=31536000, immutable"},
+            )
             return _with_304(request, resp)
         except Exception:
             pass
     try:
         jpg = ensure_download_jpeg(source_path)
-        resp = _file_response(jpg, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+        resp = _file_response(
+            jpg,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
         return _with_304(request, resp)
     except Exception:
         mime = _MIME.get(source_path.suffix.lower(), "application/octet-stream")
-        resp = _file_response(source_path, media_type=mime, headers={"Cache-Control": "public, max-age=86400"})
+        resp = _file_response(
+            source_path,
+            media_type=mime,
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
         return _with_304(request, resp)
 
 
@@ -186,10 +223,14 @@ def download_album_zip(token: str):
             source_path = _resolve_file(token, file)
             try:
                 jpg = ensure_download_jpeg(source_path)
-                out_name = _dedupe_zip_name(f"{Path(source_path.name).stem}.jpg", used_names)
+                out_name = _dedupe_zip_name(
+                    f"{Path(source_path.name).stem}.jpg", used_names
+                )
                 zf.writestr(out_name, jpg.read_bytes())
             except Exception:
-                zf.write(source_path, arcname=_dedupe_zip_name(source_path.name, used_names))
+                zf.write(
+                    source_path, arcname=_dedupe_zip_name(source_path.name, used_names)
+                )
     return Response(
         content=buf.getvalue(),
         media_type="application/zip",

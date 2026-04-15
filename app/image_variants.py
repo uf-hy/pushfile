@@ -8,6 +8,7 @@ from pathlib import Path
 
 _FFMPEG_BIN = os.environ.get("FFMPEG_BIN", "ffmpeg")
 _THUMB_WIDTH = max(320, int(os.environ.get("IMG_THUMB_WIDTH", "1080")))
+_ADMIN_THUMB_WIDTH = max(128, int(os.environ.get("IMG_ADMIN_THUMB_WIDTH", "256")))
 _THUMB_AVIF_CRF = max(18, min(50, int(os.environ.get("IMG_THUMB_AVIF_CRF", "36"))))
 _DOWNLOAD_JPEG_QV = max(2, min(20, int(os.environ.get("IMG_DOWNLOAD_JPEG_QV", "3"))))
 
@@ -40,49 +41,87 @@ def _is_stale(src: Path, target: Path) -> bool:
 
 
 def _run_ffmpeg(args: list[str], timeout_s: int = 120) -> None:
-    subprocess.run([_FFMPEG_BIN, *args], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout_s)
+    subprocess.run(
+        [_FFMPEG_BIN, *args],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=timeout_s,
+    )
 
 
 def _ensure_thumb_avif(src: Path, target: Path) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     vf = f"scale=min({_THUMB_WIDTH}\\,iw):-2:flags=lanczos,format=yuv420p"
-    _run_ffmpeg([
-        "-y",
-        "-i",
-        str(src),
-        "-vf",
-        vf,
-        "-frames:v",
-        "1",
-        "-c:v",
-        "libaom-av1",
-        "-still-picture",
-        "1",
-        "-cpu-used",
-        "6",
-        "-crf",
-        str(_THUMB_AVIF_CRF),
-        "-b:v",
-        "0",
-        str(target),
-    ])
+    _run_ffmpeg(
+        [
+            "-y",
+            "-i",
+            str(src),
+            "-vf",
+            vf,
+            "-frames:v",
+            "1",
+            "-c:v",
+            "libaom-av1",
+            "-still-picture",
+            "1",
+            "-cpu-used",
+            "6",
+            "-crf",
+            str(_THUMB_AVIF_CRF),
+            "-b:v",
+            "0",
+            str(target),
+        ]
+    )
+    return target
+
+
+def _ensure_admin_thumb_avif(src: Path, target: Path) -> Path:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    vf = f"scale=min({_ADMIN_THUMB_WIDTH}\\,iw):-2:flags=lanczos,format=yuv420p"
+    _run_ffmpeg(
+        [
+            "-y",
+            "-i",
+            str(src),
+            "-vf",
+            vf,
+            "-frames:v",
+            "1",
+            "-c:v",
+            "libaom-av1",
+            "-still-picture",
+            "1",
+            "-cpu-used",
+            "6",
+            "-crf",
+            str(_THUMB_AVIF_CRF),
+            "-b:v",
+            "0",
+            str(target),
+        ]
+    )
     return target
 
 
 def _ensure_download_jpeg(src: Path, target: Path) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
-    _run_ffmpeg([
-        "-y",
-        "-i",
-        str(src),
-        "-frames:v",
-        "1",
-        "-q:v",
-        str(_DOWNLOAD_JPEG_QV),
-        "-pix_fmt",
-        "yuvj420p",
-        str(target),
-    ])
+    _run_ffmpeg(
+        [
+            "-y",
+            "-i",
+            str(src),
+            "-frames:v",
+            "1",
+            "-q:v",
+            str(_DOWNLOAD_JPEG_QV),
+            "-pix_fmt",
+            "yuvj420p",
+            str(target),
+        ]
+    )
     return target
 
 
@@ -98,12 +137,23 @@ def thumb_avif_path(src: Path) -> Path:
     return _variant_root(src) / f"thumb-{_THUMB_WIDTH}w-q{_THUMB_AVIF_CRF}.avif"
 
 
+def admin_thumb_avif_path(src: Path) -> Path:
+    return (
+        _variant_root(src)
+        / f"thumb-admin-{_ADMIN_THUMB_WIDTH}w-q{_THUMB_AVIF_CRF}.avif"
+    )
+
+
 def download_jpeg_path(src: Path) -> Path:
     return _variant_root(src) / f"download-q{_DOWNLOAD_JPEG_QV}.jpg"
 
 
 def ensure_thumb_avif(src: Path) -> Path:
     return _ensure_one(src, thumb_avif_path(src), _ensure_thumb_avif)
+
+
+def ensure_admin_thumb_avif(src: Path) -> Path:
+    return _ensure_one(src, admin_thumb_avif_path(src), _ensure_admin_thumb_avif)
 
 
 def ensure_download_jpeg(src: Path) -> Path:

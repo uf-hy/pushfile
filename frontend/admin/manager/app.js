@@ -22,12 +22,17 @@ const state = {
     searchScope: 'subtree',
     searchResults: [],
     searchRequestId: 0,
+    albumLoadRequestId: 0,
+    thumbDebugEnabled: localStorage.getItem('pf_manager_thumb_debug') === '1',
     focusedFile: '',
     uploadTargetPath: '',
     pendingUploadFiles: [],
     pendingUploadPaths: [],
     trashItems: []
 };
+
+const thumbDebugCache = new Map();
+let thumbDebugObserver = null;
 
 // API 工具函数
 const api = {
@@ -104,7 +109,7 @@ function getThumbFileUrl(file, token = state.currentToken) {
     if (!token || !file) return '';
     if (isVideoFile(file)) return getRawFileUrl(file, token);
     const base = normalizeBase();
-    return `${window.location.origin}${base}/v/${encodeURIComponent(token)}/${encodeURIComponent(file)}?kind=thumb-avif`;
+    return `${window.location.origin}${base}/v/${encodeURIComponent(token)}/${encodeURIComponent(file)}?kind=thumb-admin-avif`;
 }
 
 function getCurrentFileDownloadLink(file, token = state.currentToken, mode = state.downloadMode) {
@@ -231,7 +236,42 @@ function updateStatusBar() {
             ? `${state.searchScope === 'global' ? '全部资源库' : '当前路径及子路径'} · 搜索模式`
             : '浏览模式';
     }
+    const thumbDebugLabel = document.getElementById('statusThumbDebugLabel');
+    const thumbDebugSeparator = document.getElementById('statusThumbDebugSeparator');
+    if (thumbDebugLabel) {
+        thumbDebugLabel.hidden = !state.thumbDebugEnabled;
+        thumbDebugLabel.textContent = state.thumbDebugEnabled ? '缩略图诊断开' : '缩略图诊断关';
+    }
+    if (thumbDebugSeparator) {
+        thumbDebugSeparator.hidden = !state.thumbDebugEnabled;
+    }
     updateWindowChrome();
+}
+
+function updateThumbDebugUI() {
+    const toggle = document.getElementById('thumbDebugToggle');
+    if (toggle) {
+        toggle.setAttribute('aria-pressed', state.thumbDebugEnabled ? 'true' : 'false');
+        toggle.setAttribute('title', state.thumbDebugEnabled ? '关闭缩略图诊断' : '打开缩略图诊断');
+    }
+    updateStatusBar();
+}
+
+function disconnectThumbDebugObserver() {
+    if (thumbDebugObserver) {
+        thumbDebugObserver.disconnect();
+        thumbDebugObserver = null;
+    }
+}
+
+function setThumbDebugEnabled(enabled) {
+    state.thumbDebugEnabled = !!enabled;
+    localStorage.setItem('pf_manager_thumb_debug', state.thumbDebugEnabled ? '1' : '0');
+    if (!state.thumbDebugEnabled) {
+        disconnectThumbDebugObserver();
+    }
+    updateThumbDebugUI();
+    renderGridView();
 }
 
 function clearSearchState({ clearInput = true } = {}) {
@@ -344,6 +384,7 @@ async function initApp() {
     try {
         updateSearchPlaceholder();
         updateDownloadModeUI();
+        updateThumbDebugUI();
         await loadTokens();
         setupEventListeners();
     } catch (e) {
@@ -441,6 +482,204 @@ function escapeHtml(value) {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
+}
+
+function formatByteSize(bytes) {
+    const size = Number(bytes);
+    if (!Number.isFinite(size) || size <= 0) return '未知大小';
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(size < 10 * 1024 ? 1 : 0)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function buildThumbDebugBadge(url) {
+    if (!state.thumbDebugEnabled || !url) return '';
+    return `<div class="thumb-debug-badge" data-debug-state="pending" data-thumb-debug-url="${escapeHtml(url)}">检测中…</div>`;
+}
+
+function getThumbLoadingMode(index) {
+    return index < 12 ? 'eager' : 'lazy';
+}
+
+function getThumbFetchPriority(index) {
+    return index < 6 ? 'high' : 'low';
+}
+
+function buildImageThumbHtml({ thumbUrl, safeThumbUrl, safeFile, index, debugBadge, isVideo = false }) {
+    if (isVideo) {
+        return `
+            <div class="thumb-fallback is-visible">
+                <i class="ph-fill ph-video-camera"></i>
+            </div>
+            ${debugBadge}
+        `;
+    }
+    return `
+        <div class="thumb-skeleton" aria-hidden="true"></div>
+        <div class="thumb-fallback" aria-hidden="true">
+            <i class="ph ph-image-broken"></i>
+        </div>
+        <img src="${safeThumbUrl}" alt="${safeFile}" loading="${getThumbLoadingMode(index)}" fetchpriority="${getThumbFetchPriority(index)}" draggable="false" data-seq-thumb="${index}" data-thumb-src="${escapeHtml(thumbUrl)}">
+        ${debugBadge}
+    `;
+}
+
+function setupSequentialThumbReveal(container) {
+    if (!container) return;
+    const images = Array.from(container.querySelectorAll('.image-item img[data-seq-thumb]'));
+    if (!images.length) return;
+    const readyState = new Map();
+    let nextIndex = 0;
+
+    const revealQueue = [];
+    let revealTimer = null;
+
+    const scheduleReveal = () => {
+        if (revealTimer || !revealQueue.length) return;
+        const run = () => {
+            const item = revealQueue.shift();
+            if (!item) {
+                revealTimer = null;
+                return;
+            }
+            const thumb = item.closest('.item-thumb');
+            if (thumb) {
+                thumb.classList.add('is-thumb-visible');
+                if (item.dataset.thumbState === 'failed') {
+                    thumb.classList.add('is-thumb-failed');
+                }
+            }
+            revealTimer = revealQueue.length ? window.setTimeout(run, 36) : null;
+        };
+        revealTimer = window.setTimeout(run, 0);
+    };
+
+    const flushReady = () => {
+        while (readyState.has(nextIndex)) {
+            const item = readyState.get(nextIndex);
+            readyState.delete(nextIndex);
+            revealQueue.push(item);
+            nextIndex += 1;
+        }
+        scheduleReveal();
+    };
+
+    images.forEach((img, index) => {
+        const markReady = (failed = false) => {
+            if (img.dataset.thumbMarked === '1') return;
+            img.dataset.thumbMarked = '1';
+            img.dataset.thumbState = failed ? 'failed' : 'loaded';
+            readyState.set(index, img);
+            flushReady();
+        };
+        if (img.complete) {
+            markReady(!(img.naturalWidth > 0));
+            return;
+        }
+        img.addEventListener('load', () => markReady(false), { once: true });
+        img.addEventListener('error', () => markReady(true), { once: true });
+    });
+}
+
+async function fetchThumbDebugInfo(url) {
+    if (!url) {
+        return { format: 'UNKNOWN', size: null };
+    }
+    if (thumbDebugCache.has(url)) {
+        return thumbDebugCache.get(url);
+    }
+    const request = (async () => {
+        let format = 'UNKNOWN';
+        let size = null;
+
+        const applyHeaders = (response) => {
+            const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+            const contentLength = Number(response.headers.get('content-length') || '0');
+            if (contentType.includes('avif')) format = 'AVIF';
+            else if (contentType.includes('jpeg') || contentType.includes('jpg')) format = 'JPG';
+            else if (contentType.includes('png')) format = 'PNG';
+            else if (contentType) format = contentType.split('/').pop().toUpperCase();
+            if (Number.isFinite(contentLength) && contentLength > 0) {
+                size = contentLength;
+            }
+        };
+
+        try {
+            const response = await fetch(url, {
+                method: 'HEAD',
+                cache: 'no-store',
+                credentials: 'same-origin',
+            });
+            if (response.ok) {
+                applyHeaders(response);
+            }
+            if (size == null) {
+                const fallback = await fetch(url, {
+                    method: 'GET',
+                    cache: 'force-cache',
+                    credentials: 'same-origin',
+                });
+                if (fallback.ok) {
+                    applyHeaders(fallback);
+                    if (size == null) {
+                        const blob = await fallback.blob();
+                        if (blob && Number.isFinite(blob.size) && blob.size > 0) {
+                            size = blob.size;
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            console.warn('thumb debug fetch failed:', err);
+        }
+        return { format, size };
+    })();
+    thumbDebugCache.set(url, request);
+    return request;
+}
+
+async function hydrateThumbDebugBadge(badge) {
+    if (!badge || badge.dataset.debugHydrated === '1') return;
+    badge.dataset.debugHydrated = '1';
+    const info = await fetchThumbDebugInfo(badge.dataset.thumbDebugUrl || '');
+    const format = info.format || 'UNKNOWN';
+    badge.dataset.debugState = 'ready';
+    badge.dataset.debugFormat = format;
+    badge.textContent = `${format} · ${formatByteSize(info.size)}`;
+}
+
+function applyThumbDebugBadges(container) {
+    disconnectThumbDebugObserver();
+    if (!state.thumbDebugEnabled || !container) return;
+    const badges = Array.from(container.querySelectorAll('[data-thumb-debug-url]'));
+    if (!badges.length) return;
+    if ('IntersectionObserver' in window) {
+        thumbDebugObserver = new IntersectionObserver((entries) => {
+            entries.forEach((entry) => {
+                if (!entry.isIntersecting) return;
+                const badge = entry.target.querySelector('[data-thumb-debug-url]');
+                if (badge) {
+                    hydrateThumbDebugBadge(badge);
+                }
+                thumbDebugObserver && thumbDebugObserver.unobserve(entry.target);
+            });
+        }, {
+            root: document.querySelector('.content-area'),
+            rootMargin: '160px 0px',
+        });
+        badges.forEach((badge) => {
+            const card = badge.closest('.image-item');
+            if (card) {
+                thumbDebugObserver.observe(card);
+            } else {
+                hydrateThumbDebugBadge(badge);
+            }
+        });
+        return;
+    }
+    badges.forEach((badge) => {
+        hydrateThumbDebugBadge(badge);
+    });
 }
 
 function collectFolderPaths(nodes, out = new Set()) {
@@ -778,6 +1017,8 @@ function clearCurrentAlbumState() {
 }
 
 async function loadAlbum(token, title, options = {}) {
+    const requestId = state.albumLoadRequestId + 1;
+    state.albumLoadRequestId = requestId;
     const skipSidebarRender = !!options.skipSidebarRender;
     clearSearchState({ clearInput: !options.preserveSearch });
     const node = findNodeBySlug(state.folderTree, token);
@@ -808,14 +1049,23 @@ async function loadAlbum(token, title, options = {}) {
     }
 
     const loadCurrentAlbum = async () => {
-        const data = await api.get(`/api/folders/list?path=${encodeURIComponent(currentPath)}`);
-        if (data && data.ok) {
-            state.currentFiles = data.files || [];
-            state.currentFolders = data.subfolders || [];
-            renderGridView();
-            clearSelection();
-            focusPendingFile();
+        try {
+            const data = await api.get(`/api/folders/list?path=${encodeURIComponent(currentPath)}`);
+            if (requestId !== state.albumLoadRequestId) return;
+            if (data && data.ok) {
+                state.currentFiles = data.files || [];
+                state.currentFolders = data.subfolders || [];
+                renderGridView();
+                clearSelection();
+                focusPendingFile();
+                return;
+            }
+        } catch (err) {
+            if (requestId !== state.albumLoadRequestId) return;
+            console.error('load album failed:', err);
         }
+        if (requestId !== state.albumLoadRequestId) return;
+        renderGridView();
     };
 
     await loadCurrentAlbum();
@@ -887,7 +1137,7 @@ function buildSearchResultsHtml() {
         `;
     }).join('');
 
-    const fileCards = fileResults.map((item) => {
+    const fileCards = fileResults.map((item, index) => {
         const fileName = String(item.name || '');
         const safeFile = escapeHtml(fileName);
         const token = String(item.token || '');
@@ -899,10 +1149,19 @@ function buildSearchResultsHtml() {
         const safeThumbUrl = escapeHtml(thumbUrl);
         const safeDownloadUrl = escapeHtml(downloadUrl);
         const safeParentPath = escapeHtml(parentPath);
+        const debugBadge = buildThumbDebugBadge(thumbUrl);
+        const mediaHtml = buildImageThumbHtml({
+            thumbUrl,
+            safeThumbUrl,
+            safeFile,
+            index,
+            debugBadge,
+            isVideo: false,
+        });
         return `
             <div class="grid-item image-item search-item" data-item-kind="image" data-file="${safeFile}" data-url="${safePreviewUrl}" data-copy-url="${safePreviewUrl}" data-download-url="${safeDownloadUrl}" data-file-token="${escapeHtml(token)}" data-folder-path="${safeParentPath}">
                 <div class="item-thumb" data-action="preview-image">
-                    <img src="${safeThumbUrl}" alt="${safeFile}" loading="lazy" draggable="false">
+                    ${mediaHtml}
                     <div class="item-overlay">
                         <button class="action-btn" type="button" data-action="copy-image-link"><i class="ph ph-link"></i></button>
                     </div>
@@ -946,6 +1205,8 @@ function renderGridView() {
 
     if (state.searchQuery.trim()) {
         container.innerHTML = buildSearchResultsHtml();
+        setupSequentialThumbReveal(container);
+        applyThumbDebugBadges(container);
         applyCurrentViewClass(container, true);
         updateStatusBar();
         updateBottomActionBar();
@@ -1035,7 +1296,7 @@ function renderGridView() {
         ? '<div class="album-folder-section-title">继续浏览子文件夹</div>'
         : '';
 
-    const fileCards = state.currentFiles.map(file => {
+    const fileCards = state.currentFiles.map((file, index) => {
         const safeFile = escapeHtml(file);
         const isVideo = isVideoFile(file);
         const previewUrl = getPreviewFileUrl(file);
@@ -1044,11 +1305,16 @@ function renderGridView() {
         const safePreviewUrl = escapeHtml(previewUrl);
         const safeThumbUrl = escapeHtml(thumbUrl);
         const safeDownloadUrl = escapeHtml(downloadUrl);
-        
-        let mediaHtml = isVideo 
-            ? `<div style="width:100%;height:100%;background:#f0f0f0;display:flex;align-items:center;justify-content:center"><i class="ph-fill ph-video-camera" style="font-size:32px;color:#999"></i></div>`
-            : `<img src="${safeThumbUrl}" alt="${safeFile}" loading="lazy" draggable="false">`;
-             
+        const debugBadge = isVideo ? '' : buildThumbDebugBadge(thumbUrl);
+        const mediaHtml = buildImageThumbHtml({
+            thumbUrl,
+            safeThumbUrl,
+            safeFile,
+            index: state.currentFolders.length + index,
+            debugBadge,
+            isVideo,
+        });
+              
         return `
             <div class="grid-item image-item" data-item-kind="image" data-file="${safeFile}" data-url="${safePreviewUrl}" data-copy-url="${safePreviewUrl}" data-download-url="${safeDownloadUrl}" data-file-token="${escapeHtml(state.currentToken || '')}" data-folder-path="${escapeHtml(state.currentPath || '')}" draggable="true">
                 <div class="item-checkbox" onclick="event.stopPropagation(); toggleSelect(this.closest('.grid-item'))"><i class="ph-bold ph-check"></i></div>
@@ -1074,6 +1340,8 @@ function renderGridView() {
     }
 
     setupDragAndDrop();
+    setupSequentialThumbReveal(container);
+    applyThumbDebugBadges(container);
     applyCurrentViewClass(container);
     updateStatusBar();
     updateBottomActionBar();
@@ -2482,6 +2750,7 @@ function setupEventListeners() {
     const searchScopeButton = document.getElementById('searchScopeButton');
     const searchScopeMenu = document.getElementById('searchScopeMenu');
     const downloadModeToggle = document.getElementById('downloadModeToggle');
+    const thumbDebugToggle = document.getElementById('thumbDebugToggle');
     
     function toggleSidebar() {
         if(sidebar) sidebar.classList.toggle('open');
@@ -2628,6 +2897,13 @@ function setupEventListeners() {
             const btn = e.target.closest('[data-mode]');
             if (!btn) return;
             setDownloadMode(btn.getAttribute('data-mode'));
+        });
+    }
+
+    if (thumbDebugToggle) {
+        updateThumbDebugUI();
+        thumbDebugToggle.addEventListener('click', () => {
+            setThumbDebugEnabled(!state.thumbDebugEnabled);
         });
     }
 
