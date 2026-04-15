@@ -81,6 +81,17 @@ document.addEventListener('DOMContentLoaded', () => {
         console.warn(text);
     }
 
+    async function runFeedbackTask(options, executor) {
+        if (window.AsyncFeedback && typeof window.AsyncFeedback.run === 'function') {
+            return window.AsyncFeedback.run(options, executor);
+        }
+        return executor({
+            show() {},
+            update() {},
+            setProgress() {},
+        });
+    }
+
     function clampInt(value, min, max) {
         const v = Number.parseInt(String(value), 10);
         if (Number.isNaN(v)) return min;
@@ -492,21 +503,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 try {
                     saveBtn.disabled = true;
-                    const res = await fetch(`${base}/api/grid/save`, {
-                        method: 'POST',
-                        headers: { 'X-Upload-Key': key },
-                        body: formData,
-                    });
-                    if (!res.ok) {
-                        const text = await res.text().catch(() => '');
-                        throw new Error(text || '保存失败');
-                    }
-                    const data = await res.json();
-                    if (data?.ok) {
-                        notify(`保存成功：${data?.destination || ''}`);
-                    } else {
+                    await runFeedbackTask({
+                        title: '正在保存九宫格',
+                        message: `正在切图并保存到 /${selectedPath}`,
+                        meta: '图片已经开始处理，这一步不会静默发生喵～',
+                        delay: 0,
+                        minVisibleMs: 500,
+                    }, async () => {
+                        const res = await fetch(`${base}/api/grid/save`, {
+                            method: 'POST',
+                            headers: { 'X-Upload-Key': key },
+                            body: formData,
+                        });
+                        if (!res.ok) {
+                            const text = await res.text().catch(() => '');
+                            throw new Error(text || '保存失败');
+                        }
+                        const data = await res.json();
+                        if (data?.ok) {
+                            notify(`保存成功：${data?.destination || ''}`);
+                            return;
+                        }
                         throw new Error(data?.detail || '保存失败');
-                    }
+                    });
                 } catch (err) {
                     console.error(err);
                     notify(err?.message || '保存失败');
@@ -525,24 +544,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             downloadBtn.disabled = true;
-            const res = await fetch(`${base}/api/grid/split`, {
-                method: 'POST',
-                headers: { 'X-Upload-Key': key },
-                body: formData,
+            await runFeedbackTask({
+                title: '正在打包 ZIP',
+                message: '正在生成预览图和 9 张切图，请稍候…',
+                meta: '浏览器会在打包完成后自动接手下载',
+                delay: 0,
+                minVisibleMs: 500,
+            }, async () => {
+                const res = await fetch(`${base}/api/grid/split`, {
+                    method: 'POST',
+                    headers: { 'X-Upload-Key': key },
+                    body: formData,
+                });
+                if (!res.ok) {
+                    const text = await res.text().catch(() => '');
+                    throw new Error(text || '下载失败');
+                }
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `grid_${Date.now()}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                notify('ZIP 已开始下载');
             });
-            if (!res.ok) {
-                const text = await res.text().catch(() => '');
-                throw new Error(text || '下载失败');
-            }
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `grid_${Date.now()}.zip`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
         } catch (err) {
             console.error(err);
             notify(err?.message || '下载失败');

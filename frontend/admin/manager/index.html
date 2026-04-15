@@ -20,6 +20,7 @@
     <!-- 基础样式复用和专用样式 -->
     <link rel="stylesheet" href="{{ base }}/static/admin/manager/style.css?v={{ asset_version }}">
     <link rel="stylesheet" href="{{ base }}/static/admin/components/FolderSelector.css?v={{ asset_version }}">
+    <link rel="stylesheet" href="{{ base }}/static/admin/components/AsyncFeedback.css?v={{ asset_version }}">
 </head>
     <script>
         window.__BASE__ = '{{ base }}';
@@ -388,7 +389,8 @@
     </div>
 
      <script src="{{ base }}/static/admin/auth.js?v={{ asset_version }}"></script>
+     <script src="{{ base }}/static/admin/components/AsyncFeedback.js?v={{ asset_version }}"></script>
      <script src="{{ base }}/static/admin/components/FolderSelector.js?v={{ asset_version }}"></script>
      <script src="{{ base }}/static/admin/manager/app.js?v={{ asset_version }}"></script>
- </body>
- </html>
+  </body>
+  </html>

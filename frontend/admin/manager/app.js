@@ -72,6 +72,21 @@ function normalizeBase() {
     return (state.base || '').replace(/\/$/, '');
 }
 
+async function runAsyncFeedbackTask(options, executor) {
+    if (window.AsyncFeedback && typeof window.AsyncFeedback.run === 'function') {
+        return window.AsyncFeedback.run(options, executor);
+    }
+    return executor({
+        show() {},
+        update() {},
+        setProgress() {},
+    });
+}
+
+function formatDisplayPath(path) {
+    return path ? `/${path}` : '根目录';
+}
+
 function getRawFileUrl(file, token = state.currentToken) {
     if (!token || !file) return '';
     const base = normalizeBase();
@@ -242,13 +257,21 @@ async function runSearch(query) {
     state.searchRequestId = requestId;
     const path = state.currentPath || '';
     try {
-        const data = await api.get(`/api/folders/search?query=${encodeURIComponent(trimmed)}&scope=${encodeURIComponent(state.searchScope)}&path=${encodeURIComponent(path)}`);
-        if (requestId !== state.searchRequestId) return;
-        if (data?.ok) {
-            state.searchResults = Array.isArray(data.results) ? data.results : [];
-            clearSelection();
-            renderGridView();
-        }
+        await runAsyncFeedbackTask({
+            title: '正在搜索',
+            message: `正在查找“${trimmed}”`,
+            meta: state.searchScope === 'global' ? '范围：全部资源库' : `范围：${formatDisplayPath(path)} 及子路径`,
+            delay: 220,
+            minVisibleMs: 240,
+        }, async () => {
+            const data = await api.get(`/api/folders/search?query=${encodeURIComponent(trimmed)}&scope=${encodeURIComponent(state.searchScope)}&path=${encodeURIComponent(path)}`);
+            if (requestId !== state.searchRequestId) return;
+            if (data?.ok) {
+                state.searchResults = Array.isArray(data.results) ? data.results : [];
+                clearSelection();
+                renderGridView();
+            }
+        });
     } catch (err) {
         console.error('search failed:', err);
         if (requestId !== state.searchRequestId) return;
@@ -270,29 +293,37 @@ function focusPendingFile() {
 
 async function exportSelectedFiles(files) {
     if (!state.currentToken || !files.length) return;
-    const data = await fetch(`${normalizeBase()}/api/manage/${encodeURIComponent(state.currentToken)}/export`, {
-        method: 'POST',
-        headers: {
-            'X-Upload-Key': state.key,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ names: files, mode: state.downloadMode }),
+    return runAsyncFeedbackTask({
+        title: '正在准备下载',
+        message: files.length > 1 ? `正在打包 ${files.length} 个文件` : `正在准备 ${files[0]}`,
+        meta: '浏览器会在准备完成后自动接手下载',
+        delay: 0,
+        minVisibleMs: 420,
+    }, async () => {
+        const data = await fetch(`${normalizeBase()}/api/manage/${encodeURIComponent(state.currentToken)}/export`, {
+            method: 'POST',
+            headers: {
+                'X-Upload-Key': state.key,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ names: files, mode: state.downloadMode }),
+        });
+        if (!data.ok) {
+            throw new Error(await data.text().catch(() => '导出失败'));
+        }
+        const blob = await data.blob();
+        const disposition = data.headers.get('content-disposition') || '';
+        const match = disposition.match(/filename\*=UTF-8''([^;]+)/i) || disposition.match(/filename="?([^";]+)"?/i);
+        const downloadName = match ? decodeURIComponent(match[1]) : (files.length > 1 ? 'export.zip' : files[0]);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = downloadName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     });
-    if (!data.ok) {
-        throw new Error(await data.text().catch(() => '导出失败'));
-    }
-    const blob = await data.blob();
-    const disposition = data.headers.get('content-disposition') || '';
-    const match = disposition.match(/filename\*=UTF-8''([^;]+)/i) || disposition.match(/filename="?([^";]+)"?/i);
-    const downloadName = match ? decodeURIComponent(match[1]) : (files.length > 1 ? 'export.zip' : files[0]);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = downloadName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
 }
 
 // 核心功能：初始化应用
@@ -321,7 +352,7 @@ async function initApp() {
 }
 
 // 加载相册列表 (Tokens)
-async function loadTokens() {
+async function loadTokens(options = {}) {
     const data = await api.get('/api/folders/tree');
     if (data.ok) {
         state.tokens = [];
@@ -355,7 +386,7 @@ async function loadTokens() {
         renderSidebarTree(state.folderTree);
         
         if (target) {
-            await loadAlbum(target.token, target.title || target.token, { skipSidebarRender: true });
+            await loadAlbum(target.token, target.title || target.token, { skipSidebarRender: true, feedback: options.feedback === true });
         } else {
             clearCurrentAlbumState();
         }
@@ -514,16 +545,24 @@ async function submitFolderPanel() {
 
     const path = state.createFolderParentPath ? `${state.createFolderParentPath}/${name}` : name;
     try {
-        const data = await api.post('/api/folders/create', JSON.stringify({ path }));
-        if (!data || data.ok !== true) {
-            throw new Error((data && (data.detail || data.message)) || '创建失败');
-        }
-        if (state.createFolderParentPath) {
-            state.expandedFolders.add(state.createFolderParentPath);
-        }
-        closeCreateFolderPanel();
-        showToast(`已创建文件夹：${name}`);
-        await loadTokens();
+        await runAsyncFeedbackTask({
+            title: '正在新建文件夹',
+            message: `正在把“${name}”创建到 ${formatDisplayPath(state.createFolderParentPath)}`,
+            meta: '创建完成后会自动刷新目录',
+            delay: 0,
+            minVisibleMs: 360,
+        }, async () => {
+            const data = await api.post('/api/folders/create', JSON.stringify({ path }));
+            if (!data || data.ok !== true) {
+                throw new Error((data && (data.detail || data.message)) || '创建失败');
+            }
+            if (state.createFolderParentPath) {
+                state.expandedFolders.add(state.createFolderParentPath);
+            }
+            closeCreateFolderPanel();
+            showToast(`已创建文件夹：${name}`);
+            await loadTokens();
+        });
     } catch (err) {
         console.error('create folder failed:', err);
         showToast(`创建失败：${getErrorMessage(err)}`);
@@ -556,13 +595,21 @@ async function submitRenameFolder() {
     }
 
     try {
-        const data = await api.post('/api/folders/rename', JSON.stringify({ path, new_name: newName }));
-        if (!data || data.ok !== true) {
-            throw new Error((data && (data.detail || data.message)) || '重命名失败');
-        }
-        closeCreateFolderPanel();
-        showToast(`已重命名为：${newName}`);
-        await loadTokens();
+        await runAsyncFeedbackTask({
+            title: '正在重命名文件夹',
+            message: `正在把“${currentName}”改成“${newName}”`,
+            meta: '重命名完成后会自动刷新目录',
+            delay: 0,
+            minVisibleMs: 360,
+        }, async () => {
+            const data = await api.post('/api/folders/rename', JSON.stringify({ path, new_name: newName }));
+            if (!data || data.ok !== true) {
+                throw new Error((data && (data.detail || data.message)) || '重命名失败');
+            }
+            closeCreateFolderPanel();
+            showToast(`已重命名为：${newName}`);
+            await loadTokens();
+        });
     } catch (err) {
         console.error('rename folder failed:', err);
         showToast(`重命名失败：${getErrorMessage(err)}`);
@@ -586,18 +633,26 @@ function requestDeleteFolder(path, name) {
 async function deleteFolderByPath(path, name) {
     const label = name || path || '该文件夹';
     try {
-        const data = await api.post('/api/folders/delete', JSON.stringify({ path }));
-        if (!data || data.ok !== true) {
-            throw new Error((data && (data.detail || data.message)) || '删除失败');
-        }
-        const currentPath = getCurrentAlbumPath();
-        if (currentPath && (currentPath === path || currentPath.startsWith(`${path}/`))) {
-            state.currentToken = null;
-        }
-        state.expandedFolders.delete(path);
-        showToast(`已移入回收站：${label}`);
-        await loadTokens();
-        await refreshTrashItems();
+        await runAsyncFeedbackTask({
+            title: '正在移入回收站',
+            message: `正在处理“${label}”`,
+            meta: '内容会先进入回收站，稍后仍可恢复',
+            delay: 0,
+            minVisibleMs: 420,
+        }, async () => {
+            const data = await api.post('/api/folders/delete', JSON.stringify({ path }));
+            if (!data || data.ok !== true) {
+                throw new Error((data && (data.detail || data.message)) || '删除失败');
+            }
+            const currentPath = getCurrentAlbumPath();
+            if (currentPath && (currentPath === path || currentPath.startsWith(`${path}/`))) {
+                state.currentToken = null;
+            }
+            state.expandedFolders.delete(path);
+            showToast(`已移入回收站：${label}`);
+            await loadTokens();
+            await refreshTrashItems();
+        });
     } catch (err) {
         console.error('delete folder failed:', err);
         showToast(`删除失败：${getErrorMessage(err)}`);
@@ -752,14 +807,18 @@ async function loadAlbum(token, title, options = {}) {
         return;
     }
 
-    const data = await api.get(`/api/folders/list?path=${encodeURIComponent(currentPath)}`);
-    if (data && data.ok) {
-        state.currentFiles = data.files || [];
-        state.currentFolders = data.subfolders || [];
-        renderGridView();
-        clearSelection();
-        focusPendingFile();
-    }
+    const loadCurrentAlbum = async () => {
+        const data = await api.get(`/api/folders/list?path=${encodeURIComponent(currentPath)}`);
+        if (data && data.ok) {
+            state.currentFiles = data.files || [];
+            state.currentFolders = data.subfolders || [];
+            renderGridView();
+            clearSelection();
+            focusPendingFile();
+        }
+    };
+
+    await loadCurrentAlbum();
 }
 
 function openRootView() {
@@ -1410,15 +1469,23 @@ function showMoveSelector(names, sourcePath = state.currentPath) {
         title: files.length === 1 ? '移动到哪个文件夹' : `移动 ${files.length} 个文件到…`,
         onSelect: async (selectedPath) => {
             try {
-                const data = await moveFilesByPath(sourcePath, files, selectedPath);
-                if (!data || !data.ok) {
-                    throw new Error((data && (data.detail || data.message)) || '移动失败');
-                }
-                const movedCount = (data.moved || []).length;
-                const skippedCount = (data.skipped || []).length;
-                showToast(`移动完成：成功 ${movedCount}，跳过 ${skippedCount}`);
-                await loadTokens();
-                clearSelection();
+                await runAsyncFeedbackTask({
+                    title: '正在移动文件',
+                    message: `正在把 ${files.length} 个文件移动到 ${formatDisplayPath(selectedPath)}`,
+                    meta: '移动完成后会自动刷新列表',
+                    delay: 0,
+                    minVisibleMs: 420,
+                }, async () => {
+                    const data = await moveFilesByPath(sourcePath, files, selectedPath);
+                    if (!data || !data.ok) {
+                        throw new Error((data && (data.detail || data.message)) || '移动失败');
+                    }
+                    const movedCount = (data.moved || []).length;
+                    const skippedCount = (data.skipped || []).length;
+                    showToast(`移动完成：成功 ${movedCount}，跳过 ${skippedCount}`);
+                    await loadTokens();
+                    clearSelection();
+                });
             } catch (e) {
                 console.error('batch-move failed:', e);
                 showToast(`移动失败：${getErrorMessage(e)}`);
@@ -1434,15 +1501,23 @@ function showCopySelector(names, sourcePath = state.currentPath) {
         title: files.length === 1 ? '复制到哪个文件夹' : `复制 ${files.length} 个文件到…`,
         onSelect: async (selectedPath) => {
             try {
-                const data = await copyFilesByPath(sourcePath, files, selectedPath);
-                if (!data || !data.ok) {
-                    throw new Error((data && (data.detail || data.message)) || '复制失败');
-                }
-                const copiedCount = (data.copied || []).length;
-                const skippedCount = (data.skipped || []).length;
-                showToast(`复制完成：成功 ${copiedCount}，跳过 ${skippedCount}`);
-                await loadTokens();
-                clearSelection();
+                await runAsyncFeedbackTask({
+                    title: '正在复制文件',
+                    message: `正在把 ${files.length} 个文件复制到 ${formatDisplayPath(selectedPath)}`,
+                    meta: '复制完成后会自动刷新列表',
+                    delay: 0,
+                    minVisibleMs: 420,
+                }, async () => {
+                    const data = await copyFilesByPath(sourcePath, files, selectedPath);
+                    if (!data || !data.ok) {
+                        throw new Error((data && (data.detail || data.message)) || '复制失败');
+                    }
+                    const copiedCount = (data.copied || []).length;
+                    const skippedCount = (data.skipped || []).length;
+                    showToast(`复制完成：成功 ${copiedCount}，跳过 ${skippedCount}`);
+                    await loadTokens();
+                    clearSelection();
+                });
             } catch (e) {
                 console.error('batch-copy failed:', e);
                 showToast(`复制失败：${getErrorMessage(e)}`);
@@ -1459,13 +1534,21 @@ function showFolderMoveSelector(paths) {
         allowRoot: true,
         onSelect: async (selectedPath) => {
             try {
-                const data = await api.post('/api/folders/batch-move', JSON.stringify({ paths: folders, dest: selectedPath }));
-                if (!data || !data.ok) {
-                    throw new Error((data && (data.detail || data.message)) || '移动失败');
-                }
-                showToast(`已移动 ${data.count ?? folders.length} 个文件夹`);
-                await loadTokens();
-                clearSelection();
+                await runAsyncFeedbackTask({
+                    title: '正在移动文件夹',
+                    message: `正在把 ${folders.length} 个文件夹移动到 ${formatDisplayPath(selectedPath)}`,
+                    meta: '移动完成后会自动刷新目录树',
+                    delay: 0,
+                    minVisibleMs: 420,
+                }, async () => {
+                    const data = await api.post('/api/folders/batch-move', JSON.stringify({ paths: folders, dest: selectedPath }));
+                    if (!data || !data.ok) {
+                        throw new Error((data && (data.detail || data.message)) || '移动失败');
+                    }
+                    showToast(`已移动 ${data.count ?? folders.length} 个文件夹`);
+                    await loadTokens();
+                    clearSelection();
+                });
             } catch (err) {
                 console.error('move folders failed:', err);
                 showToast(`移动失败：${getErrorMessage(err)}`);
@@ -1482,13 +1565,21 @@ function showFolderCopySelector(paths) {
         allowRoot: true,
         onSelect: async (selectedPath) => {
             try {
-                const data = await api.post('/api/folders/batch-copy', JSON.stringify({ paths: folders, dest: selectedPath }));
-                if (!data || !data.ok) {
-                    throw new Error((data && (data.detail || data.message)) || '复制失败');
-                }
-                showToast(`已复制 ${data.count ?? folders.length} 个文件夹`);
-                await loadTokens();
-                clearSelection();
+                await runAsyncFeedbackTask({
+                    title: '正在复制文件夹',
+                    message: `正在把 ${folders.length} 个文件夹复制到 ${formatDisplayPath(selectedPath)}`,
+                    meta: '复制完成后会自动刷新目录树',
+                    delay: 0,
+                    minVisibleMs: 420,
+                }, async () => {
+                    const data = await api.post('/api/folders/batch-copy', JSON.stringify({ paths: folders, dest: selectedPath }));
+                    if (!data || !data.ok) {
+                        throw new Error((data && (data.detail || data.message)) || '复制失败');
+                    }
+                    showToast(`已复制 ${data.count ?? folders.length} 个文件夹`);
+                    await loadTokens();
+                    clearSelection();
+                });
             } catch (err) {
                 console.error('copy folders failed:', err);
                 showToast(`复制失败：${getErrorMessage(err)}`);
@@ -1514,25 +1605,33 @@ function showSelectionMoveSelector(files, folders) {
         allowRoot: true,
         onSelect: async (selectedPath) => {
             try {
-                if (safeFiles.length) {
-                    if (!selectedPath) {
-                        showToast('文件不能移动到根目录');
-                        return;
+                await runAsyncFeedbackTask({
+                    title: '正在移动选中项目',
+                    message: `正在把 ${safeFiles.length + safeFolders.length} 个项目移动到 ${formatDisplayPath(selectedPath)}`,
+                    meta: '移动完成后会自动刷新当前视图',
+                    delay: 0,
+                    minVisibleMs: 420,
+                }, async () => {
+                    if (safeFiles.length) {
+                        if (!selectedPath) {
+                            showToast('文件不能移动到根目录');
+                            return;
+                        }
+                        const fileData = await moveFilesByPath(state.currentPath, safeFiles, selectedPath);
+                        if (!fileData || !fileData.ok) {
+                            throw new Error((fileData && (fileData.detail || fileData.message)) || '文件移动失败');
+                        }
                     }
-                    const fileData = await moveFilesByPath(state.currentPath, safeFiles, selectedPath);
-                    if (!fileData || !fileData.ok) {
-                        throw new Error((fileData && (fileData.detail || fileData.message)) || '文件移动失败');
+                    if (safeFolders.length) {
+                        const folderData = await api.post('/api/folders/batch-move', JSON.stringify({ paths: safeFolders, dest: selectedPath }));
+                        if (!folderData || !folderData.ok) {
+                            throw new Error((folderData && (folderData.detail || folderData.message)) || '文件夹移动失败');
+                        }
                     }
-                }
-                if (safeFolders.length) {
-                    const folderData = await api.post('/api/folders/batch-move', JSON.stringify({ paths: safeFolders, dest: selectedPath }));
-                    if (!folderData || !folderData.ok) {
-                        throw new Error((folderData && (folderData.detail || folderData.message)) || '文件夹移动失败');
-                    }
-                }
-                showToast('已移动选中项目');
-                await loadTokens();
-                clearSelection();
+                    showToast('已移动选中项目');
+                    await loadTokens();
+                    clearSelection();
+                });
             } catch (err) {
                 console.error('move selected items failed:', err);
                 showToast(`移动失败：${getErrorMessage(err)}`);
@@ -1558,25 +1657,33 @@ function showSelectionCopySelector(files, folders) {
         allowRoot: true,
         onSelect: async (selectedPath) => {
             try {
-                if (safeFiles.length) {
-                    if (!selectedPath) {
-                        showToast('文件不能复制到根目录');
-                        return;
+                await runAsyncFeedbackTask({
+                    title: '正在复制选中项目',
+                    message: `正在把 ${safeFiles.length + safeFolders.length} 个项目复制到 ${formatDisplayPath(selectedPath)}`,
+                    meta: '复制完成后会自动刷新当前视图',
+                    delay: 0,
+                    minVisibleMs: 420,
+                }, async () => {
+                    if (safeFiles.length) {
+                        if (!selectedPath) {
+                            showToast('文件不能复制到根目录');
+                            return;
+                        }
+                        const fileData = await copyFilesByPath(state.currentPath, safeFiles, selectedPath);
+                        if (!fileData || !fileData.ok) {
+                            throw new Error((fileData && (fileData.detail || fileData.message)) || '文件复制失败');
+                        }
                     }
-                    const fileData = await copyFilesByPath(state.currentPath, safeFiles, selectedPath);
-                    if (!fileData || !fileData.ok) {
-                        throw new Error((fileData && (fileData.detail || fileData.message)) || '文件复制失败');
+                    if (safeFolders.length) {
+                        const folderData = await api.post('/api/folders/batch-copy', JSON.stringify({ paths: safeFolders, dest: selectedPath }));
+                        if (!folderData || !folderData.ok) {
+                            throw new Error((folderData && (folderData.detail || folderData.message)) || '文件夹复制失败');
+                        }
                     }
-                }
-                if (safeFolders.length) {
-                    const folderData = await api.post('/api/folders/batch-copy', JSON.stringify({ paths: safeFolders, dest: selectedPath }));
-                    if (!folderData || !folderData.ok) {
-                        throw new Error((folderData && (folderData.detail || folderData.message)) || '文件夹复制失败');
-                    }
-                }
-                showToast('已复制选中项目');
-                await loadTokens();
-                clearSelection();
+                    showToast('已复制选中项目');
+                    await loadTokens();
+                    clearSelection();
+                });
             } catch (err) {
                 console.error('copy selected items failed:', err);
                 showToast(`复制失败：${getErrorMessage(err)}`);
@@ -1770,9 +1877,11 @@ function selectAllItems() {
             else if (r.path) selectedFolders.add(r.path);
         });
     } else {
-        (state.currentFiles || []).forEach(f => selectedFiles.add(f));
+        (state.currentFiles || []).forEach(f => {
+            selectedFiles.add(f);
+        });
         (state.currentFolders || []).forEach(f => {
-            const path = f.path || (state.currentPath ? state.currentPath + '/' + f.name : f.name);
+            const path = f.path || (state.currentPath ? `${state.currentPath}/${f.name}` : f.name);
             selectedFolders.add(path);
         });
     }
@@ -1827,26 +1936,34 @@ async function handleClipboardPaste() {
     const count = clipboard.files.length + clipboard.folders.length;
     const verb = clipboard.action === 'cut' ? '移动' : '复制';
     try {
-        if (clipboard.files.length) {
-            if (!destPath) {
-                showToast('文件不能粘贴到根目录');
-                return;
+        await runAsyncFeedbackTask({
+            title: `正在${verb}项目`,
+            message: `正在把 ${count} 个项目处理到 ${formatDisplayPath(destPath)}`,
+            meta: `${verb}完成后会自动刷新当前视图`,
+            delay: 0,
+            minVisibleMs: 420,
+        }, async () => {
+            if (clipboard.files.length) {
+                if (!destPath) {
+                    showToast('文件不能粘贴到根目录');
+                    return;
+                }
+                const apiCall = clipboard.action === 'cut' ? moveFilesByPath : copyFilesByPath;
+                const data = await apiCall(clipboard.sourcePath, clipboard.files, destPath);
+                if (!data || !data.ok) throw new Error((data && (data.detail || data.message)) || `${verb}失败`);
             }
-            const apiCall = clipboard.action === 'cut' ? moveFilesByPath : copyFilesByPath;
-            const data = await apiCall(clipboard.sourcePath, clipboard.files, destPath);
-            if (!data || !data.ok) throw new Error((data && (data.detail || data.message)) || `${verb}失败`);
-        }
-        if (clipboard.folders.length) {
-            const endpoint = clipboard.action === 'cut' ? '/api/folders/batch-move' : '/api/folders/batch-copy';
-            const data = await api.post(endpoint, JSON.stringify({ paths: clipboard.folders, dest: destPath }));
-            if (!data || !data.ok) throw new Error((data && (data.detail || data.message)) || `${verb}失败`);
-        }
-        showToast(`已${verb === '移动' ? '移动' : '粘贴'} ${count} 个项目`);
-        if (clipboard.action === 'cut') {
-            clipboard = { action: null, files: [], folders: [], sourcePath: null, sourceToken: null };
-        }
-        await loadTokens();
-        clearSelection();
+            if (clipboard.folders.length) {
+                const endpoint = clipboard.action === 'cut' ? '/api/folders/batch-move' : '/api/folders/batch-copy';
+                const data = await api.post(endpoint, JSON.stringify({ paths: clipboard.folders, dest: destPath }));
+                if (!data || !data.ok) throw new Error((data && (data.detail || data.message)) || `${verb}失败`);
+            }
+            showToast(`已${verb === '移动' ? '移动' : '粘贴'} ${count} 个项目`);
+            if (clipboard.action === 'cut') {
+                clipboard = { action: null, files: [], folders: [], sourcePath: null, sourceToken: null };
+            }
+            await loadTokens();
+            clearSelection();
+        });
     } catch (err) {
         console.error('clipboard paste failed:', err);
         showToast(`${verb}失败：${getErrorMessage(err)}`);
@@ -2169,15 +2286,23 @@ window.handleContextAction = function(action) {
                 onConfirm: async () => {
                     hideActionDialog();
                     try {
-                        const data = await api.post('/api/folders/file-delete', JSON.stringify({ path: contextMenuTarget.path || state.currentPath, name: file }));
-                        if (!data || !data.ok) {
-                            showToast('删除失败，请重试');
-                            return;
-                        }
-                        showToast(`已移入回收站：${file}`);
-                        await loadTokens();
-                        await refreshTrashItems();
-                        clearSelection();
+                        await runAsyncFeedbackTask({
+                            title: '正在移入回收站',
+                            message: `正在处理“${file}”`,
+                            meta: '删除完成后会自动刷新列表',
+                            delay: 0,
+                            minVisibleMs: 420,
+                        }, async () => {
+                            const data = await api.post('/api/folders/file-delete', JSON.stringify({ path: contextMenuTarget.path || state.currentPath, name: file }));
+                            if (!data || !data.ok) {
+                                showToast('删除失败，请重试');
+                                return;
+                            }
+                            showToast(`已移入回收站：${file}`);
+                            await loadTokens();
+                            await refreshTrashItems();
+                            clearSelection();
+                        });
                     } catch (e) {
                         console.error('delete failed:', e);
                         showToast('删除失败，请重试');
@@ -2210,6 +2335,7 @@ window.handleBatchAction = function(action) {
             }
             if (files.length === 1) {
                 window.open(getCurrentFileDownloadLink(files[0]), '_blank');
+                showToast(`已开始下载：${files[0]}`);
             } else {
                 exportSelectedFiles(files)
                     .then(() => showToast(`已导出 ${files.length} 个文件`))
@@ -2254,25 +2380,33 @@ window.handleBatchAction = function(action) {
                 onConfirm: async () => {
                     hideActionDialog();
                     try {
-                        let deletedCount = 0;
-                        if (files.length) {
-                            const fileData = await api.post('/api/folders/files-delete', JSON.stringify({ path: state.currentPath, names: files }));
-                            if (!fileData || !fileData.ok) {
-                                throw new Error((fileData && (fileData.detail || fileData.message)) || '文件删除失败');
+                        await runAsyncFeedbackTask({
+                            title: '正在移入回收站',
+                            message: `正在处理 ${count} 个选中项目`,
+                            meta: '删除完成后会自动刷新列表和回收站',
+                            delay: 0,
+                            minVisibleMs: 420,
+                        }, async () => {
+                            let deletedCount = 0;
+                            if (files.length) {
+                                const fileData = await api.post('/api/folders/files-delete', JSON.stringify({ path: state.currentPath, names: files }));
+                                if (!fileData || !fileData.ok) {
+                                    throw new Error((fileData && (fileData.detail || fileData.message)) || '文件删除失败');
+                                }
+                                deletedCount += Number(fileData.count || 0);
                             }
-                            deletedCount += Number(fileData.count || 0);
-                        }
-                        if (folders.length) {
-                            const folderData = await api.post('/api/folders/batch-delete', JSON.stringify({ paths: folders }));
-                            if (!folderData || !folderData.ok) {
-                                throw new Error((folderData && (folderData.detail || folderData.message)) || '文件夹删除失败');
+                            if (folders.length) {
+                                const folderData = await api.post('/api/folders/batch-delete', JSON.stringify({ paths: folders }));
+                                if (!folderData || !folderData.ok) {
+                                    throw new Error((folderData && (folderData.detail || folderData.message)) || '文件夹删除失败');
+                                }
+                                deletedCount += Number(folderData.count || 0);
                             }
-                            deletedCount += Number(folderData.count || 0);
-                        }
-                        showToast(`已移入回收站：${deletedCount} 个项目`);
-                        await loadTokens();
-                        await refreshTrashItems();
-                        clearSelection();
+                            showToast(`已移入回收站：${deletedCount} 个项目`);
+                            await loadTokens();
+                            await refreshTrashItems();
+                            clearSelection();
+                        });
                     } catch (e) {
                         console.error('batch-delete failed:', e);
                         showToast('删除失败，请重试');

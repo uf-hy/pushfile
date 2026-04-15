@@ -1,0 +1,165 @@
+.async-feedback-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(15, 23, 42, 0.22);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease;
+    z-index: 10050;
+}
+
+.async-feedback-overlay.is-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.async-feedback-card {
+    width: min(100%, 420px);
+    display: grid;
+    gap: 14px;
+    padding: 20px;
+    border-radius: 24px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    box-shadow: 0 24px 80px rgba(15, 23, 42, 0.18);
+    transform: translateY(12px) scale(0.98);
+    transition: transform 0.22s ease;
+}
+
+.async-feedback-overlay.is-visible .async-feedback-card {
+    transform: translateY(0) scale(1);
+}
+
+.async-feedback-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.async-feedback-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #007aff;
+    background: rgba(0, 122, 255, 0.1);
+    flex-shrink: 0;
+}
+
+.async-feedback-icon i {
+    font-size: 24px;
+    animation: async-feedback-spin 1s linear infinite;
+}
+
+.async-feedback-overlay[data-tone="success"] .async-feedback-icon {
+    color: #16a34a;
+    background: rgba(22, 163, 74, 0.12);
+}
+
+.async-feedback-overlay[data-tone="success"] .async-feedback-icon i,
+.async-feedback-overlay[data-tone="danger"] .async-feedback-icon i {
+    animation: none;
+}
+
+.async-feedback-overlay[data-tone="danger"] .async-feedback-icon {
+    color: #dc2626;
+    background: rgba(220, 38, 38, 0.12);
+}
+
+.async-feedback-copy {
+    min-width: 0;
+}
+
+.async-feedback-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #111827;
+    letter-spacing: -0.02em;
+}
+
+.async-feedback-message {
+    margin-top: 4px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: rgba(17, 24, 39, 0.72);
+}
+
+.async-feedback-progress {
+    position: relative;
+    height: 10px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(148, 163, 184, 0.24);
+}
+
+.async-feedback-progress-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #60a5fa, #007aff);
+    transition: width 0.22s ease;
+}
+
+.async-feedback-progress.is-indeterminate .async-feedback-progress-fill {
+    width: 42%;
+    animation: async-feedback-indeterminate 1.15s ease-in-out infinite;
+}
+
+.async-feedback-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    color: rgba(17, 24, 39, 0.56);
+}
+
+.async-feedback-percent {
+    font-variant-numeric: tabular-nums;
+    min-width: 40px;
+    text-align: right;
+}
+
+@keyframes async-feedback-spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes async-feedback-indeterminate {
+    0% {
+        transform: translateX(-120%);
+    }
+    100% {
+        transform: translateX(260%);
+    }
+}
+
+@media (max-width: 640px) {
+    .async-feedback-overlay {
+        align-items: flex-end;
+        padding: 16px;
+    }
+
+    .async-feedback-card {
+        width: 100%;
+        padding: 18px;
+        border-radius: 22px;
+    }
+
+    .async-feedback-title {
+        font-size: 17px;
+    }
+}
