@@ -52,10 +52,9 @@
                             <div class="panel-header">
                                 <div>
                                     <div class="panel-title">参数</div>
-                                    <div class="panel-subtitle">默认从 0 开始，分别控制线条厚度与图片间隔</div>
                                 </div>
                                 <div class="panel-actions">
-                                    <button type="button" class="btn btn-secondary" id="resetBtn"><i class="ph ph-arrow-counter-clockwise"></i>重置</button>
+                                    <button type="button" class="btn btn-danger-soft btn-compact" id="resetBtn"><i class="ph ph-arrow-counter-clockwise"></i>重置</button>
                                     <button type="button" class="btn btn-secondary mobile-only" id="closePanelBtn"><i class="ph ph-check"></i>完成</button>
                                 </div>
                             </div>
@@ -152,7 +151,7 @@
                             </div>
                             <div class="stage-empty-icon"><i class="ph ph-grid-nine"></i></div>
                             <div class="stage-empty-title">上传后会立即显示成品预览</div>
-                            <div class="stage-empty-copy">上传图片后，这里会展示完整预览和 9 张切图，方便直接确认效果。</div>
+                            <div class="stage-empty-copy">上传图片后，这里会展示完整预览，方便直接确认效果并导出。</div>
                         </div>
                     </section>
                     <section class="preview" id="preview" style="display:none">
@@ -172,16 +171,6 @@
                         <div class="preview-meta" id="previewMeta"></div>
                     </section>
 
-                    <section class="tiles" id="tiles" style="display:none">
-                        <div class="tiles-header">
-                            <div>
-                                <div class="tiles-title">九宫格小图</div>
-                                <div class="tiles-subtitle">下方是实际切出来的小图顺序</div>
-                            </div>
-                            <div class="tiles-meta" id="tilesMeta"></div>
-                        </div>
-                        <div class="tiles-grid" id="tilesGrid"></div>
-                    </section>
                 </section>
             </div>
         </main>

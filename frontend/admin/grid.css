@@ -73,6 +73,22 @@ body.grid-sheet-open {
     top: 84px;
 }
 
+@media (min-width: 769px) {
+    .grid-page.has-image .grid-sidebar {
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        max-height: calc(100vh - 104px);
+    }
+
+    .grid-page.has-image #panel {
+        min-height: 0;
+    }
+
+    .grid-page.has-image #panel .panel-card {
+        max-height: 100%;
+        overflow-y: auto;
+    }
+}
+
 .grid-stage {
     display: grid;
     gap: 16px;
@@ -298,7 +314,7 @@ body.grid-sheet-open {
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-md);
     border: 1px solid var(--color-border);
-    padding: 16px;
+    padding: 14px;
 }
 
 .panel-header {
@@ -306,7 +322,7 @@ body.grid-sheet-open {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 12px;
+    margin-bottom: 10px;
 }
 
 .panel-title {
@@ -315,9 +331,7 @@ body.grid-sheet-open {
     letter-spacing: -0.2px;
 }
 
-.panel-subtitle,
 .preview-subtitle,
-.tiles-subtitle,
 .control-hint {
     margin-top: 4px;
     font-size: 12px;
@@ -326,21 +340,40 @@ body.grid-sheet-open {
 
 .panel-actions {
     display: flex;
-    gap: 10px;
+    gap: 8px;
     align-items: center;
+}
+
+.btn-compact {
+    padding: 10px 14px;
+    font-size: 13px;
+    gap: 6px;
+}
+
+.btn-compact i {
+    font-size: 15px;
+}
+
+.btn-danger-soft {
+    background: rgba(255, 59, 48, 0.1);
+    color: #d6362b;
+}
+
+.btn-danger-soft:hover {
+    background: rgba(255, 59, 48, 0.16);
 }
 
 .control-grid {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 14px;
+    gap: 10px;
 }
 
 .control {
     background: var(--color-bg);
     border: 1px solid rgba(0, 0, 0, 0.05);
     border-radius: var(--radius-md);
-    padding: 12px;
+    padding: 10px 12px;
 }
 
 .control-row {
@@ -356,11 +389,11 @@ body.grid-sheet-open {
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
     gap: 10px 12px;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
 }
 
 .control-label {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--color-text-secondary);
     line-height: 1.35;
@@ -383,12 +416,12 @@ body.grid-sheet-open {
 .number,
 .text,
 .select {
-    height: 34px;
+    height: 32px;
     border-radius: 12px;
     border: 1px solid rgba(0, 0, 0, 0.08);
     background: rgba(255, 255, 255, 0.8);
     padding: 0 10px;
-    font-size: 13px;
+    font-size: 12px;
     outline: none;
 }
 
@@ -425,7 +458,7 @@ body.grid-sheet-open {
 
 input[type="color"] {
     width: 40px;
-    height: 34px;
+    height: 32px;
     padding: 0;
     border: 1px solid rgba(0, 0, 0, 0.08);
     border-radius: 12px;
@@ -481,7 +514,7 @@ input[type="range"]::-moz-range-thumb {
 .preview {
     margin-top: 0;
     background: var(--color-surface);
-    border-radius: 0;
+    border-radius: var(--radius-lg);
     padding: 14px;
     box-shadow: var(--shadow-md);
     border: 1px solid var(--color-border);
@@ -509,7 +542,7 @@ input[type="range"]::-moz-range-thumb {
 .preview-canvas-wrap {
     width: 100%;
     background: var(--color-bg);
-    border-radius: 0;
+    border-radius: 22px;
     border: 1px solid rgba(0, 0, 0, 0.05);
     overflow: hidden;
     min-height: 420px;
@@ -534,58 +567,11 @@ input[type="range"]::-moz-range-thumb {
     overflow-wrap: anywhere;
 }
 
-.tiles {
-    margin-top: 0;
-    background: var(--color-surface);
-    border-radius: var(--radius-lg);
-    padding: 14px;
-    box-shadow: var(--shadow-md);
-    border: 1px solid var(--color-border);
-}
-
-.tiles-header {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 10px;
-}
-
-.tiles-title {
-    font-size: 15px;
-    font-weight: 700;
-}
-
-.tiles-meta {
-    font-size: 12px;
-    color: var(--color-text-secondary);
-}
-
-.tiles-grid {
-    --tile-gap: 10px;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: var(--tile-gap);
-}
-
-.tile {
-    background: var(--color-bg);
-    border-radius: 0;
-    border: 1px solid rgba(0, 0, 0, 0.05);
-    overflow: hidden;
-}
-
-.tile canvas {
-    width: 100%;
-    height: auto;
-    display: block;
-}
-
 .actions {
     margin-top: 0;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     flex-wrap: nowrap;
     position: static;
     background: rgba(245, 245, 247, 0.72);
@@ -598,6 +584,7 @@ input[type="range"]::-moz-range-thumb {
 
 .actions .btn {
     width: 100%;
+    min-height: 44px;
 }
 
 .actions .btn i {
@@ -623,6 +610,10 @@ input[type="range"]::-moz-range-thumb {
 }
 
 @media (max-width: 768px) {
+    .control-hint {
+        display: block;
+    }
+
     .mobile-only {
         display: inline-flex !important;
     }
@@ -643,8 +634,7 @@ input[type="range"]::-moz-range-thumb {
     .grid-page.has-image #preview { order: 1; }
     .grid-page.has-image #actions { order: 2; }
     .grid-page.has-image #panel { order: 3; }
-    .grid-page.has-image #tiles { order: 4; }
-    .grid-page.has-image #emptyLayout { order: 5; }
+    .grid-page.has-image #emptyLayout { order: 4; }
 
     .grid-page.has-image #panel {
         position: fixed;
@@ -721,14 +711,12 @@ input[type="range"]::-moz-range-thumb {
         min-height: 240px;
     }
 
-    .preview-header,
-    .tiles-header {
+    .preview-header {
         flex-direction: column;
         align-items: flex-start;
     }
 
-    .preview-actions,
-    .tiles-meta {
+    .preview-actions {
         width: 100%;
     }
 
@@ -741,14 +729,6 @@ input[type="range"]::-moz-range-thumb {
         width: 100%;
         justify-content: center;
         min-height: 44px;
-    }
-
-    .tiles-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-
-    .tiles-meta {
-        line-height: 1.5;
     }
 
     .actions { flex-direction: column; }
@@ -775,6 +755,12 @@ input[type="range"]::-moz-range-thumb {
     }
 }
 
+@media (min-width: 769px) {
+    .control-hint {
+        display: none;
+    }
+}
+
 @media (max-width: 520px) {
     .grid-main {
         padding: 12px;
@@ -787,9 +773,6 @@ input[type="range"]::-moz-range-thumb {
     }
     .upload-text {
         text-align: left;
-    }
-    .tiles-grid {
-        gap: 8px;
     }
     .actions {
         gap: 10px;

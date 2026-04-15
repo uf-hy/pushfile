@@ -29,9 +29,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const downloadPreviewBtn = document.getElementById('downloadPreviewBtn');
     const togglePanelBtn = document.getElementById('togglePanelBtn');
     const closePanelBtn = document.getElementById('closePanelBtn');
-    const tilesEl = document.getElementById('tiles');
-    const tilesGridEl = document.getElementById('tilesGrid');
-    const tilesMetaEl = document.getElementById('tilesMeta');
     const actionsEl = document.getElementById('actions');
     const saveBtn = document.getElementById('saveBtn');
     const downloadBtn = document.getElementById('downloadBtn');
@@ -110,7 +107,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (stageEmptyEl) stageEmptyEl.style.display = 'none';
         panelEl.style.display = 'block';
         previewEl.style.display = 'block';
-        tilesEl.style.display = 'block';
         actionsEl.style.display = 'flex';
         if (introEl) introEl.style.display = 'none';
         if (downloadPreviewBtn) downloadPreviewBtn.disabled = false;
@@ -180,7 +176,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const lineWidth = clampInt(state.lineWidth, 0, 40);
         const gap = clampInt(state.gap, 0, 60);
         const padding = clampInt(state.padding, 0, 120);
-        const sep = lineWidth + gap * 2;
+        const sep = lineWidth + gap;
         const outW = bitmap.width + sep * 2 + padding * 2;
         const outH = bitmap.height + sep * 2 + padding * 2;
 
@@ -232,7 +228,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const h1 = contentTop + rowHeights[0];
             const h2 = contentTop + rowHeights[0] + sep + rowHeights[1];
 
-            const lineOffset = gap;
+            const lineOffset = Math.floor((sep - lineWidth) / 2);
             const lx1 = v1 + lineOffset;
             const lx2 = v2 + lineOffset;
             ctx.fillRect(lx1, contentTop, lineWidth, contentH);
@@ -248,40 +244,9 @@ document.addEventListener('DOMContentLoaded', () => {
         previewMetaEl.textContent = `原图 ${bitmap.width}×${bitmap.height}  |  预览 ${outW}×${outH}  |  分割线 ${lineWidth}px · 间距 ${gap}px · 外边距 ${padding}px · ${fmt}${state.transparentBg && fmt === 'PNG' ? '（透明背景）' : ''}`;
     }
 
-    function renderTiles(bitmap) {
-        const { rects } = getTileLayout(bitmap);
-        const lineWidth = clampInt(state.lineWidth, 0, 40);
-        const gap = clampInt(state.gap, 0, 60);
-        tilesGridEl.style.setProperty('--tile-gap', `${lineWidth + gap}px`);
-
-        const tilePreviewMax = 240;
-        tilesGridEl.innerHTML = '';
-        rects.forEach((r, i) => {
-            const wrap = document.createElement('div');
-            wrap.className = 'tile';
-            wrap.title = `第 ${i + 1} 张`;
-
-            const c = document.createElement('canvas');
-            const scale = Math.min(1, tilePreviewMax / Math.max(r.sw, r.sh));
-            c.width = Math.max(1, Math.round(r.sw * scale));
-            c.height = Math.max(1, Math.round(r.sh * scale));
-            const ctx = c.getContext('2d');
-            if (ctx) {
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = 'high';
-                ctx.drawImage(bitmap, r.sx, r.sy, r.sw, r.sh, 0, 0, c.width, c.height);
-            }
-            wrap.appendChild(c);
-            tilesGridEl.appendChild(wrap);
-        });
-
-        tilesMetaEl.textContent = `点击“下载 ZIP / 保存到文件夹”会导出原始尺寸切图 · 分割线 ${lineWidth}px / 间距 ${gap}px`;
-    }
-
     function renderAll() {
         if (!currentBitmap) return;
         drawPreviewToCanvas(currentBitmap);
-        renderTiles(currentBitmap);
         showUI();
     }
 
@@ -406,6 +371,7 @@ document.addEventListener('DOMContentLoaded', () => {
     mobileSheetBackdrop?.addEventListener('click', closeMobileControls);
     window.addEventListener('resize', () => {
         if (!isMobileViewport()) closeMobileControls();
+        if (currentBitmap) scheduleRender();
     });
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') closeMobileControls();
@@ -580,5 +546,4 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     setExportDisabled(true);
-    tilesEl.style.display = 'none';
 });
