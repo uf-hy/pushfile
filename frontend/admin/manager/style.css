@@ -2027,6 +2027,13 @@ body.is-resizing-sidebar .sidebar-resizer::before {
     pointer-events: none;
 }
 
+.action-bar-btn:disabled {
+    opacity: 0.42;
+    cursor: default;
+    pointer-events: none;
+    box-shadow: none;
+}
+
 .status-bar {
         display: none;
     }
@@ -2211,12 +2218,45 @@ body.is-resizing-sidebar .sidebar-resizer::before {
     
     .bottom-action-bar {
         width: min(92vw, 420px);
-        padding: 14px;
+        padding: 12px;
         gap: 14px;
         justify-content: stretch;
         align-items: stretch;
         flex-direction: column;
-        bottom: 16px;
+        bottom: 21px;
+        border-radius: 24px;
+    }
+
+    .action-bar-rest {
+        gap: 8px;
+    }
+
+    .action-bar-rest .action-bar-btn:first-child::after {
+        display: none;
+    }
+
+    .action-bar-rest .action-bar-btn {
+        min-width: 0;
+        flex: 1;
+        padding: 0 14px;
+    }
+
+    .action-bar-active {
+        width: 100%;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .action-bar-info {
+        width: 100%;
+        justify-content: center;
+        padding: 0;
+    }
+
+    .action-bar-dismiss {
+        width: 100%;
+        margin-left: 0;
+        min-height: 42px;
     }
     
     .action-bar-buttons {
@@ -2529,27 +2569,27 @@ body.mobile-multi-select .item-checkbox {
 /* === 底部操作栏 === */
 .bottom-action-bar {
     position: fixed;
-    bottom: 32px;
+    bottom: 42px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    padding: 10px 20px;
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(28px) saturate(180%);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.78);
+    border-radius: 999px;
+    padding: 8px;
     display: flex;
     align-items: center;
-    gap: 16px;
-    box-shadow: var(--shadow-lg);
+    gap: 12px;
+    box-shadow: 0 22px 54px rgba(15, 23, 42, 0.18), 0 4px 14px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255,255,255,0.82);
     z-index: 100;
-    transition: all 0.4s var(--spring-soft);
+    transition: transform 0.35s var(--spring-soft), box-shadow 0.25s ease, opacity 0.22s ease, background 0.22s ease;
 }
 
 .action-bar-rest {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 0;
     width: 100%;
     justify-content: center;
     transition: opacity 0.22s ease, transform 0.22s var(--spring-soft);
@@ -2557,18 +2597,30 @@ body.mobile-multi-select .item-checkbox {
 
 .action-bar-rest .action-bar-btn {
     flex-direction: row;
-    gap: 8px;
-    padding: 10px 18px;
-    min-height: 40px;
-    min-width: 120px;
+    gap: 9px;
+    padding: 0 22px;
+    min-height: 48px;
+    min-width: 140px;
     justify-content: center;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.6);
+    background: transparent;
     border: 1px solid transparent;
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 680;
+    letter-spacing: 0.03em;
     white-space: nowrap;
-    transition: all 0.2s var(--spring-soft);
+    position: relative;
+    transition: transform 0.2s var(--spring-soft), background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.action-bar-rest .action-bar-btn:first-child::after {
+    content: "";
+    position: absolute;
+    right: -1px;
+    top: 12px;
+    bottom: 12px;
+    width: 1px;
+    background: rgba(0, 0, 0, 0.08);
 }
 
 .bottom-action-bar.active .action-bar-rest {
@@ -2581,11 +2633,12 @@ body.mobile-multi-select .item-checkbox {
 .action-bar-active {
     display: flex;
     align-items: center;
-    gap: 24px;
+    gap: 14px;
     opacity: 0;
     pointer-events: none;
     transform: translateY(10px) scale(0.98);
     transition: opacity 0.22s ease, transform 0.28s var(--spring-soft);
+    white-space: nowrap;
 }
 
 .bottom-action-bar.active .action-bar-active {
@@ -2646,37 +2699,45 @@ body.mobile-multi-select .item-checkbox {
 }
 
 .action-bar-info {
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 700;
     color: var(--color-text-main);
     display: flex;
     align-items: center;
     gap: 8px;
+    padding: 0 8px 0 4px;
 }
 
 .action-bar-info .count-badge {
-    background: var(--color-primary);
+    background: linear-gradient(180deg, #1687ff, #007aff);
     color: white;
-    padding: 2px 8px;
-    border-radius: 12px;
+    padding: 4px 10px;
+    border-radius: 999px;
     font-size: 12px;
+    font-weight: 700;
+    box-shadow: 0 8px 20px rgba(0, 122, 255, 0.24);
 }
 
 .action-bar-buttons {
     display: flex;
-    gap: 12px;
+    gap: 8px;
+    align-items: center;
 }
 
 .action-bar-btn {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    gap: 4px;
+    justify-content: center;
+    gap: 8px;
     background: transparent;
     border: none;
     cursor: pointer;
     color: var(--color-text-secondary);
-    transition: color 0.2s;
+    border-radius: 999px;
+    min-height: 44px;
+    padding: 0 16px;
+    transition: transform 0.2s var(--spring-soft), background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .action-bar-btn i {
@@ -2684,16 +2745,51 @@ body.mobile-multi-select .item-checkbox {
 }
 
 .action-bar-btn span {
-    font-size: 11px;
-    font-weight: 500;
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.02em;
 }
 
 .action-bar-btn:hover {
+    background: rgba(0, 0, 0, 0.055);
     color: var(--color-text-main);
+}
+
+.action-bar-btn--primary {
+    color: white;
+    background: linear-gradient(180deg, #1687ff, #007aff);
+    box-shadow: 0 10px 24px rgba(0, 122, 255, 0.3), inset 0 1px 0 rgba(255,255,255,0.28);
+}
+
+.action-bar-btn--primary:hover {
+    color: white;
+    background: linear-gradient(180deg, #2a92ff, #1183ff);
+    box-shadow: 0 14px 30px rgba(0, 122, 255, 0.34), inset 0 1px 0 rgba(255,255,255,0.32);
 }
 
 .action-bar-btn.danger:hover {
     color: var(--color-danger);
+}
+
+.action-bar-btn.danger:hover {
+    background: rgba(255, 59, 48, 0.08);
+}
+
+.action-bar-dismiss {
+    width: 40px;
+    height: 40px;
+    margin-left: 2px;
+    border-radius: 999px;
+    color: var(--color-text-secondary);
+    background: rgba(255, 255, 255, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.34);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.36);
+    transition: transform 0.2s var(--spring-soft), background 0.2s ease, color 0.2s ease;
+}
+
+.action-bar-dismiss:hover {
+    color: var(--color-text-main);
+    background: rgba(0, 0, 0, 0.06);
 }
 
 @media (max-width: 768px) {

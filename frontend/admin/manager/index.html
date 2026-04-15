@@ -314,11 +314,11 @@
                 <span>项</span>
             </div>
             <div class="action-bar-buttons">
-                <button type="button" class="action-bar-btn" id="batchPreviewBtn" onclick="handleBatchAction('preview')" style="display: none;">
+                <button type="button" class="action-bar-btn action-bar-btn--primary" id="batchPreviewBtn" onclick="handleBatchAction('preview')" style="display: none;">
                     <i class="ph ph-eye"></i>
                     <span>预览</span>
                 </button>
-                <button type="button" class="action-bar-btn" id="batchDownloadBtn" onclick="handleBatchAction('download')" style="display: none;">
+                <button type="button" class="action-bar-btn action-bar-btn--primary" id="batchDownloadBtn" onclick="handleBatchAction('download')" style="display: none;">
                     <i class="ph ph-download-simple"></i>
                     <span id="batchDownloadLabel">下载图片</span>
                 </button>
@@ -343,9 +343,9 @@
                     <span>删除</span>
                 </button>
             </div>
-             <button type="button" class="icon-btn" onclick="clearSelection()" style="margin-left: 8px;">
-                <i class="ph ph-x"></i>
-            </button>
+             <button type="button" class="icon-btn action-bar-dismiss" onclick="clearSelection()">
+                 <i class="ph ph-x"></i>
+             </button>
         </div>
     </div>
 
