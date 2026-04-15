@@ -1127,6 +1127,7 @@ body.is-resizing-sidebar .sidebar-resizer::before {
     flex: 1;
     overflow-y: auto;
     padding: 24px 24px 140px;
+    position: relative;
     background:
         linear-gradient(180deg, rgba(255,255,255,0.4), rgba(255,255,255,0) 120px),
         linear-gradient(180deg, rgba(245,245,247,0.72), rgba(255,255,255,0));
@@ -2307,6 +2308,25 @@ body.mobile-multi-select .item-checkbox {
 .grid-item.selected .item-thumb {
     transform: scale(0.95);
     box-shadow: 0 0 0 4px var(--color-primary);
+}
+
+.grid-view,
+.mobile-view {
+    position: relative;
+}
+
+.content-area.is-marquee-selecting {
+    cursor: crosshair;
+}
+
+.selection-marquee {
+    position: absolute;
+    z-index: 30;
+    border: 1px solid rgba(0, 122, 255, 0.72);
+    background: rgba(0, 122, 255, 0.14);
+    border-radius: 12px;
+    pointer-events: none;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.32);
 }
 
 /* === 右键菜单 Context Menu === */

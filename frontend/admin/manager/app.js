@@ -1194,6 +1194,7 @@ function buildSearchResultsHtml() {
         const count = Number(item.image_count || 0);
         return `
             <button type="button" class="grid-item folder-item search-folder-item" data-item-kind="folder" data-action="open-folder-card" data-folder-token="${itemToken}" data-folder-title="${itemName}" data-folder-path="${itemPath}">
+                <div class="item-checkbox" onclick="event.stopPropagation(); toggleSelect(this.closest('.grid-item'))"><i class="ph-bold ph-check"></i></div>
                 <div class="item-icon-wrapper">
                     <i class="ph-fill ph-folder"></i>
                 </div>
@@ -1231,6 +1232,7 @@ function buildSearchResultsHtml() {
         });
         return `
             <div class="grid-item image-item search-item" data-item-kind="image" data-file="${safeFile}" data-url="${safePreviewUrl}" data-copy-url="${safePreviewUrl}" data-download-url="${safeDownloadUrl}" data-file-token="${escapeHtml(token)}" data-folder-path="${safeParentPath}">
+                <div class="item-checkbox" onclick="event.stopPropagation(); toggleSelect(this.closest('.grid-item'))"><i class="ph-bold ph-check"></i></div>
                 <div class="item-thumb" data-action="preview-image">
                     ${mediaHtml}
                     <div class="item-overlay">
@@ -1314,6 +1316,7 @@ function renderGridView() {
         setupSequentialThumbReveal(container);
         applyThumbDebugBadges(container);
         applyCurrentViewClass(container, true);
+        setupMarqueeSelection();
         updateStatusBar();
         updateBottomActionBar();
         return;
@@ -1350,6 +1353,7 @@ function renderGridView() {
         `;
 
         applyCurrentViewClass(container);
+        setupMarqueeSelection();
         updateStatusBar();
         updateBottomActionBar();
         return;
@@ -1449,6 +1453,7 @@ function renderGridView() {
     setupSequentialThumbReveal(container);
     applyThumbDebugBadges(container);
     applyCurrentViewClass(container);
+    setupMarqueeSelection();
     updateStatusBar();
     updateBottomActionBar();
 }
@@ -1487,6 +1492,10 @@ function setupDragAndDrop() {
     const items = container.querySelectorAll('.image-item');
     items.forEach(item => {
         item.addEventListener('dragstart', function(e) {
+            if (getSelectionCount() > 1) {
+                e.preventDefault();
+                return;
+            }
             draggedItem = this;
             setTimeout(() => this.classList.add('dragging'), 0);
             e.dataTransfer.effectAllowed = 'move';
@@ -2149,6 +2158,8 @@ let selectedFolders = new Set();
 let contextMenuTarget = null;
 let isMobile = window.innerWidth <= 768;
 let clipboard = { action: null, files: [], folders: [], sourcePath: null, sourceToken: null };
+let selectionAnchorKey = '';
+let marqueeSelectionCleanup = null;
 
 window.addEventListener('resize', () => {
     isMobile = window.innerWidth <= 768;
@@ -2156,6 +2167,231 @@ window.addEventListener('resize', () => {
 
 function getSelectionCount() {
     return selectedFiles.size + selectedFolders.size;
+}
+
+function getCurrentGridContainer() {
+    return document.querySelector('.grid-view') || document.querySelector('.mobile-view');
+}
+
+function getSelectionSurface() {
+    return document.querySelector('.content-area');
+}
+
+function getVisibleGridItems() {
+    const container = getCurrentGridContainer();
+    if (!container) return [];
+    return Array.from(container.querySelectorAll('.grid-item'));
+}
+
+function isTypingTarget(target) {
+    if (!target) return false;
+    const tagName = String(target.tagName || '').toUpperCase();
+    return ['INPUT', 'TEXTAREA', 'SELECT'].includes(tagName) || !!target.isContentEditable;
+}
+
+function getItemSelectionMeta(itemEl) {
+    if (!itemEl) return null;
+    const kind = itemEl.dataset.itemKind || (itemEl.dataset.file ? 'image' : 'folder');
+    if (kind === 'folder') {
+        const path = itemEl.dataset.folderPath || '';
+        if (!path) return null;
+        return { kind: 'folder', key: `folder:${path}`, path };
+    }
+    const file = itemEl.dataset.file || '';
+    if (!file) return null;
+    return { kind: 'image', key: `image:${file}`, file };
+}
+
+function setSelectionAnchorFromElement(itemEl) {
+    selectionAnchorKey = getItemSelectionMeta(itemEl)?.key || '';
+}
+
+function setElementSelected(itemEl, selected) {
+    const meta = getItemSelectionMeta(itemEl);
+    if (!meta) return false;
+    if (meta.kind === 'folder') {
+        if (selected) selectedFolders.add(meta.path);
+        else selectedFolders.delete(meta.path);
+    } else {
+        if (selected) selectedFiles.add(meta.file);
+        else selectedFiles.delete(meta.file);
+    }
+    toggleSelectionClasses(itemEl, selected);
+    return true;
+}
+
+function selectVisibleItems(itemEls) {
+    clearSelection();
+    itemEls.forEach((itemEl) => {
+        setElementSelected(itemEl, true);
+    });
+    if (itemEls.length > 0) {
+        setSelectionAnchorFromElement(itemEls[itemEls.length - 1]);
+    }
+    updateBottomActionBar();
+}
+
+function selectRangeTo(itemEl) {
+    const items = getVisibleGridItems();
+    const targetKey = getItemSelectionMeta(itemEl)?.key || '';
+    if (!items.length || !targetKey) return false;
+    const targetIndex = items.findIndex((el) => getItemSelectionMeta(el)?.key === targetKey);
+    if (targetIndex < 0) return false;
+    let anchorIndex = items.findIndex((el) => getItemSelectionMeta(el)?.key === selectionAnchorKey);
+    if (anchorIndex < 0) anchorIndex = targetIndex;
+    const start = Math.min(anchorIndex, targetIndex);
+    const end = Math.max(anchorIndex, targetIndex);
+    selectVisibleItems(items.slice(start, end + 1));
+    return true;
+}
+
+function shouldHandleGridSelectionShortcut(event) {
+    if (isTypingTarget(event.target)) return false;
+    return getVisibleGridItems().length > 0;
+}
+
+function handleSelectionInteraction(event, itemEl) {
+    if (!itemEl) return false;
+    if (event.shiftKey) {
+        event.preventDefault();
+        selectRangeTo(itemEl);
+        return true;
+    }
+    if (event.metaKey || event.ctrlKey) {
+        event.preventDefault();
+        toggleSelect(itemEl);
+        setSelectionAnchorFromElement(itemEl);
+        return true;
+    }
+    if (getSelectionCount() > 0 || isMobile) {
+        event.preventDefault();
+        toggleSelect(itemEl);
+        setSelectionAnchorFromElement(itemEl);
+        return true;
+    }
+    return false;
+}
+
+function isMarqueeStartTarget(target, surface) {
+    if (!target || !surface || !surface.contains(target)) return false;
+    if (target.closest('.grid-item, button, input, textarea, select, label, a, .search-summary-card, .search-empty-state, .album-empty-summary, .album-folder-section-title, .context-menu, .manager-dialog, .action-btn')) {
+        return false;
+    }
+    return true;
+}
+
+function applyMarqueeSelection(items) {
+    clearSelection();
+    items.forEach((itemEl) => {
+        setElementSelected(itemEl, true);
+    });
+    if (items.length > 0) {
+        setSelectionAnchorFromElement(items[items.length - 1]);
+    }
+    updateBottomActionBar();
+}
+
+function setupMarqueeSelection() {
+    if (typeof marqueeSelectionCleanup === 'function') {
+        marqueeSelectionCleanup();
+        marqueeSelectionCleanup = null;
+    }
+
+    const surface = getSelectionSurface();
+    const container = getCurrentGridContainer();
+    if (!surface || !container || isMobile) return;
+
+    let pointerId = null;
+    let startX = 0;
+    let startY = 0;
+    let dragging = false;
+    let frameEl = null;
+
+    const ensureFrame = () => {
+        if (frameEl) return frameEl;
+        frameEl = document.createElement('div');
+        frameEl.className = 'selection-marquee';
+        surface.appendChild(frameEl);
+        return frameEl;
+    };
+
+    const clearFrame = () => {
+        surface.classList.remove('is-marquee-selecting');
+        if (frameEl) {
+            frameEl.remove();
+            frameEl = null;
+        }
+    };
+
+    const updateSelection = (currentX, currentY) => {
+        const minX = Math.min(startX, currentX);
+        const minY = Math.min(startY, currentY);
+        const maxX = Math.max(startX, currentX);
+        const maxY = Math.max(startY, currentY);
+        const surfaceRect = surface.getBoundingClientRect();
+        const frame = ensureFrame();
+        surface.classList.add('is-marquee-selecting');
+        frame.style.left = `${minX - surfaceRect.left + surface.scrollLeft}px`;
+        frame.style.top = `${minY - surfaceRect.top + surface.scrollTop}px`;
+        frame.style.width = `${Math.max(1, maxX - minX)}px`;
+        frame.style.height = `${Math.max(1, maxY - minY)}px`;
+
+        const matchedItems = getVisibleGridItems().filter((itemEl) => {
+            const rect = itemEl.getBoundingClientRect();
+            return rect.right >= minX && rect.left <= maxX && rect.bottom >= minY && rect.top <= maxY;
+        });
+        applyMarqueeSelection(matchedItems);
+    };
+
+    const onPointerDown = (event) => {
+        if (event.button !== 0) return;
+        if (!isMarqueeStartTarget(event.target, surface)) return;
+        pointerId = event.pointerId;
+        startX = event.clientX;
+        startY = event.clientY;
+        dragging = false;
+        surface.setPointerCapture(event.pointerId);
+    };
+
+    const onPointerMove = (event) => {
+        if (pointerId !== event.pointerId) return;
+        const deltaX = event.clientX - startX;
+        const deltaY = event.clientY - startY;
+        if (!dragging) {
+            if (Math.hypot(deltaX, deltaY) < 4) return;
+            dragging = true;
+            event.preventDefault();
+        }
+        updateSelection(event.clientX, event.clientY);
+    };
+
+    const finishPointer = (event) => {
+        if (pointerId !== event.pointerId) return;
+        if (surface.hasPointerCapture?.(event.pointerId)) {
+            surface.releasePointerCapture(event.pointerId);
+        }
+        pointerId = null;
+        dragging = false;
+        clearFrame();
+    };
+
+    surface.addEventListener('pointerdown', onPointerDown);
+    surface.addEventListener('pointermove', onPointerMove);
+    surface.addEventListener('pointerup', finishPointer);
+    surface.addEventListener('pointercancel', finishPointer);
+
+    marqueeSelectionCleanup = () => {
+        clearFrame();
+        if (pointerId != null && surface.hasPointerCapture?.(pointerId)) {
+            surface.releasePointerCapture(pointerId);
+        }
+        pointerId = null;
+        dragging = false;
+        surface.removeEventListener('pointerdown', onPointerDown);
+        surface.removeEventListener('pointermove', onPointerMove);
+        surface.removeEventListener('pointerup', finishPointer);
+        surface.removeEventListener('pointercancel', finishPointer);
+    };
 }
 
 function isFolderElementSelected(itemEl) {
@@ -2184,6 +2420,7 @@ function selectSingleTarget(target) {
         selectedFiles.add(target.file);
     }
     toggleSelectionClasses(target.element, true);
+    setSelectionAnchorFromElement(target.element);
     updateBottomActionBar();
 }
 
@@ -2215,6 +2452,7 @@ window.toggleSelect = function(itemEl) {
             selectedFolders.add(path);
             toggleSelectionClasses(itemEl, true);
         }
+        setSelectionAnchorFromElement(itemEl);
         updateBottomActionBar();
         return;
     }
@@ -2228,6 +2466,7 @@ window.toggleSelect = function(itemEl) {
         selectedFiles.add(file);
         toggleSelectionClasses(itemEl, true);
     }
+    setSelectionAnchorFromElement(itemEl);
     updateBottomActionBar();
 };
 
@@ -2235,6 +2474,7 @@ window.toggleSelect = function(itemEl) {
 window.clearSelection = function() {
     selectedFiles.clear();
     selectedFolders.clear();
+    selectionAnchorKey = '';
     document.querySelectorAll('.grid-item.selected').forEach(el => {
         el.classList.remove('selected');
     });
@@ -2242,54 +2482,17 @@ window.clearSelection = function() {
 };
 
 function selectAllItems() {
-    selectedFiles.clear();
-    selectedFolders.clear();
-    const hasSearch = state.searchQuery.trim();
-    if (hasSearch) {
-        state.searchResults.forEach(r => {
-            if (r.kind === 'file') selectedFiles.add(r.name);
-            else if (r.path) selectedFolders.add(r.path);
-        });
-    } else {
-        (state.currentFiles || []).forEach(f => {
-            selectedFiles.add(f);
-        });
-        (state.currentFolders || []).forEach(f => {
-            const path = f.path || (state.currentPath ? `${state.currentPath}/${f.name}` : f.name);
-            selectedFolders.add(path);
-        });
-    }
-    document.querySelectorAll('.grid-item').forEach(el => {
-        const name = el.dataset.file;
-        const folderPath = el.dataset.folderPath;
-        if (name && selectedFiles.has(name)) toggleSelectionClasses(el, true);
-        if (folderPath && selectedFolders.has(folderPath)) toggleSelectionClasses(el, true);
-    });
-    updateBottomActionBar();
+    selectVisibleItems(getVisibleGridItems());
 }
 
 function isAllSelected() {
-    const hasSearch = state.searchQuery.trim();
-    let totalFiles = 0, totalFolders = 0;
-    if (hasSearch) {
-        state.searchResults.forEach(r => {
-            if (r.kind === 'file') totalFiles++;
-            else totalFolders++;
-        });
-    } else {
-        totalFiles = (state.currentFiles || []).length;
-        totalFolders = (state.currentFolders || []).length;
-    }
-    if (totalFiles === 0 && totalFolders === 0) return false;
-    return totalFiles === selectedFiles.size && totalFolders === selectedFolders.size
-        && (totalFiles === 0 || [...selectedFiles].every(f => {
-            if (hasSearch) return state.searchResults.some(r => r.kind === 'file' && r.name === f);
-            return state.currentFiles.includes(f);
-        }))
-        && (totalFolders === 0 || [...selectedFolders].every(p => {
-            if (hasSearch) return state.searchResults.some(r => r.path === p);
-            return state.currentFolders.some(f => f.path === p || (state.currentPath ? state.currentPath + '/' + f.name : f.name) === p);
-        }));
+    const items = getVisibleGridItems();
+    if (items.length === 0) return false;
+    return items.every((itemEl) => {
+        const meta = getItemSelectionMeta(itemEl);
+        if (!meta) return false;
+        return meta.kind === 'folder' ? selectedFolders.has(meta.path) : selectedFiles.has(meta.file);
+    });
 }
 
 window.toggleSelectAll = function() {
@@ -2360,12 +2563,10 @@ function updateBottomActionBar() {
     if (!bar || !countBadge) return;
 
     const isLeafFolder = state.currentToken && (!state.currentFolders || state.currentFolders.length === 0);
-    const hasImages = (state.currentFiles && state.currentFiles.length > 0) || (state.searchQuery.trim() && state.searchResults.some(r => r.kind === 'file'));
+    const visibleItemCount = getVisibleGridItems().length;
 
     if (selectAllBtn) {
-        const hasItems = hasImages || (state.currentFolders && state.currentFolders.length > 0)
-            || (state.searchQuery.trim() && state.searchResults.length > 0);
-        selectAllBtn.hidden = !hasItems;
+        selectAllBtn.hidden = visibleItemCount === 0;
     }
     if (selectAllLabel) {
         selectAllLabel.textContent = isAllSelected() ? '取消全选' : '全选';
@@ -2415,9 +2616,7 @@ function updateBottomActionBar() {
 
 // 处理项目点击 (兼容移动端与桌面端)
 window.handleItemClick = function(e, itemEl) {
-    if (isMobile || getSelectionCount() > 0) {
-        e.preventDefault();
-        toggleSelect(itemEl);
+    if (handleSelectionInteraction(e, itemEl)) {
         return;
     }
     
@@ -2484,9 +2683,7 @@ document.addEventListener('click', function(e) {
     if (folderCard) {
         const token = folderCard.getAttribute('data-folder-token') || '';
         const title = folderCard.getAttribute('data-folder-title') || '';
-        if (getSelectionCount() > 0) {
-            e.preventDefault();
-            toggleSelect(folderCard);
+        if (handleSelectionInteraction(e, folderCard)) {
             return;
         }
         if (token) {
@@ -2526,6 +2723,12 @@ document.addEventListener('click', function(e) {
             state.focusedFile = file;
             loadAlbum(token, path || token);
         }
+        return;
+    }
+
+    const imageItem = e.target.closest('.image-item');
+    if (imageItem) {
+        handleItemClick(e, imageItem);
     }
 });
 
@@ -3231,7 +3434,7 @@ function setupEventListeners() {
     document.addEventListener('keydown', (e) => {
         if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
             const target = e.target;
-            const typing = target && ['INPUT', 'TEXTAREA'].includes(target.tagName);
+            const typing = isTypingTarget(target);
             if (!typing && searchInput) {
                 e.preventDefault();
                 searchInput.focus();
@@ -3240,6 +3443,7 @@ function setupEventListeners() {
             }
         }
         if (e.key.toLowerCase() === 'a' && (e.metaKey || e.ctrlKey)) {
+            if (!shouldHandleGridSelectionShortcut(e)) return;
             e.preventDefault();
             toggleSelectAll();
             return;
