@@ -5,7 +5,20 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import PlainTextResponse
 from app.logging_config import setup_logging, access_log_middleware
-from app.routes import tokens, manage, upload, pages, folders, stats, health, files, api, grid, auth, trash
+from app.routes import (
+    tokens,
+    manage,
+    upload,
+    pages,
+    folders,
+    stats,
+    health,
+    files,
+    api,
+    grid,
+    auth,
+    trash,
+)
 from app.config import BASE_PATH, FRONTEND_DIR
 from app.metadata_store import init_metadata_store
 from app.users import init_user_store
@@ -18,6 +31,20 @@ try:
     init_analytics_store()
 except Exception:
     logger.exception("analytics store init failed")
+
+
+class CachedStaticFiles(StaticFiles):
+    async def __call__(self, scope, receive, send):
+        original_send = send
+
+        async def _send(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.append((b"cache-control", b"public, max-age=604800"))
+                message["headers"] = headers
+            await original_send(message)
+
+        await super().__call__(scope, receive, _send)
 
 
 class StripBasePathMiddleware:
@@ -56,6 +83,9 @@ if BASE_PATH:
 async def referrer_policy_middleware(request, call_next):
     response = await call_next(request)
     response.headers["Referrer-Policy"] = "no-referrer"
+    content_type = response.headers.get("content-type", "")
+    if "text/html" in content_type:
+        response.headers["Cache-Control"] = "public, max-age=300"
     return response
 
 
@@ -68,6 +98,7 @@ def robots_txt():
         "User-agent: *\nDisallow: /d/\nDisallow: /f/\n",
         media_type="text/plain; charset=utf-8",
     )
+
 
 app.include_router(health.router)
 app.include_router(auth.router)
@@ -82,4 +113,4 @@ app.include_router(stats.router)
 app.include_router(api.router)
 app.include_router(grid.router)
 
-app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+app.mount("/static", CachedStaticFiles(directory=str(FRONTEND_DIR)), name="static")
